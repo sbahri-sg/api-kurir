@@ -69,8 +69,6 @@ services:
   dashboard:
     build:
       context: ./apps/dashboard
-      args:
-        VITE_API_URL: "${VITE_API_URL:-http://localhost:8080}"
     ports:
       - "${DASHBOARD_PORT:-5173}:80"
     depends_on:

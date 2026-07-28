@@ -105,6 +105,10 @@ docker compose up -d --build
 `deployments/compose/compose.yaml` tetap tersedia sebagai wrapper kompatibilitas
 untuk perintah lama. Secret tidak disalin ke file Compose atau source code.
 Dashboard tersedia di `http://localhost:5173`.
+Dashboard memakai same-origin API: request `/v1/*` diteruskan oleh Vite ke
+`localhost:8080` saat development dan oleh Nginx ke service `api:8080` saat
+Docker/production. Karena itu deployment cukup memakai satu domain publik dan
+browser tidak lagi bergantung pada alamat `localhost:8080`.
 
 API berjalan di `http://localhost:8080`. PostgreSQL development menggunakan
 port `55432` agar tidak mudah bentrok dengan instalasi PostgreSQL lain.

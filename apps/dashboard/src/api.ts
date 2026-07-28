@@ -1,5 +1,8 @@
-export const API_URL =
-  import.meta.env.VITE_API_URL ?? "http://localhost:8080";
+const configuredAPIURL = import.meta.env.VITE_API_URL?.trim();
+
+export const API_URL = (
+  configuredAPIURL || window.location.origin
+).replace(/\/+$/, "");
 
 type ApiEnvelope<T> = {
   data: T;
