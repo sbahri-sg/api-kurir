@@ -1,6 +1,6 @@
 .PHONY: help db-up db-down redis-up migrate region-import run-api run-worker location-sync location-sync-full location-sync-daemon test test-race fmt vet dashboard-install dashboard-dev dashboard-build compose-up
 
-COMPOSE = docker compose --env-file .env -f deployments/compose/compose.yaml
+COMPOSE = docker compose --env-file .env -f docker-compose.yml
 
 help:
 	@echo "make db-up             Start PostgreSQL only"

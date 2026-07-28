@@ -95,8 +95,16 @@ make migrate
 make run-api
 ```
 
-Target Compose pada `Makefile` selalu memakai `--env-file .env` agar key dan
-flag provider dibaca dari root proyek, bukan dari direktori file Compose.
+Untuk menjalankan seluruh aplikasi di Docker dari root proyek:
+
+```bash
+docker compose up -d --build
+```
+
+`docker-compose.yml` membaca `.env` dari root proyek. File
+`deployments/compose/compose.yaml` tetap tersedia sebagai wrapper kompatibilitas
+untuk perintah lama. Secret tidak disalin ke file Compose atau source code.
+Dashboard tersedia di `http://localhost:5173`.
 
 API berjalan di `http://localhost:8080`. PostgreSQL development menggunakan
 port `55432` agar tidak mudah bentrok dengan instalasi PostgreSQL lain.
