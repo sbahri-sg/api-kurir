@@ -1,0 +1,350 @@
+package rates
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func (r *PostgresRepository) FindFreshProviderQuotes(
+	ctx context.Context,
+	request Request,
+	providerCode string,
+) ([]ProviderQuote, error) {
+	fingerprint := providerRequestFingerprint(request)
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT ON (courier_code, service_code)
+			provider_code,
+			courier_code,
+			coalesce(courier_name, courier_code),
+			service_code,
+			coalesce(service_name, service_code),
+			coalesce(description, ''),
+			returned_cost,
+			etd_min_days,
+			etd_max_days,
+			verification_status,
+			fetched_at,
+			expires_at
+		FROM rate_snapshots
+		WHERE request_fingerprint = $1
+		  AND provider_code = $2
+		  AND source_type = 'provider_quote'
+		  AND expires_at > now()
+		ORDER BY courier_code, service_code, fetched_at DESC
+	`, fingerprint, providerCode)
+	if err != nil {
+		return nil, fmt.Errorf("query provider quote snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	quotes := make([]ProviderQuote, 0)
+	for rows.Next() {
+		var quote ProviderQuote
+		if err := rows.Scan(
+			&quote.ProviderCode,
+			&quote.CourierCode,
+			&quote.CourierName,
+			&quote.ServiceCode,
+			&quote.ServiceName,
+			&quote.Description,
+			&quote.Cost,
+			&quote.ETDMinDays,
+			&quote.ETDMaxDays,
+			&quote.VerificationStatus,
+			&quote.FetchedAt,
+			&quote.ExpiresAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan provider quote snapshot: %w", err)
+		}
+		quotes = append(quotes, quote)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate provider quote snapshots: %w", err)
+	}
+	return quotes, nil
+}
+
+func (r *PostgresRepository) SaveProviderQuotes(
+	ctx context.Context,
+	request Request,
+	quotes []ProviderQuote,
+) error {
+	if len(quotes) == 0 {
+		return nil
+	}
+	dimensionsJSON, err := json.Marshal(request.Dimensions)
+	if err != nil {
+		return fmt.Errorf("encode quote dimensions: %w", err)
+	}
+	fingerprint := providerRequestFingerprint(request)
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin provider quote snapshots: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	for _, quote := range quotes {
+		responseHash := providerQuoteHash(quote)
+		commandTag, err := tx.Exec(ctx, `
+			INSERT INTO rate_snapshots (
+				origin_location_id,
+				destination_location_id,
+				courier_code,
+				courier_name,
+				service_code,
+				service_name,
+				description,
+				requested_weight_grams,
+				requested_dimensions_json,
+				request_fingerprint,
+				returned_cost,
+				etd_min_days,
+				etd_max_days,
+				raw_response_hash,
+				provider_code,
+				verification_status,
+				source_type,
+				fetched_at,
+				expires_at
+			)
+			SELECT
+				origin.id,
+				destination.id,
+				$4,
+				$5,
+				$6,
+				$7,
+				$8,
+				$9,
+				$10::jsonb,
+				$11,
+				$12,
+				$13,
+				$14,
+				$15,
+				$16,
+				$17,
+				'provider_quote',
+				$18,
+				$19
+			FROM locations origin
+			CROSS JOIN locations destination
+			WHERE origin.public_id = $1
+			  AND destination.public_id = $2
+			  AND $3 <> ''
+		`,
+			request.Origin,
+			request.Destination,
+			quote.ProviderCode,
+			quote.CourierCode,
+			quote.CourierName,
+			quote.ServiceCode,
+			quote.ServiceName,
+			quote.Description,
+			request.ActualWeightGrams,
+			string(dimensionsJSON),
+			fingerprint,
+			quote.Cost,
+			quote.ETDMinDays,
+			quote.ETDMaxDays,
+			responseHash,
+			quote.ProviderCode,
+			quote.VerificationStatus,
+			quote.FetchedAt,
+			quote.ExpiresAt,
+		)
+		if err != nil {
+			return fmt.Errorf("insert provider quote snapshot: %w", err)
+		}
+		if commandTag.RowsAffected() != 1 {
+			return ErrProviderLocationMapping
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit provider quote snapshots: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) ConsumeProviderHit(
+	ctx context.Context,
+	providerCode string,
+	credentialAlias string,
+	dailyLimit int64,
+) error {
+	if dailyLimit <= 0 {
+		return ErrProviderQuotaExhausted
+	}
+	quotaDate, resetAt := providerQuotaWindow()
+
+	var usedCount int64
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO provider_quota_ledger (
+			provider_code,
+			credential_alias,
+			quota_date,
+			daily_limit,
+			used_count,
+			reset_at
+		)
+		VALUES ($1, $2, $3::date, $4, 1, $5)
+		ON CONFLICT (provider_code, credential_alias, quota_date) DO UPDATE
+		SET daily_limit = EXCLUDED.daily_limit,
+		    used_count = provider_quota_ledger.used_count + 1,
+		    reset_at = EXCLUDED.reset_at,
+		    updated_at = now()
+		WHERE provider_quota_ledger.used_count + provider_quota_ledger.reserved_count
+		      < EXCLUDED.daily_limit
+		RETURNING used_count
+	`, providerCode, credentialAlias, quotaDate, dailyLimit, resetAt).Scan(&usedCount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrProviderQuotaExhausted
+	}
+	if err != nil {
+		return fmt.Errorf("consume provider quota: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) MarkProviderQuotaExhausted(
+	ctx context.Context,
+	providerCode string,
+	credentialAlias string,
+	dailyLimit int64,
+) error {
+	if dailyLimit <= 0 {
+		return ErrProviderQuotaExhausted
+	}
+	quotaDate, resetAt := providerQuotaWindow()
+
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO provider_quota_ledger (
+			provider_code,
+			credential_alias,
+			quota_date,
+			daily_limit,
+			used_count,
+			reset_at
+		)
+		VALUES ($1, $2, $3::date, $4, $4, $5)
+		ON CONFLICT (provider_code, credential_alias, quota_date) DO UPDATE
+		SET daily_limit = EXCLUDED.daily_limit,
+		    used_count = GREATEST(
+				provider_quota_ledger.used_count,
+				EXCLUDED.daily_limit
+			),
+		    reserved_count = 0,
+		    reset_at = EXCLUDED.reset_at,
+		    updated_at = now()
+	`, providerCode, credentialAlias, quotaDate, dailyLimit, resetAt)
+	if err != nil {
+		return fmt.Errorf("mark provider quota exhausted: %w", err)
+	}
+	return nil
+}
+
+func providerQuotaWindow() (string, time.Time) {
+	jakarta := time.FixedZone("Asia/Jakarta", 7*60*60)
+	now := time.Now().In(jakarta)
+	quotaDate := now.Format("2006-01-02")
+	resetAt := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, jakarta)
+	return quotaDate, resetAt
+}
+
+func (r *PostgresRepository) RecordProviderAPICall(
+	ctx context.Context,
+	providerCode string,
+	credentialAlias string,
+	endpoint string,
+	requestFingerprint string,
+	httpStatus int,
+	outcome string,
+	duration time.Duration,
+	quotaCost int,
+	errorCode string,
+) error {
+	durationMillis := duration.Milliseconds()
+	if durationMillis < 0 {
+		durationMillis = 0
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO provider_api_calls (
+			provider_code,
+			credential_alias,
+			endpoint,
+			request_fingerprint,
+			http_status,
+			outcome,
+			duration_ms,
+			quota_cost,
+			error_code
+		)
+		VALUES ($1, $2, $3, $4, nullif($5, 0), $6, $7, $8, nullif($9, ''))
+	`,
+		providerCode,
+		credentialAlias,
+		endpoint,
+		requestFingerprint,
+		httpStatus,
+		outcome,
+		durationMillis,
+		quotaCost,
+		errorCode,
+	)
+	if err != nil {
+		return fmt.Errorf("record provider API call: %w", err)
+	}
+	return nil
+}
+
+func providerRequestFingerprint(request Request) string {
+	couriers := append([]string(nil), request.Couriers...)
+	sort.Strings(couriers)
+	payload := struct {
+		Origin            string
+		Destination       string
+		ActualWeightGrams int64
+		Couriers          []string
+		Dimensions        *Dimensions
+		ItemValue         int64
+	}{
+		Origin:            request.Origin,
+		Destination:       request.Destination,
+		ActualWeightGrams: request.ActualWeightGrams,
+		Couriers:          couriers,
+		Dimensions:        request.Dimensions,
+		ItemValue:         request.ItemValue,
+	}
+	encoded, _ := json.Marshal(payload)
+	hash := sha256.Sum256(encoded)
+	return hex.EncodeToString(hash[:])
+}
+
+func providerQuoteHash(quote ProviderQuote) string {
+	encoded, _ := json.Marshal(struct {
+		Provider string
+		Courier  string
+		Service  string
+		Cost     int64
+		ETDMin   *int
+		ETDMax   *int
+	}{
+		Provider: quote.ProviderCode,
+		Courier:  quote.CourierCode,
+		Service:  quote.ServiceCode,
+		Cost:     quote.Cost,
+		ETDMin:   quote.ETDMinDays,
+		ETDMax:   quote.ETDMaxDays,
+	})
+	hash := sha256.Sum256(encoded)
+	return hex.EncodeToString(hash[:])
+}

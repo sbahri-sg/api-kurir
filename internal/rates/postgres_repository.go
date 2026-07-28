@@ -1,0 +1,119 @@
+package rates
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type PostgresRepository struct {
+	pool *pgxpool.Pool
+}
+
+func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
+	return &PostgresRepository{pool: pool}
+}
+
+func (r *PostgresRepository) FindActiveRateCards(
+	ctx context.Context,
+	request Request,
+) ([]RateCard, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT ON (c.code, cs.code)
+			rc.id::text,
+			c.code,
+			c.name,
+			cs.code,
+			cs.name,
+			cs.service_type,
+			rc.pricing_model,
+			rc.currency,
+			rc.base_weight_grams,
+			rc.base_price,
+			rc.rate_per_increment,
+			rc.minimum_weight_grams,
+			rc.maximum_weight_grams,
+			rc.weight_increment_grams,
+			rc.volumetric_divisor,
+			rp.code,
+			rp.rounding_mode,
+			rp.increment_grams,
+			rp.threshold_grams,
+			rc.etd_min_days,
+			rc.etd_max_days,
+			rc.verification_status,
+			rc.source_provider,
+			coalesce(rc.source_reference, ''),
+			rc.effective_from,
+			rc.fetched_at,
+			rc.expires_at
+		FROM rate_cards rc
+		JOIN locations origin ON origin.id = rc.origin_location_id
+		JOIN locations destination ON destination.id = rc.destination_location_id
+		JOIN courier_services cs ON cs.id = rc.courier_service_id
+		JOIN couriers c ON c.id = cs.courier_id
+		JOIN rounding_profiles rp ON rp.id = rc.rounding_profile_id
+		WHERE origin.public_id = $1
+		  AND destination.public_id = $2
+		  AND c.code = ANY($3::text[])
+		  AND c.active
+		  AND cs.active
+		  AND rc.effective_from <= now()
+		  AND (rc.effective_until IS NULL OR rc.effective_until > now())
+		  AND (rc.expires_at IS NULL OR rc.expires_at > now())
+		  AND rc.verification_status <> 'deprecated'
+		  AND ($4 OR rc.verification_status <> 'needs_contract_confirmation')
+		ORDER BY c.code, cs.code, rc.effective_from DESC
+	`,
+		request.Origin,
+		request.Destination,
+		request.Couriers,
+		request.IncludeUnverified,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query active rate cards: %w", err)
+	}
+	defer rows.Close()
+
+	cards := make([]RateCard, 0)
+	for rows.Next() {
+		var card RateCard
+		if err := rows.Scan(
+			&card.ID,
+			&card.CourierCode,
+			&card.CourierName,
+			&card.ServiceCode,
+			&card.ServiceName,
+			&card.ServiceType,
+			&card.PricingModel,
+			&card.Currency,
+			&card.BaseWeightGrams,
+			&card.BasePrice,
+			&card.RatePerIncrement,
+			&card.MinimumWeightGrams,
+			&card.MaximumWeightGrams,
+			&card.WeightIncrementGrams,
+			&card.VolumetricDivisor,
+			&card.RoundingProfileCode,
+			&card.RoundingMode,
+			&card.RoundingIncrementGrams,
+			&card.RoundingThresholdGrams,
+			&card.ETDMinDays,
+			&card.ETDMaxDays,
+			&card.VerificationStatus,
+			&card.SourceProvider,
+			&card.SourceReference,
+			&card.EffectiveFrom,
+			&card.FetchedAt,
+			&card.ExpiresAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan active rate card: %w", err)
+		}
+		cards = append(cards, card)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active rate cards: %w", err)
+	}
+	return cards, nil
+}

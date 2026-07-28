@@ -1,0 +1,7 @@
+.git
+.env
+.DS_Store
+node_modules
+apps/dashboard/node_modules
+apps/dashboard/dist
+coverage.out

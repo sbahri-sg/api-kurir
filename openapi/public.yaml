@@ -1,0 +1,1416 @@
+openapi: 3.1.0
+info:
+  title: API Kurir
+  version: 0.9.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: >
+    API ongkir internal Emisell dengan bentuk yang familier seperti
+    RajaOngkir. Uang menggunakan integer rupiah dan berat menggunakan gram.
+servers:
+  - url: /
+    description: Host API Kurir aktif
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+    description: Liveness dan readiness service
+  - name: Locations
+    description: Master lokasi internal
+  - name: Couriers
+    description: Kurir serta layanan aktif
+  - name: Rates
+    description: Kalkulasi ongkir domestik
+  - name: Tracking
+    description: Snapshot dan antrean tracking resi
+  - name: Admin
+    description: Operasional dashboard dengan admin API key terpisah
+
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      operationId: healthLive
+      summary: Memeriksa proses API
+      security: []
+      responses:
+        "200":
+          description: Proses aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "4XX":
+          description: Request health tidak dapat diproses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /health/ready:
+    get:
+      tags: [Health]
+      operationId: healthReady
+      summary: Memeriksa kesiapan API dan PostgreSQL
+      security: []
+      responses:
+        "200":
+          description: API siap menerima traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: Dependency belum siap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "4XX":
+          description: Request health tidak dapat diproses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/destination/domestic-destination:
+    get:
+      tags: [Locations]
+      operationId: searchDomesticDestination
+      summary: Mencari master lokasi lokal
+      parameters:
+        - name: search
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+          example: Beji Depok
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Hasil pencarian
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationSearchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/couriers:
+    get:
+      tags: [Couriers]
+      operationId: listCouriers
+      summary: Mendapatkan kurir dan layanan aktif
+      responses:
+        "200":
+          description: Daftar kurir
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourierListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/calculate/domestic-cost:
+    post:
+      tags: [Rates]
+      operationId: calculateDomesticCost
+      summary: Menghitung ongkir dari rate card lokal atau exact provider quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalculateCostRequest"
+            example:
+              origin: loc_id_3273010
+              destination: loc_id_3276010
+              weight: 10800
+              courier: jne:tiki:sicepat
+              dimensions:
+                length: 40
+                width: 30
+                height: 25
+                unit: cm
+              item_value: 1500000
+              options:
+                include_insurance: false
+                include_unverified: false
+      responses:
+        "200":
+          description: Pilihan layanan dan biaya
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalculateCostResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Tarif belum tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Provider gagal atau menolak credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Kuota provider habis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/track/waybill:
+    post:
+      tags: [Tracking]
+      operationId: trackWaybill
+      summary: Membaca snapshot atau mengantrikan refresh resi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingRequest"
+      responses:
+        "200":
+          description: Snapshot tracking tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingResponse"
+        "202":
+          description: Refresh tracking diantrikan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Courier belum didukung adapter aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Tracking belum dikonfigurasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/overview:
+    get:
+      tags: [Admin]
+      operationId: adminOverview
+      summary: Membaca metrik operasional
+      security:
+        - adminBearerAuth: []
+      responses:
+        "200":
+          description: Ringkasan dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOverviewResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/catalog:
+    get:
+      tags: [Admin]
+      operationId: adminCatalog
+      summary: Membaca kurir, layanan, dan rounding profile
+      security:
+        - adminBearerAuth: []
+      responses:
+        "200":
+          description: Katalog form admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminObjectResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/locations:
+    get:
+      tags: [Admin]
+      operationId: adminSearchLocations
+      summary: Mencari lokasi untuk form admin
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Hasil pencarian lokasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationSearchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/couriers:
+    get:
+      tags: [Admin]
+      operationId: adminListCouriers
+      summary: Membaca kurir untuk alat cek ongkir dan resi admin
+      security:
+        - adminBearerAuth: []
+      responses:
+        "200":
+          description: Daftar kurir dan layanan aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourierListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/calculate/domestic-cost:
+    post:
+      tags: [Admin]
+      operationId: adminCalculateDomesticCost
+      summary: Menjalankan cek ongkir dari dashboard admin
+      description: >
+        Menggunakan rate engine, snapshot, mapping lazy, dan provider resolver
+        yang sama dengan endpoint customer.
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalculateCostRequest"
+      responses:
+        "200":
+          description: Tarif ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalculateCostResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Tarif atau mapping belum tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Kuota provider habis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/track/waybill:
+    post:
+      tags: [Admin]
+      operationId: adminTrackWaybill
+      summary: Menjalankan cek resi dari dashboard admin
+      description: >
+        Membaca snapshot tracking atau mengantrikan refresh melalui durable
+        worker yang sama dengan endpoint customer.
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingRequest"
+      responses:
+        "200":
+          description: Snapshot tracking tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingResponse"
+        "202":
+          description: Refresh tracking sudah diantrikan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Tracking belum dikonfigurasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/rate-snapshots:
+    get:
+      tags: [Admin]
+      operationId: adminListRateSnapshots
+      summary: Membaca snapshot tarif yang tersimpan otomatis dari provider
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Daftar snapshot tarif provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/admin/location-mappings:
+    get:
+      tags: [Admin]
+      operationId: adminListLocationMappings
+      summary: Membaca mapping lokasi provider
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - name: provider
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Daftar mapping lokasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/admin/provider-quotas:
+    get:
+      tags: [Admin]
+      operationId: adminListProviderQuotas
+      summary: Membaca ledger kuota tanpa mengekspos key
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+      responses:
+        "200":
+          description: Riwayat pemakaian kuota
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminObjectResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/provider-credentials:
+    get:
+      tags: [Admin]
+      operationId: adminListProviderCredentials
+      summary: Membaca credential provider tanpa secret
+      security:
+        - adminBearerAuth: []
+      responses:
+        "200":
+          description: Daftar metadata credential provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderCredentialListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Admin]
+      operationId: adminAddProviderCredential
+      summary: Memvalidasi dan menyimpan API key provider
+      description: >
+        Key divalidasi ke provider, dienkripsi AES-256-GCM, dan langsung
+        tersedia untuk resolver runtime tanpa restart API.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AdminActor"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProviderCredentialRequest"
+      responses:
+        "201":
+          description: Credential valid dan aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderCredentialResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Credential sudah tersimpan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Key ditolak oleh provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/provider-credentials/{id}/disable:
+    post:
+      tags: [Admin]
+      operationId: adminDisableProviderCredential
+      summary: Menonaktifkan credential provider
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/AdminActor"
+      responses:
+        "204":
+          description: Credential dinonaktifkan
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Credential tidak ditemukan atau sudah nonaktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/api-keys:
+    get:
+      tags: [Admin]
+      operationId: adminListCustomerAPIKeys
+      summary: Membaca metadata customer API key
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Daftar key tanpa secret dan hash
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerAPIKeyListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Admin]
+      operationId: adminGenerateCustomerAPIKey
+      summary: Membuat customer API key
+      description: >
+        Secret lengkap hanya dikembalikan pada response pembuatan ini.
+        Database hanya menyimpan hash SHA-256. Key dibuat tanpa nama,
+        tidak kedaluwarsa, dan aktif sampai di-revoke.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AdminActor"
+      responses:
+        "201":
+          description: Key berhasil dibuat; secret wajib disimpan sekarang
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedCustomerAPIKeyResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/api-keys/{id}/revoke:
+    post:
+      tags: [Admin]
+      operationId: adminRevokeCustomerAPIKey
+      summary: Mencabut akses satu customer API key
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/AdminActor"
+      responses:
+        "204":
+          description: Key berhasil dicabut
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Key tidak ditemukan atau sudah dicabut
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+    adminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Admin API key
+
+  parameters:
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    ResourceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AdminActor:
+      name: X-Admin-Actor
+      in: header
+      schema:
+        type: string
+        maxLength: 64
+
+  responses:
+    InvalidRequest:
+      description: Payload atau parameter tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: API key tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          examples: [ready]
+
+    Location:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        province:
+          type: string
+        city:
+          type: string
+        district:
+          type: string
+        subdistrict:
+          type: string
+        postal_code:
+          type: string
+          description: Kode pos utama yang terverifikasi dari provider
+          pattern: "^[0-9]{5}$"
+        postal_codes:
+          type: array
+          description: Semua kode pos aktif yang terhubung dengan lokasi
+          items:
+            type: string
+            pattern: "^[0-9]{5}$"
+
+    LocationSearchResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          type: object
+          required: [request_id]
+          properties:
+            request_id:
+              type: string
+            next_cursor:
+              type: [string, "null"]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Location"
+
+    CourierService:
+      type: object
+      required: [code, name, service_type, calculation_mode]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        service_type:
+          type: string
+          enum: [parcel, cargo, same_day, instant, international]
+        calculation_mode:
+          type: string
+          enum: [local_rate_card, provider_quote]
+
+    Courier:
+      type: object
+      required:
+        - code
+        - name
+        - provider_code
+        - supports_domestic_cost
+        - supports_international_cost
+        - supports_tracking
+        - catalog_source
+        - catalog_verified_at
+        - services
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        provider_code:
+          type: string
+        supports_domestic_cost:
+          type: boolean
+        supports_international_cost:
+          type: boolean
+        supports_tracking:
+          type: boolean
+        catalog_source:
+          type: string
+          format: uri
+        catalog_verified_at:
+          type: string
+          format: date
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/CourierService"
+
+    CourierListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Courier"
+
+    CalculateCostRequest:
+      type: object
+      additionalProperties: false
+      required: [origin, destination, weight, courier]
+      properties:
+        origin:
+          type: string
+        destination:
+          type: string
+        weight:
+          type: integer
+          minimum: 1
+          maximum: 100000000
+          description: Berat aktual dalam gram
+        courier:
+          type: string
+          pattern: "^[a-zA-Z0-9_-]+(:[a-zA-Z0-9_-]+)*$"
+        dimensions:
+          $ref: "#/components/schemas/Dimensions"
+        item_value:
+          type: integer
+          minimum: 0
+        options:
+          $ref: "#/components/schemas/CalculateOptions"
+
+    Dimensions:
+      type: object
+      additionalProperties: false
+      required: [length, width, height, unit]
+      properties:
+        length:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        width:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        height:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        unit:
+          type: string
+          const: cm
+
+    CalculateOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        include_insurance:
+          type: boolean
+          default: false
+        include_unverified:
+          type: boolean
+          default: false
+
+    CalculateCostResponse:
+      type: object
+      required: [meta, data, warnings]
+      properties:
+        meta:
+          type: object
+          required: [request_id, calculated_at, currency]
+          properties:
+            request_id:
+              type: string
+            calculated_at:
+              type: string
+              format: date-time
+            currency:
+              type: string
+              const: IDR
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RateResult"
+        warnings:
+          type: array
+          items:
+            type: string
+
+    RateResult:
+      type: object
+      required: [courier, service, cost, etd, weight, breakdown, source]
+      properties:
+        courier:
+          type: object
+          required: [code, name]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+        service:
+          type: object
+          required: [code, name, type]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            type:
+              type: string
+        cost:
+          type: integer
+          minimum: 0
+        etd:
+          type: object
+          required: [text]
+          properties:
+            min_days:
+              type: [integer, "null"]
+            max_days:
+              type: [integer, "null"]
+            text:
+              type: string
+        weight:
+          $ref: "#/components/schemas/WeightBreakdown"
+        breakdown:
+          $ref: "#/components/schemas/CostBreakdown"
+        source:
+          $ref: "#/components/schemas/RateSource"
+
+    WeightBreakdown:
+      type: object
+      required:
+        - actual_grams
+        - volumetric_grams
+        - chargeable_grams
+        - rounded_grams
+        - billing_grams
+        - minimum_grams
+        - rounding_profile
+      properties:
+        actual_grams:
+          type: integer
+        volumetric_grams:
+          type: integer
+        chargeable_grams:
+          type: integer
+        rounded_grams:
+          type: integer
+        billing_grams:
+          type: integer
+        minimum_grams:
+          type: integer
+        rounding_profile:
+          type: string
+
+    CostBreakdown:
+      type: object
+      required: [shipping, surcharge, insurance, tax, total]
+      properties:
+        shipping:
+          type: integer
+        surcharge:
+          type: integer
+        insurance:
+          type: integer
+        tax:
+          type: integer
+        total:
+          type: integer
+
+    RateSource:
+      type: object
+      required:
+        - type
+        - provider
+        - verification_status
+        - effective_from
+        - fetched_at
+        - is_stale
+      properties:
+        type:
+          type: string
+          enum: [local_rate_card, provider_quote]
+        provider:
+          type: string
+        verification_status:
+          type: string
+        effective_from:
+          type: string
+          format: date
+        fetched_at:
+          type: string
+          format: date-time
+        is_stale:
+          type: boolean
+
+    TrackingRequest:
+      type: object
+      additionalProperties: false
+      required: [waybill, courier]
+      properties:
+        waybill:
+          type: string
+          minLength: 6
+          maxLength: 40
+          pattern: "^[A-Za-z0-9-]+$"
+        courier:
+          type: string
+          enum: [jne, sap, ninja, jnt, tiki, wahana, pos, lion]
+        last_phone_number:
+          type: string
+          pattern: "^[0-9]{5}$"
+          description: >
+            Konteks provider opsional untuk kompatibilitas. Dashboard tidak
+            memintanya. Jika dikirim, nilainya dienkripsi dan tidak
+            dikembalikan pada response.
+        refresh:
+          type: string
+          const: if_stale
+          default: if_stale
+
+    TrackingEvent:
+      type: object
+      required: [code, description, occurred_at]
+      properties:
+        code:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+
+    TrackingShipment:
+      type: object
+      required:
+        - courier
+        - waybill
+        - status
+        - status_label
+        - summary
+        - events
+        - provider
+        - is_final
+        - refresh_queued
+      properties:
+        courier:
+          type: string
+        waybill:
+          type: string
+          description: Nomor resi yang sudah dimasking
+        status:
+          type: string
+          enum:
+            - pending_pickup
+            - picked_up
+            - in_transit
+            - out_for_delivery
+            - delivered
+            - delivery_failed
+            - returned
+            - cancelled
+            - unknown
+        status_label:
+          type: string
+        summary:
+          type: object
+          additionalProperties: true
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackingEvent"
+        provider:
+          type: string
+        provider_fetched_at:
+          type: [string, "null"]
+          format: date-time
+        next_refresh_at:
+          type: [string, "null"]
+          format: date-time
+        is_final:
+          type: boolean
+        refresh_queued:
+          type: boolean
+
+    TrackingResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TrackingShipment"
+
+    RequestMeta:
+      type: object
+      required: [request_id]
+      properties:
+        request_id:
+          type: string
+
+    AdminOverview:
+      type: object
+      required:
+        - active_rate_cards
+        - official_locations
+        - location_mappings
+        - fresh_quote_snapshots
+        - quota_used_today
+        - quota_limit_today
+        - tracking_pending_jobs
+        - tracking_shipments
+      properties:
+        active_rate_cards:
+          type: integer
+          deprecated: true
+          description: Kompatibilitas skema lama; dashboard tidak menggunakannya.
+        official_locations:
+          type: integer
+          description: Jumlah master wilayah aktif dari dataset lokal resmi.
+        location_mappings:
+          type: integer
+        fresh_quote_snapshots:
+          type: integer
+        quota_used_today:
+          type: integer
+        quota_limit_today:
+          type: integer
+        tracking_pending_jobs:
+          type: integer
+        tracking_shipments:
+          type: integer
+
+    AdminOverviewResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/AdminOverview"
+
+    AdminObjectResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+              items: {}
+
+    AdminListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/RequestMeta"
+            - type: object
+              properties:
+                limit:
+                  type: integer
+                offset:
+                  type: integer
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    CustomerAPIKey:
+      type: object
+      required:
+        - id
+        - key_prefix
+        - key_last_four
+        - display_key
+        - scopes
+        - active
+        - created_by
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        key_prefix:
+          type: string
+          description: Prefix aman untuk mengenali key.
+        key_last_four:
+          type: string
+          minLength: 4
+          maxLength: 4
+        display_key:
+          type: string
+          description: Bentuk termasking; bukan secret yang dapat dipakai.
+        scopes:
+          type: array
+          items:
+            type: string
+            enum: ["shipping:read", "tracking:read"]
+        active:
+          type: boolean
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        revoked_by:
+          type: [string, "null"]
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+
+    ProviderCredential:
+      type: object
+      required:
+        - id
+        - provider_code
+        - credential_alias
+        - display_key
+        - daily_limit
+        - active
+        - validation_status
+        - last_validated_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider_code:
+          type: string
+          enum: [rajaongkir]
+        credential_alias:
+          type: string
+        display_key:
+          type: string
+          description: Bentuk termasking; secret asli tidak dikembalikan.
+        daily_limit:
+          type: integer
+        active:
+          type: boolean
+        validation_status:
+          type: string
+          enum: [valid, invalid]
+        last_validated_at:
+          type: string
+          format: date-time
+        last_selected_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        disabled_at:
+          type: [string, "null"]
+          format: date-time
+
+    CreateProviderCredentialRequest:
+      type: object
+      additionalProperties: false
+      required: [provider_code, api_key]
+      properties:
+        provider_code:
+          type: string
+          enum: [rajaongkir]
+        api_key:
+          type: string
+          minLength: 8
+          maxLength: 512
+          writeOnly: true
+
+    ProviderCredentialResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/ProviderCredential"
+
+    ProviderCredentialListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderCredential"
+
+    CustomerAPIKeyListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/RequestMeta"
+            - type: object
+              properties:
+                limit:
+                  type: integer
+                offset:
+                  type: integer
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerAPIKey"
+
+    GeneratedCustomerAPIKey:
+      type: object
+      required: [api_key, secret]
+      properties:
+        api_key:
+          $ref: "#/components/schemas/CustomerAPIKey"
+        secret:
+          type: string
+          description: Secret sekali tampil dengan prefix ek_live_.
+          pattern: "^ek_live_[A-Za-z0-9_-]{43}$"
+
+    GeneratedCustomerAPIKeyResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/GeneratedCustomerAPIKey"
+
+    AdminRateCardInput:
+      type: object
+      additionalProperties: false
+      required:
+        - origin_public_id
+        - destination_public_id
+        - courier_code
+        - service_code
+        - pricing_model
+        - base_weight_grams
+        - base_price
+        - rate_per_increment
+        - minimum_weight_grams
+        - weight_increment_grams
+        - rounding_profile_code
+        - verification_status
+        - source_provider
+      properties:
+        origin_public_id:
+          type: string
+        destination_public_id:
+          type: string
+        courier_code:
+          type: string
+        service_code:
+          type: string
+        pricing_model:
+          type: string
+          enum: [flat, per_kg, base_plus_increment, minimum_then_per_kg]
+        base_weight_grams:
+          type: integer
+          minimum: 0
+        base_price:
+          type: integer
+          minimum: 0
+        rate_per_increment:
+          type: integer
+          minimum: 0
+        minimum_weight_grams:
+          type: integer
+          minimum: 0
+        maximum_weight_grams:
+          type: [integer, "null"]
+        weight_increment_grams:
+          type: integer
+          minimum: 1
+        volumetric_divisor:
+          type: [integer, "null"]
+        rounding_profile_code:
+          type: string
+        etd_min_days:
+          type: [integer, "null"]
+        etd_max_days:
+          type: [integer, "null"]
+        verification_status:
+          type: string
+          enum:
+            - official_public
+            - official_contract
+            - observed
+            - needs_contract_confirmation
+        source_provider:
+          type: string
+        source_reference:
+          type: string
+        effective_from:
+          type: string
+          format: date-time
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+
+    AdminLocationMappingInput:
+      type: object
+      additionalProperties: false
+      required:
+        - location_public_id
+        - provider_code
+        - provider_location_id
+        - granularity
+      properties:
+        location_public_id:
+          type: string
+        provider_code:
+          type: string
+        provider_location_id:
+          type: string
+        provider_location_name:
+          type: string
+        granularity:
+          type: string
+          enum: [province, city, district, subdistrict]
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
+            details:
+              type: [object, "null"]
+              additionalProperties: true

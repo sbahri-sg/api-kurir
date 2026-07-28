@@ -1,0 +1,630 @@
+{
+  "info": {
+    "_postman_id": "4b8ac7bb-fbd1-4b02-9c39-45a9c368cc71",
+    "name": "API Kurir · Emisell",
+    "description": "Collection resmi untuk API Kurir. Workflow pencarian origin dan destination otomatis menyimpan ID lokasi ke environment sebelum cek ongkir.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_key}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/live",
+              "host": ["{{base_url}}"],
+              "path": ["health", "live"]
+            },
+            "description": "Memastikan proses API sedang berjalan."
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/ready",
+              "host": ["{{base_url}}"],
+              "path": ["health", "ready"]
+            },
+            "description": "Memastikan API dan PostgreSQL siap menerima traffic."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1. Locations",
+      "description": "Jalankan dua request ini terlebih dahulu. Test script otomatis menyimpan origin_id dan destination_id ke environment.",
+      "item": [
+        {
+          "name": "Search Origin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data[0]) {",
+                  "  pm.environment.set('origin_id', payload.data[0].id);",
+                  "  console.log('origin_id tersimpan:', payload.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/destination/domestic-destination?search={{origin_search}}&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "destination", "domestic-destination"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{origin_search}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Mencari origin dan menyimpan ID hasil pertama ke origin_id."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Destination",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data[0]) {",
+                  "  pm.environment.set('destination_id', payload.data[0].id);",
+                  "  console.log('destination_id tersimpan:', payload.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/destination/domestic-destination?search={{destination_search}}&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "destination", "domestic-destination"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{destination_search}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Mencari destination dan menyimpan ID hasil pertama ke destination_id."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Shipping Cost",
+      "item": [
+        {
+          "name": "List Couriers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/couriers",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "couriers"]
+            },
+            "description": "Membaca kurir dan layanan aktif."
+          },
+          "response": []
+        },
+        {
+          "name": "Calculate Domestic Cost",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Response berhasil atau tarif belum tersedia', function () {",
+                  "  pm.expect([200, 422]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": \"{{origin_id}}\",\n  \"destination\": \"{{destination_id}}\",\n  \"weight\": {{weight_grams}},\n  \"courier\": \"{{courier}}\",\n  \"dimensions\": {\n    \"length\": 30,\n    \"width\": 20,\n    \"height\": 15,\n    \"unit\": \"cm\"\n  },\n  \"item_value\": 250000,\n  \"options\": {\n    \"include_insurance\": false,\n    \"include_unverified\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/calculate/domestic-cost",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "calculate", "domestic-cost"]
+            },
+            "description": "Cek ongkir dengan ID lokasi yang otomatis diisi oleh request pencarian."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Tracking",
+      "item": [
+        {
+          "name": "Track Waybill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"waybill\": \"{{waybill}}\",\n  \"courier\": \"{{courier}}\",\n  \"refresh\": \"if_stale\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/track/waybill",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "track", "waybill"]
+            },
+            "description": "Cek resi cukup menggunakan nomor resi dan kode ekspedisi."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin · Operations & Security",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{admin_api_key}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/overview",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "overview"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Catalog",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/catalog",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "catalog"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Search Locations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/locations?search={{destination_search}}&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "locations"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{destination_search}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Operational Couriers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/couriers",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "couriers"]
+            },
+            "description": "Daftar kurir dan layanan untuk menu Cek Ongkir dan Cek Resi dashboard."
+          },
+          "response": []
+        },
+        {
+          "name": "Operational Shipping Cost",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-admin-rate-{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": \"{{origin_id}}\",\n  \"destination\": \"{{destination_id}}\",\n  \"weight\": {{weight_grams}},\n  \"courier\": \"{{courier}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/calculate/domestic-cost",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "calculate", "domestic-cost"]
+            },
+            "description": "Cek ongkir operasional memakai admin key dan rate engine yang sama dengan endpoint customer."
+          },
+          "response": []
+        },
+        {
+          "name": "Operational Track Waybill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"waybill\": \"{{waybill}}\",\n  \"courier\": \"{{courier}}\",\n  \"refresh\": \"if_stale\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/track/waybill",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "track", "waybill"]
+            },
+            "description": "Cek resi operasional cukup menggunakan nomor resi dan kode ekspedisi."
+          },
+          "response": []
+        },
+        {
+          "name": "Rate Snapshots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/rate-snapshots?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "rate-snapshots"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Location Mappings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/location-mappings?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "location-mappings"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Provider Quotas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/provider-quotas?limit=30",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "provider-quotas"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "30"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Provider Keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/provider-credentials",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "provider-credentials"]
+            },
+            "description": "Membaca metadata key provider yang sudah dimasking. Secret dan ciphertext tidak pernah dikembalikan."
+          },
+          "response": []
+        },
+        {
+          "name": "Add RajaOngkir Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Provider key berhasil divalidasi dan disimpan', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data.id) {",
+                  "  pm.environment.set('provider_credential_id', payload.data.id);",
+                  "}",
+                  "console.warn('Hapus Current Value rajaongkir_api_key dari Postman setelah request berhasil.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_code\": \"rajaongkir\",\n  \"api_key\": \"{{rajaongkir_api_key}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/provider-credentials",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "provider-credentials"]
+            },
+            "description": "Key diuji langsung ke RajaOngkir, dienkripsi AES-256-GCM, dan langsung masuk rotasi runtime. Validasi memakai satu hit provider."
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Provider Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/provider-credentials/{{provider_credential_id}}/disable",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "admin",
+                "provider-credentials",
+                "{{provider_credential_id}}",
+                "disable"
+              ]
+            },
+            "description": "Menonaktifkan satu key agar tidak lagi dipilih untuk cek tarif atau tracking."
+          },
+          "response": []
+        },
+        {
+          "name": "List Customer API Keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/api-keys?limit=100&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "api-keys"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Hanya metadata key yang dikembalikan; secret dan hash tidak pernah masuk response daftar."
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Customer API Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('API key berhasil dibuat', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data.api_key) {",
+                  "  pm.environment.set('customer_api_key_id', payload.data.api_key.id);",
+                  "}",
+                  "console.warn('Simpan secret dari response sekarang. Secret tidak disimpan otomatis ke environment.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/api-keys",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "api-keys"]
+            },
+            "description": "Tidak memerlukan body. Key dibuat tanpa nama dan tanpa masa berlaku. Secret lengkap hanya tampil pada response ini dan tidak disimpan otomatis."
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke Customer API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/api-keys/{{customer_api_key_id}}/revoke",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "admin",
+                "api-keys",
+                "{{customer_api_key_id}}",
+                "revoke"
+              ]
+            },
+            "description": "Mencabut key customer yang ID-nya tersimpan setelah request generate."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
