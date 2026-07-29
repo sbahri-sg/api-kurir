@@ -227,6 +227,27 @@ menggunakan nomor resi dan kode ekspedisi.
 9. [Integrasi RajaOngkir V2](docs/rajaongkir-integration.md)
 10. [Dashboard admin dan tracking](docs/admin-dashboard-and-tracking.md)
 11. [Operasional adapter tracking RajaOngkir](docs/rajaongkir-tracking.md)
+12. [Partner Integration Contract v1](docs/partner-api-v1.md)
+13. [Peta kontrak dan arah komunikasi](docs/api-surface-map.md)
+14. [Provider Account API v1](docs/provider-account-api-v1.md)
+15. [Partner Event Webhook v1](docs/partner-webhooks-v1.md)
+16. [Keamanan dan request signing](docs/security-and-signing.md)
+17. [Sertifikasi partner](docs/partner-certification.md)
+18. [Partner Portal dan publikasi extension](docs/partner-portal.md)
+
+OpenAPI partner contract-first tersedia di
+[`openapi/partner-v1.yaml`](openapi/partner-v1.yaml). Kontrak partner belum
+berarti endpoint booking/vendor telah aktif di production.
+
+OpenAPI untuk aktivasi dan lifecycle akun provider seller tersedia di
+[`openapi/provider-account-v1.yaml`](openapi/provider-account-v1.yaml).
+Spesifikasi ini juga masih contract-first dan belum menyatakan route runtime
+telah aktif.
+
+Onboarding partner baru memakai connector canonical yang disediakan dan
+dioperasikan partner. API Kurir tidak membuat adapter native per vendor.
+Integrasi RajaOngkir Shipping Cost yang sudah ada dipertahankan sebagai
+integrasi legacy untuk rate/tracking dan bukan pola onboarding Partner API.
 
 ## Prinsip implementasi
 

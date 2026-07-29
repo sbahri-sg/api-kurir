@@ -23,11 +23,10 @@ Shipping Domain Service
    +-- PostgreSQL
    +-- Queue / Worker
    |
-   +-- Karrio OSS
-          |-- RajaOngkir adapter
-          |-- JNE direct adapter
-          |-- J&T direct adapter
-          |-- Provider adapters berikutnya
+   +-- Legacy Provider Client (rate/tracking yang sudah berjalan)
+   |
+   +-- Partner Connector Client
+          |-- Partner-owned canonical API
 ```
 
 ## 2. Pembagian tanggung jawab
@@ -60,6 +59,10 @@ kontrak respons sendiri.
 Karrio OSS menyediakan server, SDK, tracking, dan carrier plugin. Fitur
 multi-tenancy bawaan Karrio berada pada Enterprise Edition, sehingga pada
 fondasi ini tenant isolation diletakkan di API Gateway/API Kurir.
+
+Karrio tidak menjadi pola onboarding Partner API. Jika tetap digunakan untuk
+integrasi legacy/direct carrier, scope-nya terpisah. Partner baru wajib
+menyediakan connector canonical dan menangani API native sendiri.
 
 ## 3. Komponen
 
@@ -121,6 +124,8 @@ provider_location_mappings
 - id
 - location_id
 - provider_code
+- product_code
+- environment
 - provider_location_id
 - provider_location_name
 - granularity
@@ -134,9 +139,10 @@ provider_location_mappings
 ```
 
 Identitas mapping adalah
-`provider_code + granularity + provider_location_id`. ID RajaOngkir dapat
-berulang pada level provinsi, kota, kecamatan, dan kelurahan sehingga
-`provider_code + provider_location_id` saja tidak cukup.
+`provider_code + product_code + environment + granularity +
+provider_location_id`. ID RajaOngkir dapat berbeda antara Shipping Cost dan
+Shipping Delivery serta dapat berulang pada level provinsi, kota, kecamatan,
+dan kelurahan. `provider_code + provider_location_id` saja tidak cukup.
 
 Master wilayah tidak dibentuk dari sinkronisasi provider. Data resmi lokal
 menyimpan `official_region_code` dan versi dataset pada
@@ -255,7 +261,50 @@ courier_code + normalized_waybill
 
 Keputusan tersebut harus mengikuti kontrak provider dan kebijakan data.
 
-## 6. Availability
+## 6. Partner gateway
+
+Gateway mempunyai empat permukaan dengan trust boundary berbeda:
+
+```text
+Emisell -> Public API -> API Kurir
+Seller/Admin -> Provider Account API -> API Kurir
+API Kurir -> Partner Connector API -> partner
+Partner -> Partner Event Webhook -> API Kurir
+```
+
+Provider baru terhubung melalui satu pola:
+
+```text
+API Kurir -> Partner Integration Contract v1 -> partner
+```
+
+Façade RajaOngkir berada pada sisi northbound untuk Emisell. Kontrak partner
+berada pada sisi southbound dan menggunakan model shipment canonical agar
+Emisell tidak bergantung pada KiriminAja, RajaOngkir, atau provider tertentu.
+
+Partner yang sudah mempunyai API native membuat translation layer pada
+infrastrukturnya sendiri. API Kurir tidak membuat adapter per vendor, tidak
+menyimpan token native vendor, dan tidak menerima webhook native carrier.
+
+Partner mengirim perubahan AWB/status ke satu webhook API Kurir. API Kurir
+menyimpan event dan outbox secara atomik, lalu meneruskannya ke Emisell secara
+asynchronous.
+
+Seller dapat mengaktifkan lebih dari satu provider account. Quote menyimpan
+`provider_account_id` dan connection ID sehingga hasil partner A tidak
+tertukar dengan booking partner B. Fallback provider hanya boleh terjadi
+sebelum booking berhasil.
+
+Rincian:
+
+- [Peta kontrak](api-surface-map.md);
+- [Provider Account API](provider-account-api-v1.md);
+- [Partner Integration Contract](partner-api-v1.md);
+- [Partner Event Webhook](partner-webhooks-v1.md);
+- [Keamanan dan signing](security-and-signing.md);
+- [Sertifikasi partner](partner-certification.md).
+
+## 7. Availability
 
 ### Deployment awal
 
@@ -282,7 +331,7 @@ ada di [Stack teknologi dan concurrency](technology-stack.md).
 - Gunakan exponential backoff dengan jitter.
 - Sediakan stale response dengan penanda `is_stale`.
 
-## 7. Observability
+## 8. Observability
 
 Metric minimum:
 

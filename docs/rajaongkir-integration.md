@@ -2,6 +2,11 @@
 
 ## 1. Scope
 
+Dokumen ini khusus implementasi **RajaOngkir Shipping Cost** yang sudah ada.
+Integrasi ini dipertahankan sebagai jalur legacy rate/tracking. Ini bukan pola
+onboarding partner baru. Partner baru wajib menyediakan Partner Connector API
+canonical dan mengelola API native serta credential downstream mereka sendiri.
+
 Integrasi fase ini mencakup:
 
 - cek ongkir domestik sebagai fallback rate miss;

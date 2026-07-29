@@ -1,0 +1,700 @@
+openapi: 3.1.0
+info:
+  title: API Kurir Provider Account API
+  version: 1.0.0-draft
+  description: >
+    Contract-first API untuk seller mengaktifkan, memvalidasi, merotasi, dan
+    mengatur routing koneksi Partner API canonical. Secret adalah connection
+    credential yang diterbitkan partner, bukan token API native partner.
+    Secret bersifat write-only dan tidak pernah dikembalikan oleh API.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+x-contract-status: draft
+x-owner: API Kurir / Emisell
+servers:
+  - url: /
+    description: Host API Kurir aktif
+security:
+  - customerBearerAuth: []
+tags:
+  - name: Provider Accounts
+    description: Lifecycle koneksi dan capability partner untuk seller
+  - name: Preferences
+    description: Prioritas routing, kurir, dan kelompok layanan
+  - name: Finance
+    description: Saldo dan payment inquiry bila didukung provider
+paths:
+  /v1/provider-accounts:
+    get:
+      tags: [Provider Accounts]
+      operationId: listProviderAccounts
+      summary: Daftar akun provider seller terautentikasi
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ProviderAccountStatus"
+        - name: provider_code
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Daftar akun provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderAccountListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Provider Accounts]
+      operationId: createProviderAccount
+      summary: Menambah koneksi Partner API canonical
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderAccountCreateRequest"
+      responses:
+        "202":
+          description: Credential diterima dan menunggu validasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderAccountResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /v1/provider-accounts/{provider_account_id}:
+    get:
+      tags: [Provider Accounts]
+      operationId: getProviderAccount
+      summary: Detail akun provider
+      parameters:
+        - $ref: "#/components/parameters/ProviderAccountID"
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Detail akun provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderAccountResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Provider Accounts]
+      operationId: disableProviderAccount
+      summary: Menonaktifkan akun untuk transaksi baru
+      parameters:
+        - $ref: "#/components/parameters/ProviderAccountID"
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          description: Akun dinonaktifkan atau menunggu pelepasan credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderAccountResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/provider-accounts/{provider_account_id}/validate:
+    post:
+      tags: [Provider Accounts]
+      operationId: validateProviderAccount
+      summary: Memvalidasi health dan capability Partner Connector
+      parameters:
+        - $ref: "#/components/parameters/ProviderAccountID"
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          description: Validasi dijadwalkan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderAccountResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/TemporarilyUnavailable"
+
+  /v1/provider-accounts/{provider_account_id}/rotate:
+    post:
+      tags: [Provider Accounts]
+      operationId: rotateProviderCredential
+      summary: Mengganti credential setelah secret baru tervalidasi
+      parameters:
+        - $ref: "#/components/parameters/ProviderAccountID"
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialRotateRequest"
+      responses:
+        "202":
+          description: Rotasi menunggu validasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderAccountResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/provider-accounts/{provider_account_id}/preferences:
+    put:
+      tags: [Preferences]
+      operationId: updateProviderPreferences
+      summary: Mengatur prioritas dan allowlist routing
+      parameters:
+        - $ref: "#/components/parameters/ProviderAccountID"
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderPreferences"
+      responses:
+        "200":
+          description: Preferensi diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderAccountResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /v1/provider-accounts/{provider_account_id}/balance:
+    get:
+      tags: [Finance]
+      operationId: getProviderBalance
+      summary: Membaca saldo provider jika capability aktif
+      parameters:
+        - $ref: "#/components/parameters/ProviderAccountID"
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Snapshot saldo provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/CapabilityUnavailable"
+        "503":
+          $ref: "#/components/responses/TemporarilyUnavailable"
+
+  /v1/provider-accounts/{provider_account_id}/payments/{payment_id}:
+    get:
+      tags: [Finance]
+      operationId: getProviderPayment
+      summary: Rekonsiliasi payment provider
+      parameters:
+        - $ref: "#/components/parameters/ProviderAccountID"
+        - $ref: "#/components/parameters/PaymentID"
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Detail payment provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/CapabilityUnavailable"
+
+components:
+  securitySchemes:
+    customerBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-256-bit
+      description: Customer/admin API key dengan seller context dan scope
+
+  parameters:
+    XRequestID:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+    ProviderAccountID:
+      name: provider_account_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^pva_[A-Za-z0-9_-]{8,124}$"
+    PaymentID:
+      name: payment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+  responses:
+    InvalidRequest:
+      description: Payload atau parameter tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: API key tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Principal tidak memiliki scope atau seller context
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Akun provider atau resource tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Idempotency conflict atau lifecycle tidak memungkinkan
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unprocessable:
+      description: Produk, environment, credential, atau preferensi tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    CapabilityUnavailable:
+      description: Capability tidak tersedia atau belum disertifikasi
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RateLimited:
+      description: Rate limit API Kurir atau provider tercapai
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TemporarilyUnavailable:
+      description: Provider sementara tidak tersedia
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    ProviderAccountStatus:
+      type: string
+      enum:
+        - pending_validation
+        - active
+        - invalid
+        - suspended
+        - disabled
+        - rotating
+
+    ProviderEnvironment:
+      type: string
+      enum: [sandbox, live]
+
+    CredentialType:
+      type: string
+      enum:
+        - partner_connection_token
+        - oauth_authorization_code
+        - signed_activation_code
+
+    CredentialInput:
+      type: object
+      writeOnly: true
+      description: >
+        Credential koneksi canonical yang diterbitkan partner. Token native
+        carrier atau aggregator tidak boleh dikirim pada field ini.
+      required: [type, secret]
+      additionalProperties: false
+      properties:
+        type:
+          $ref: "#/components/schemas/CredentialType"
+        secret:
+          type: string
+          writeOnly: true
+          minLength: 8
+          maxLength: 4096
+        client_id:
+          type: [string, "null"]
+          writeOnly: true
+          maxLength: 512
+
+    ProviderAccountCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - provider_code
+        - product_code
+        - environment
+        - account_alias
+        - credential
+      properties:
+        provider_code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{1,31}$"
+        product_code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{1,63}$"
+        environment:
+          $ref: "#/components/schemas/ProviderEnvironment"
+        account_alias:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{2,63}$"
+        credential:
+          $ref: "#/components/schemas/CredentialInput"
+
+    CredentialRotateRequest:
+      type: object
+      additionalProperties: false
+      required: [credential]
+      properties:
+        credential:
+          $ref: "#/components/schemas/CredentialInput"
+
+    ProviderCapability:
+      type: string
+      enum:
+        - rates
+        - domestic_rates
+        - international_rates
+        - external_tracking
+        - shipment_create
+        - shipment_cancel
+        - scheduled_pickup
+        - on_demand_pickup
+        - dropoff
+        - label
+        - batch_label
+        - tracking
+        - webhook
+        - cod
+        - insurance
+        - instant
+        - multi_package
+        - multi_destination
+        - balance
+        - payment_inquiry
+
+    ValidationState:
+      type: object
+      required: [status, last_checked_at, message]
+      properties:
+        status:
+          type: string
+          enum: [queued, running, valid, invalid, unavailable]
+        last_checked_at:
+          type: [string, "null"]
+          format: date-time
+        message:
+          type: [string, "null"]
+          maxLength: 500
+
+    RoutingPreferences:
+      type: object
+      required: [rates, shipment, tracking]
+      properties:
+        rates:
+          type: boolean
+        shipment:
+          type: boolean
+        tracking:
+          type: boolean
+
+    ProviderPreferences:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - priority
+        - courier_allowlist
+        - service_group_allowlist
+        - routing
+      properties:
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        courier_allowlist:
+          type: array
+          uniqueItems: true
+          maxItems: 100
+          items:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9_-]{1,31}$"
+        service_group_allowlist:
+          type: array
+          uniqueItems: true
+          maxItems: 20
+          items:
+            type: string
+            enum:
+              - regular
+              - economy
+              - cargo
+              - same_day
+              - next_day
+              - instant
+              - international
+        routing:
+          $ref: "#/components/schemas/RoutingPreferences"
+
+    ProviderAccount:
+      type: object
+      required:
+        - provider_account_id
+        - provider_code
+        - product_code
+        - environment
+        - account_alias
+        - status
+        - credential_mask
+        - capabilities
+        - validation
+        - preferences
+        - created_at
+        - updated_at
+      properties:
+        provider_account_id:
+          type: string
+        provider_code:
+          type: string
+        product_code:
+          type: string
+        environment:
+          $ref: "#/components/schemas/ProviderEnvironment"
+        account_alias:
+          type: string
+        status:
+          $ref: "#/components/schemas/ProviderAccountStatus"
+        credential_mask:
+          type: string
+          readOnly: true
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ProviderCapability"
+        validation:
+          $ref: "#/components/schemas/ValidationState"
+        preferences:
+          $ref: "#/components/schemas/ProviderPreferences"
+        quota:
+          oneOf:
+            - $ref: "#/components/schemas/QuotaSnapshot"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ProviderAccountResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProviderAccount"
+
+    ProviderAccountListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderAccount"
+
+    QuotaSnapshot:
+      type: object
+      required: [limit, used, remaining, resets_at]
+      properties:
+        limit:
+          type: [integer, "null"]
+          minimum: 0
+        used:
+          type: [integer, "null"]
+          minimum: 0
+        remaining:
+          type: [integer, "null"]
+          minimum: 0
+        resets_at:
+          type: [string, "null"]
+          format: date-time
+
+    BalanceResponse:
+      type: object
+      required:
+        - provider_account_id
+        - balance
+        - currency
+        - observed_at
+        - authoritative
+      properties:
+        provider_account_id:
+          type: string
+        balance:
+          type: integer
+        currency:
+          type: string
+          const: IDR
+        observed_at:
+          type: string
+          format: date-time
+        authoritative:
+          type: boolean
+
+    PaymentResponse:
+      type: object
+      required:
+        - provider_account_id
+        - payment_id
+        - status
+        - amount
+        - currency
+        - observed_at
+      properties:
+        provider_account_id:
+          type: string
+        payment_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, paid, failed, expired, refunded, unknown]
+        amount:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: IDR
+        qr_content:
+          type: [string, "null"]
+          writeOnly: false
+          description: Sensitif; hanya dikembalikan kepada principal seller berhak
+        paid_at:
+          type: [string, "null"]
+          format: date-time
+        observed_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable, request_id, details]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            retryable:
+              type: boolean
+            request_id:
+              type: string
+            details:
+              type: object
+              additionalProperties: true

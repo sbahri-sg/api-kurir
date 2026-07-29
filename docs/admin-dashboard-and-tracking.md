@@ -101,6 +101,20 @@ lain tetap mengikuti respons provider pada rute yang benar-benar dicek.
   bukan ketika pool database kehabisan kuota;
 - create dan disable dicatat pada audit log admin.
 
+Kontrak target multi-provider tidak memperluas endpoint admin lama dengan
+field arbitrary. Seller memakai Provider Account API terpisah:
+
+```text
+/v1/provider-accounts
+```
+
+Dashboard `Integrasi Provider` membedakan `provider_code`, `product_code`, dan
+`environment`. Credential yang dimasukkan adalah connection token canonical
+yang diterbitkan partner, bukan token API native partner/carrier. Secret tetap
+write-only, sedangkan UI hanya menampilkan mask, status validasi, capability,
+quota, serta waktu sync. Spesifikasi target berada di
+[Provider Account API v1](provider-account-api-v1.md).
+
 ### 3.2 Keamanan customer API key
 
 - secret memakai prefix `ek_live_` dan 32 byte acak dari CSPRNG;

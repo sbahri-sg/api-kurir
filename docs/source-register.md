@@ -20,17 +20,34 @@ wilayah, parent-child, kode baru/hilang, dan kode pos berubah.
 
 ## Platform dan aggregator
 
+Dokumentasi provider pada bagian ini dipakai untuk memahami fitur dan
+menyusun kontrak canonical. Pencantuman sumber tidak berarti API Kurir akan
+membuat adapter native. Untuk onboarding baru, provider wajib menyediakan
+Partner Connector API dan menangani API native mereka sendiri.
+
 | Subjek | Sumber | Dipakai untuk | Catatan |
 |---|---|---|---|
 | RajaOngkir | [Pricing](https://rajaongkir.com/pricing) | Paket dan batas hit yang ditampilkan | Verifikasi kembali saat kontrak dibuat |
 | RajaOngkir | [Terms & Conditions](https://rajaongkir.com/terms-condition) | Batas penggunaan, layanan serupa, redistribusi | Wajib izin tertulis untuk model bisnis ini |
 | RajaOngkir | [Calculate Cost](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-form-base-calculate-cost/calculate-cost) | Bentuk endpoint dan multi-courier | Respons quote bukan otomatis rate per kg |
 | RajaOngkir V2 | [Endpoint](https://www.rajaongkir.com/docs/shipping-cost/getting_started/endpoint) | Base URL serta path rate, destination, dan tracking | Base URL aktif `rajaongkir.komerce.id/api/v1` |
-| RajaOngkir V2 | [Authorization](https://rajaongkir.com/docs/shipping-cost/getting_started/apikey) | Header autentikasi `key` dan keamanan credential | Key hanya melalui environment/secret manager |
+| RajaOngkir V2 | [Authorization](https://rajaongkir.com/docs/shipping-cost/getting_started/apikey) | Header autentikasi `key` dan keamanan credential | Key disimpan terenkripsi melalui lifecycle credential atau secret manager fallback |
 | RajaOngkir V2 | [Calculate Domestic](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-search-base/calculate-domestic-cost) | Form origin, destination, weight, courier; struktur quote | Endpoint publik tidak mendokumentasikan formula rate per kg |
 | RajaOngkir V2 | [Search Destination](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-search-base/search-destination-rajaongkir) | Import lokasi on-demand dan provider ID | Tidak dipanggil saat customer mengetik |
 | RajaOngkir V2 | [Courier Availability](https://www.rajaongkir.com/docs/shipping-cost/getting_started/courier_availability) | Kode dan capability kurir | Capability dapat berubah; sinkronkan berkala secara terkontrol |
 | RajaOngkir V2 | [Tracking AWB](https://www.rajaongkir.com/docs/shipping-cost/tracking) | Parameter AWB, courier, validasi nomor telepon, struktur summary/manifest | Dipanggil sinkron saat snapshot miss/stale atau oleh worker; raw response tidak disimpan |
+| RajaOngkir Shipping Delivery | [Endpoint](https://rajaongkir.com/docs/delivery-order-api/getting_started/base-url), [Authorization](https://www.rajaongkir.com/docs/delivery-order-api/getting_started/api-key) | Pemisahan sandbox/live, produk, key, rate, order, pickup, cancel, detail, history, label, webhook | Produk/key berbeda dari Shipping Cost dan memerlukan Enterprise/live approval |
+| RajaOngkir Shipping Delivery | [Calculate](https://www.rajaongkir.com/docs/delivery-order-api/calculate), [Store Order](https://rajaongkir.com/docs/delivery-order-api/Store_order/store_order) | Rate booking regular/cargo/instant, pinpoint, order, COD/Bank Transfer | Quote Delivery dikunci; tidak memakai harga Shipping Cost untuk booking |
+| RajaOngkir Shipping Delivery | [Pickup](https://rajaongkir.com/docs/delivery-order-api/pickup_order), [Label](https://www.rajaongkir.com/docs/delivery-order-api/label_order) | Pickup batch parsial, AWB, label bulk dan layout | Retry per item; PDF/base64 tidak dicatat ke log |
+| RajaOngkir Shipping Delivery | [History AWB](https://www.rajaongkir.com/docs/delivery-order-api/history_awb), [Webhook](https://www.rajaongkir.com/docs/delivery-order-api/webhook) | Timeline order dan notifikasi status | Webhook publik belum mendokumentasikan HMAC/delivery ID; wajib rekonsiliasi |
+| RajaOngkir Shipping Delivery | [GoSend pricing](https://www.rajaongkir.com/docs/delivery-order-api/Store_order/gosend_pricing) | Dynamic pricing instant dan koreksi biaya | Simpan quoted/booked/actual cost terpisah |
+| KiriminAja | [Mitra API](https://developer.kiriminaja.com/docs/introduction) | Referensi rate, order, pickup, cancel, tracking, COD, dan sandbox | Referensi capability; onboarding tetap melalui connector canonical milik partner |
+| KiriminAja | [Webhook Express](https://developer.kiriminaja.com/docs/webhook/event) | Event AWB/status, Bearer callback, dedup AWB + order ID | Belum mendokumentasikan HMAC/timestamp/nonce; perlu compensating controls |
+| KiriminAja | [Pricing Express](https://developer.kiriminaja.com/docs/pricing/express), [Courier Detail](https://developer.kiriminaja.com/docs/others/courier-detail) | Cost, COD/asuransi, discount, group, cut-off, volumetric, rounding | Metadata disinkronkan; harga authoritative tetap quote |
+| KiriminAja | [Instant Order](https://developer.kiriminaja.com/docs/order/instant), [Instant Tracking](https://developer.kiriminaja.com/docs/order/tracking-instant), [Instant Webhook](https://developer.kiriminaja.com/docs/webhook/event-instant) | GoSend/Grab/Borzo, koordinat, vehicle, driver, live tracking | Webhook utama; pull tracking fallback |
+| KiriminAja | [Payment](https://developer.kiriminaja.com/docs/payment), [KA Credit](https://developer.kiriminaja.com/docs/payment/ka-credit), [PIN](https://developer.kiriminaja.com/docs/payment/pin-validation) | QRIS inquiry, saldo, PIN, status payment | PIN write-only dan tidak pernah disimpan |
+| KiriminAja | [Status Mapping](https://developer.kiriminaja.com/docs/important-notes/status-mapping) | Attempt, problem, return, lost, damaged, final state | Simpan raw code dan canonical status |
+| KiriminAja | [Syarat dan ketentuan](https://kiriminaja.com/syarat-ketentuan), [kebijakan privasi](https://kiriminaja.com/privacy-policy) | Akun, tanggung jawab pengiriman, penggunaan data, dan retensi | Kontrak komersial/DPA wajib sebelum data merchant production diproses |
 | Karrio | [Repository resmi](https://github.com/karrioapi/karrio) | Orkestrasi carrier, lisensi core | Multi-tenancy tetap tanggung jawab API Kurir |
 
 ## Framework dan infrastruktur

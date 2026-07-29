@@ -1,0 +1,1947 @@
+openapi: 3.1.0
+info:
+  title: API Kurir Partner Integration Contract
+  version: 1.0.0-draft
+  description: >
+    Contract-first southbound API untuk ekspedisi, aggregator, dan penyedia
+    last-mile yang terhubung ke Emisell melalui API Kurir. Paths adalah
+    endpoint yang wajib disediakan partner. Bagian webhooks adalah event yang
+    dikirim partner ke callback API Kurir. Dokumen ini belum menyatakan bahwa
+    endpoint telah aktif di production.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+x-contract-status: draft
+x-owner: API Kurir / Emisell
+servers:
+  - url: https://{partnerHost}/partner/v1
+    description: Partner Connector API
+    variables:
+      partnerHost:
+        default: sandbox.partner.example
+        description: Host sandbox atau production milik partner
+security:
+  - partnerBearerAuth: []
+    partnerKeyId: []
+tags:
+  - name: Health
+    description: Kesiapan teknis connector tanpa membuat transaksi
+  - name: Capabilities
+    description: Capability dan katalog layanan yang telah disertifikasi
+  - name: Rates
+    description: Coverage serta quote tarif yang mengikat payload shipment
+  - name: Shipments
+    description: Booking, rekonsiliasi, pembatalan, dan label shipment
+  - name: Pickups
+    description: Penjadwalan pengambilan satu atau beberapa shipment
+  - name: Tracking
+    description: Tracking AWB eksternal jika capability partner tersedia
+  - name: Finance
+    description: Saldo dan payment inquiry opsional milik account partner
+  - name: Events
+    description: Webhook perubahan AWB dan status dari partner ke API Kurir
+paths:
+  /health:
+    get:
+      tags: [Health]
+      operationId: partnerHealth
+      summary: Memeriksa kesiapan connector
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Connector siap
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/TemporarilyUnavailable"
+
+  /capabilities:
+    get:
+      tags: [Capabilities]
+      operationId: getPartnerCapabilities
+      summary: Membaca capability partner
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Capability connector
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilitiesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /services:
+    get:
+      tags: [Capabilities]
+      operationId: listPartnerServices
+      summary: Membaca daftar layanan partner
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Daftar layanan aktif
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /rates:
+    post:
+      tags: [Rates]
+      operationId: getPartnerRates
+      summary: Mengambil quote tarif partner
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RatesRequest"
+      responses:
+        "200":
+          description: Quote tersedia
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RatesResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/TemporarilyUnavailable"
+
+  /shipments:
+    post:
+      tags: [Shipments]
+      operationId: createPartnerShipment
+      summary: Membuat booking shipment
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentCreateRequest"
+      responses:
+        "201":
+          description: Shipment dibuat atau menunggu booking carrier
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShipmentResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/TemporarilyUnavailable"
+        "504":
+          $ref: "#/components/responses/ProviderTimeout"
+
+  /shipments/{partner_shipment_id}:
+    get:
+      tags: [Shipments]
+      operationId: getPartnerShipment
+      summary: Rekonsiliasi detail shipment
+      parameters:
+        - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Detail shipment
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShipmentDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /shipments/{partner_shipment_id}/cancel:
+    post:
+      tags: [Shipments]
+      operationId: cancelPartnerShipment
+      summary: Meminta pembatalan shipment
+      parameters:
+        - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelRequest"
+      responses:
+        "202":
+          description: Pembatalan diterima dan dapat masih menunggu carrier
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /shipments/{partner_shipment_id}/label:
+    get:
+      tags: [Shipments]
+      operationId: getPartnerShipmentLabel
+      summary: Mengambil label shipment
+      parameters:
+        - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/XRequestID"
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pdf, json]
+            default: pdf
+      responses:
+        "200":
+          description: PDF atau URL label sementara
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pickups:
+    post:
+      tags: [Pickups]
+      operationId: createPartnerPickup
+      summary: Meminta pickup satu atau beberapa shipment
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PickupRequest"
+      responses:
+        "201":
+          description: Pickup dibuat
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PickupResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /pickup-windows/search:
+    post:
+      tags: [Pickups]
+      operationId: searchPartnerPickupWindows
+      summary: Mencari jadwal pickup regular yang tersedia
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PickupWindowSearchRequest"
+      responses:
+        "200":
+          description: Window pickup provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PickupWindowSearchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /labels/batch:
+    post:
+      tags: [Shipments]
+      operationId: createPartnerBatchLabel
+      summary: Membuat label untuk beberapa shipment
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchLabelRequest"
+      responses:
+        "200":
+          description: Label batch selesai
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelResponse"
+        "202":
+          description: Label batch sedang diproses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchLabelPendingResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /tracking/waybills:
+    post:
+      tags: [Tracking]
+      operationId: trackExternalWaybill
+      summary: Melacak AWB yang tidak harus dibuat melalui partner
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExternalTrackingRequest"
+      responses:
+        "200":
+          description: Snapshot tracking AWB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalTrackingResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/TemporarilyUnavailable"
+
+  /account/balance:
+    get:
+      tags: [Finance]
+      operationId: getPartnerAccountBalance
+      summary: Membaca saldo partner jika capability tersedia
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Snapshot saldo partner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "503":
+          $ref: "#/components/responses/TemporarilyUnavailable"
+
+  /payments/{payment_id}:
+    get:
+      tags: [Finance]
+      operationId: getPartnerPayment
+      summary: Rekonsiliasi payment provider
+      parameters:
+        - $ref: "#/components/parameters/PaymentID"
+        - $ref: "#/components/parameters/XRequestID"
+      responses:
+        "200":
+          description: Detail payment partner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentInquiryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+webhooks:
+  shipmentEvent:
+    post:
+      tags: [Events]
+      operationId: receivePartnerShipmentEvent
+      summary: Partner mengirim perubahan AWB atau status ke API Kurir
+      description: >
+        Callback URL diberikan API Kurir saat onboarding. Partner wajib
+        mempertahankan X-Event-Id yang sama pada setiap retry.
+      security:
+        - eventBearerAuth: []
+          eventKeyId: []
+      parameters:
+        - $ref: "#/components/parameters/XEventID"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentEvent"
+      responses:
+        "202":
+          description: Event valid diterima atau duplikat identik
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventAcknowledgement"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/EventConflict"
+        "413":
+          description: Payload melebihi batas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+components:
+  securitySchemes:
+    partnerBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-256-bit
+      description: Credential connector dengan scope minimum
+    partnerKeyId:
+      type: apiKey
+      in: header
+      name: X-Partner-Key-Id
+      description: ID credential untuk rotasi tanpa mengirim nama akun
+    eventBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-256-bit
+      description: Token event terpisah dari credential connector
+    eventKeyId:
+      type: apiKey
+      in: header
+      name: X-Partner-Key-Id
+      description: ID webhook secret aktif
+
+  headers:
+    XRequestID:
+      description: Request ID dari API Kurir
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+
+  parameters:
+    XRequestID:
+      name: X-Request-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    XEventID:
+      name: X-Event-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+    XSignatureVersion:
+      name: X-Signature-Version
+      in: header
+      required: true
+      schema:
+        type: string
+        const: v1
+    XSignatureTimestamp:
+      name: X-Signature-Timestamp
+      in: header
+      required: true
+      description: Unix timestamp; toleransi maksimum 300 detik
+      schema:
+        type: string
+        pattern: "^[0-9]{10}$"
+    XSignatureNonce:
+      name: X-Signature-Nonce
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+    XSignature:
+      name: X-Signature
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 43
+        maxLength: 128
+    PartnerShipmentID:
+      name: partner_shipment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    PaymentID:
+      name: payment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+  responses:
+    InvalidRequest:
+      description: Payload atau parameter tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Credential atau signature tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Credential tidak memiliki scope
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Shipment tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Idempotency conflict atau transisi status tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    EventConflict:
+      description: Event ID sama dengan payload berbeda
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unprocessable:
+      description: Coverage, service, quote, atau state tidak dapat diproses
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RateLimited:
+      description: Rate limit tercapai
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TemporarilyUnavailable:
+      description: Partner atau carrier sementara tidak tersedia
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ProviderTimeout:
+      description: Status request upstream tidak diketahui; lakukan rekonsiliasi
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, version, time]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        version:
+          type: string
+        time:
+          type: string
+          format: date-time
+
+    CapabilitiesResponse:
+      type: object
+      required:
+        - provider_code
+        - provider_name
+        - contract_version
+        - capabilities
+        - location_granularities
+        - webhook_event_types
+      properties:
+        provider_code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{1,31}$"
+        provider_name:
+          type: string
+        contract_version:
+          type: string
+          const: "1.0"
+        capabilities:
+          $ref: "#/components/schemas/Capabilities"
+        location_granularities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [province, city, district, subdistrict, postal_code, coordinate]
+        webhook_event_types:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/EventType"
+
+    Capabilities:
+      type: object
+      required:
+        - rates
+        - shipment_create
+        - shipment_cancel
+        - scheduled_pickup
+        - on_demand_pickup
+        - dropoff
+        - label
+        - batch_label
+        - tracking
+        - external_tracking
+        - webhook
+        - cod
+        - insurance
+        - instant
+        - multi_package
+        - multi_destination
+        - balance
+        - payment_inquiry
+      properties:
+        rates:
+          type: boolean
+        shipment_create:
+          type: boolean
+        shipment_cancel:
+          type: boolean
+        scheduled_pickup:
+          type: boolean
+        on_demand_pickup:
+          type: boolean
+        dropoff:
+          type: boolean
+        label:
+          type: boolean
+        batch_label:
+          type: boolean
+        tracking:
+          type: boolean
+        external_tracking:
+          type: boolean
+        webhook:
+          type: boolean
+        cod:
+          type: boolean
+        insurance:
+          type: boolean
+        instant:
+          type: boolean
+        multi_package:
+          type: boolean
+        multi_destination:
+          type: boolean
+        balance:
+          type: boolean
+        payment_inquiry:
+          type: boolean
+
+    DeliveryMode:
+      type: string
+      enum:
+        - regular
+        - economy
+        - cargo
+        - same_day
+        - next_day
+        - instant
+        - international
+
+    ServicesResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Service"
+
+    Service:
+      type: object
+      required:
+        - code
+        - name
+        - courier_code
+        - courier_name
+        - service_group
+        - service_type
+        - delivery_type
+        - delivery_mode
+        - active
+        - supports_cod
+        - supports_insurance
+        - supports_pickup
+        - supports_dropoff
+        - supports_multi_destination
+        - vehicle_types
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        name:
+          type: string
+        courier_code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{1,31}$"
+        courier_name:
+          type: string
+        service_group:
+          type: string
+          enum: [regular, economy, cargo, same_day, next_day, instant, international]
+        service_type:
+          type: string
+          enum: [parcel, cargo, same_day, instant, international]
+        delivery_type:
+          type: string
+          enum: [express, instant, cargo, international]
+        delivery_mode:
+          $ref: "#/components/schemas/DeliveryMode"
+        active:
+          type: boolean
+        supports_cod:
+          type: boolean
+        supports_insurance:
+          type: boolean
+        supports_pickup:
+          type: boolean
+        supports_dropoff:
+          type: boolean
+        supports_multi_destination:
+          type: boolean
+        vehicle_types:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [motor, car, van, truck]
+        cut_off_time:
+          type: [string, "null"]
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$"
+        minimum_weight_grams:
+          type: integer
+          minimum: 1
+        maximum_weight_grams:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        volumetric_divisor:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        rounding_threshold_grams:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 999
+
+    LocationRef:
+      type: object
+      properties:
+        official_code:
+          type: string
+          pattern: "^[0-9]{2,13}$"
+        postal_code:
+          type: string
+          pattern: "^[0-9]{5}$"
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+      anyOf:
+        - required: [official_code]
+        - required: [postal_code]
+        - required: [latitude, longitude]
+
+    Package:
+      type: object
+      required:
+        - weight_grams
+        - length_cm
+        - width_cm
+        - height_cm
+        - item_value
+        - contents
+      properties:
+        weight_grams:
+          type: integer
+          minimum: 1
+        length_cm:
+          type: integer
+          minimum: 1
+        width_cm:
+          type: integer
+          minimum: 1
+        height_cm:
+          type: integer
+          minimum: 1
+        item_value:
+          type: integer
+          minimum: 0
+        contents:
+          type: string
+          minLength: 1
+          maxLength: 255
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/PackageItem"
+
+    PackageItem:
+      type: object
+      required: [name, quantity, unit_value, weight_grams]
+      properties:
+        sku:
+          type:
+            - string
+            - "null"
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        quantity:
+          type: integer
+          minimum: 1
+        unit_value:
+          type: integer
+          minimum: 0
+        weight_grams:
+          type: integer
+          minimum: 1
+
+    Features:
+      type: object
+      required: [cod, insurance, pickup]
+      properties:
+        cod:
+          type: boolean
+        insurance:
+          type: boolean
+        pickup:
+          type: boolean
+
+    RatesRequest:
+      type: object
+      required: [request_id, delivery_mode, origin, destination, package, features]
+      properties:
+        request_id:
+          type: string
+        delivery_mode:
+          $ref: "#/components/schemas/DeliveryMode"
+        vehicle_type:
+          type: [string, "null"]
+          enum: [motor, car, van, truck, null]
+        origin:
+          $ref: "#/components/schemas/LocationRef"
+        destination:
+          $ref: "#/components/schemas/LocationRef"
+        additional_destinations:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/LocationRef"
+        package:
+          $ref: "#/components/schemas/Package"
+        service_codes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        features:
+          $ref: "#/components/schemas/Features"
+
+    RatesResponse:
+      type: object
+      required: [request_id, quotes]
+      properties:
+        request_id:
+          type: string
+        quotes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Quote"
+
+    Quote:
+      type: object
+      required:
+        - quote_id
+        - expires_at
+        - service
+        - price_type
+        - chargeable_weight_grams
+        - cost
+        - etd
+      properties:
+        quote_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+        expires_at:
+          type: string
+          format: date-time
+        service:
+          $ref: "#/components/schemas/QuoteService"
+        price_type:
+          type: string
+          enum: [fixed, dynamic]
+        vehicle_type:
+          type: [string, "null"]
+        chargeable_weight_grams:
+          type: integer
+          minimum: 1
+        volumetric_weight_grams:
+          type: [integer, "null"]
+          minimum: 0
+        cost:
+          $ref: "#/components/schemas/Cost"
+        etd:
+          $ref: "#/components/schemas/ETD"
+
+    QuoteService:
+      type: object
+      required: [code, name, service_type, delivery_mode]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        service_type:
+          type: string
+          enum: [parcel, cargo, same_day, instant, international]
+        delivery_mode:
+          $ref: "#/components/schemas/DeliveryMode"
+
+    Cost:
+      type: object
+      required:
+        - shipping
+        - insurance
+        - cod_fee
+        - service_fee
+        - discount
+        - surcharge
+        - additional
+        - total
+        - currency
+      properties:
+        shipping:
+          type: integer
+          minimum: 0
+        insurance:
+          type: integer
+          minimum: 0
+        cod_fee:
+          type: integer
+          minimum: 0
+        service_fee:
+          type: integer
+          minimum: 0
+        discount:
+          type: integer
+          minimum: 0
+        surcharge:
+          type: integer
+          minimum: 0
+        additional:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: IDR
+
+    ETD:
+      type: object
+      required: [text]
+      properties:
+        min_days:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+        max_days:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+        text:
+          type: string
+
+    Party:
+      type: object
+      required:
+        - name
+        - phone
+        - address
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        phone:
+          type: string
+          pattern: "^[0-9]{8,16}$"
+        email:
+          type:
+            - string
+            - "null"
+          format: email
+        address:
+          type: string
+          minLength: 5
+          maxLength: 1000
+        address_note:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+        official_code:
+          type: string
+          pattern: "^[0-9]{2,13}$"
+        postal_code:
+          type: string
+          pattern: "^[0-9]{5}$"
+        latitude:
+          type:
+            - number
+            - "null"
+          minimum: -90
+          maximum: 90
+        longitude:
+          type:
+            - number
+            - "null"
+          minimum: -180
+          maximum: 180
+      anyOf:
+        - required: [official_code, postal_code]
+        - required: [latitude, longitude]
+
+    Payment:
+      type: object
+      required: [type, funding_source, cod_value, insurance_value]
+      properties:
+        type:
+          type: string
+          enum: [non_cod, cod]
+        funding_source:
+          type: string
+          enum: [provider_balance, invoice, cash, qris, not_applicable]
+        cod_value:
+          type: integer
+          minimum: 0
+        insurance_value:
+          type: integer
+          minimum: 0
+        payment_id:
+          type: [string, "null"]
+          maxLength: 128
+        provider_authorization:
+          type: [string, "null"]
+          writeOnly: true
+          maxLength: 512
+          description: Otorisasi sekali pakai; tidak boleh disimpan atau dicatat
+
+    PickupInput:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [scheduled, on_demand, fixed_daily]
+        scheduled_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        vehicle_type:
+          type: [string, "null"]
+          enum: [motor, car, van, truck, null]
+
+    ShipmentCreateRequest:
+      type: object
+      required:
+        - shipment_id
+        - merchant_reference
+        - quote_id
+        - service_code
+        - delivery_mode
+        - fulfillment
+        - sender
+        - recipient
+        - package
+        - payment
+      properties:
+        shipment_id:
+          type: string
+          pattern: "^shp_[A-Za-z0-9_-]{8,124}$"
+        merchant_reference:
+          type: string
+          minLength: 1
+          maxLength: 128
+        quote_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+        service_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        delivery_mode:
+          $ref: "#/components/schemas/DeliveryMode"
+        vehicle_type:
+          type: [string, "null"]
+          enum: [motor, car, van, truck, null]
+        fulfillment:
+          type: string
+          enum: [pickup, dropoff, on_demand]
+        sender:
+          $ref: "#/components/schemas/Party"
+        recipient:
+          $ref: "#/components/schemas/Party"
+        additional_recipients:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/Party"
+        package:
+          $ref: "#/components/schemas/Package"
+        payment:
+          $ref: "#/components/schemas/Payment"
+        pickup:
+          $ref: "#/components/schemas/PickupInput"
+
+    ShipmentResponse:
+      type: object
+      required:
+        - shipment_id
+        - partner_shipment_id
+        - awb
+        - status
+        - service_code
+        - delivery_mode
+        - cost
+        - created_at
+      properties:
+        shipment_id:
+          type: string
+        partner_shipment_id:
+          type: string
+        awb:
+          type:
+            - string
+            - "null"
+        status:
+          $ref: "#/components/schemas/ShipmentStatus"
+        service_code:
+          type: string
+        delivery_mode:
+          $ref: "#/components/schemas/DeliveryMode"
+        cost:
+          $ref: "#/components/schemas/BookedCost"
+        created_at:
+          type: string
+          format: date-time
+
+    BookedCost:
+      type: object
+      required: [total, currency]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: IDR
+
+    ShipmentCosts:
+      type: object
+      required:
+        - quoted_total
+        - booked_total
+        - actual_total
+        - adjustment
+        - currency
+        - authoritative
+      properties:
+        quoted_total:
+          type: integer
+          minimum: 0
+        booked_total:
+          type: integer
+          minimum: 0
+        actual_total:
+          type: [integer, "null"]
+          minimum: 0
+        adjustment:
+          type: integer
+        currency:
+          type: string
+          const: IDR
+        adjustment_reason_code:
+          type: [string, "null"]
+        adjustment_reason:
+          type: [string, "null"]
+        authoritative:
+          type: boolean
+
+    Driver:
+      type: object
+      required: [name, phone, photo_url]
+      properties:
+        name:
+          type: [string, "null"]
+        phone:
+          type: [string, "null"]
+        photo_url:
+          type: [string, "null"]
+          format: uri
+
+    LiveTracking:
+      type: object
+      required: [url, expires_at, polyline]
+      properties:
+        url:
+          type: [string, "null"]
+          format: uri
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+        polyline:
+          type: [string, "null"]
+
+    ProofOfDelivery:
+      type: object
+      required: [receiver_name, received_at, photo_url, signature_url]
+      properties:
+        receiver_name:
+          type: [string, "null"]
+        received_at:
+          type: [string, "null"]
+          format: date-time
+        photo_url:
+          type: [string, "null"]
+          format: uri
+        signature_url:
+          type: [string, "null"]
+          format: uri
+
+    ShipmentDetailResponse:
+      allOf:
+        - $ref: "#/components/schemas/ShipmentResponse"
+        - type: object
+          required:
+            - partner_status
+            - updated_at
+          properties:
+            partner_status:
+              type: string
+            last_event:
+              oneOf:
+                - $ref: "#/components/schemas/TrackingEvent"
+                - type: "null"
+            costs:
+              $ref: "#/components/schemas/ShipmentCosts"
+            driver:
+              oneOf:
+                - $ref: "#/components/schemas/Driver"
+                - type: "null"
+            live_tracking:
+              oneOf:
+                - $ref: "#/components/schemas/LiveTracking"
+                - type: "null"
+            proof_of_delivery:
+              oneOf:
+                - $ref: "#/components/schemas/ProofOfDelivery"
+                - type: "null"
+            updated_at:
+              type: string
+              format: date-time
+
+    CancelRequest:
+      type: object
+      required: [reason_code, reason]
+      properties:
+        reason_code:
+          type: string
+          enum:
+            - customer_request
+            - merchant_request
+            - invalid_address
+            - duplicate_order
+            - other
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    CancelResponse:
+      type: object
+      required: [shipment_id, partner_shipment_id, status, requested_at]
+      properties:
+        shipment_id:
+          type: string
+        partner_shipment_id:
+          type: string
+        status:
+          type: string
+          enum: [cancellation_pending, cancelled]
+        requested_at:
+          type: string
+          format: date-time
+
+    LabelResponse:
+      type: object
+      required: [url, expires_at, content_type]
+      properties:
+        url:
+          type: string
+          format: uri
+          pattern: "^https://"
+        expires_at:
+          type: string
+          format: date-time
+        content_type:
+          type: string
+          const: application/pdf
+
+    LabelLayout:
+      type: string
+      enum: [a4_1, a4_2, a4_4, thermal_100x100, thermal_100x150]
+
+    BatchLabelRequest:
+      type: object
+      required: [partner_shipment_ids, layout]
+      properties:
+        partner_shipment_ids:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+        layout:
+          $ref: "#/components/schemas/LabelLayout"
+
+    BatchLabelPendingResponse:
+      type: object
+      required: [job_id, status, created_at]
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          const: processing
+        created_at:
+          type: string
+          format: date-time
+
+    PickupRequest:
+      type: object
+      required:
+        - pickup_id
+        - mode
+        - partner_shipment_ids
+        - contact
+        - address
+      properties:
+        pickup_id:
+          type: string
+          minLength: 8
+          maxLength: 128
+        partner_shipment_ids:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+        mode:
+          type: string
+          enum: [scheduled, on_demand, fixed_daily]
+        scheduled_at:
+          type: [string, "null"]
+          format: date-time
+        vehicle_type:
+          type: [string, "null"]
+          enum: [motor, car, van, truck, null]
+        contact:
+          $ref: "#/components/schemas/PickupContact"
+        address:
+          $ref: "#/components/schemas/PickupAddress"
+
+    PickupContact:
+      type: object
+      required: [name, phone]
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+          pattern: "^[0-9]{8,16}$"
+
+    PickupAddress:
+      type: object
+      required: [address]
+      properties:
+        address:
+          type: string
+          minLength: 5
+          maxLength: 1000
+        official_code:
+          type: string
+          pattern: "^[0-9]{2,13}$"
+        postal_code:
+          type: string
+          pattern: "^[0-9]{5}$"
+        latitude:
+          type:
+            - number
+            - "null"
+        longitude:
+          type:
+            - number
+            - "null"
+      anyOf:
+        - required: [official_code, postal_code]
+        - required: [latitude, longitude]
+
+    PickupResponse:
+      type: object
+      required:
+        - pickup_id
+        - partner_pickup_id
+        - status
+        - scheduled_at
+        - items
+      properties:
+        pickup_id:
+          type: string
+        partner_pickup_id:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [scheduled, accepted, partial, failed]
+        scheduled_at:
+          type: [string, "null"]
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PickupResultItem"
+
+    PickupResultItem:
+      type: object
+      required: [partner_shipment_id, status, awb, error]
+      properties:
+        partner_shipment_id:
+          type: string
+        status:
+          type: string
+          enum: [accepted, failed]
+        awb:
+          type: [string, "null"]
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/ItemError"
+            - type: "null"
+
+    ItemError:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+
+    PickupWindowSearchRequest:
+      type: object
+      required: [address, requested_date, shipment_count]
+      properties:
+        address:
+          $ref: "#/components/schemas/PickupAddress"
+        requested_date:
+          type: string
+          format: date
+        shipment_count:
+          type: integer
+          minimum: 1
+          maximum: 500
+
+    PickupWindowSearchResponse:
+      type: object
+      required: [windows]
+      properties:
+        windows:
+          type: array
+          items:
+            $ref: "#/components/schemas/PickupWindow"
+
+    PickupWindow:
+      type: object
+      required: [window_id, starts_at, ends_at, expires_at, available]
+      properties:
+        window_id:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        available:
+          type: boolean
+
+    ExternalTrackingRequest:
+      type: object
+      required: [courier_code, awb]
+      properties:
+        courier_code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{1,31}$"
+        awb:
+          type: string
+          minLength: 4
+          maxLength: 128
+        last_phone_digits:
+          type: [string, "null"]
+          pattern: "^[0-9]{5}$"
+
+    ExternalTrackingResponse:
+      type: object
+      required:
+        - courier_code
+        - awb
+        - status
+        - partner_status
+        - delivered
+        - events
+        - observed_at
+      properties:
+        courier_code:
+          type: string
+        awb:
+          type: string
+        status:
+          $ref: "#/components/schemas/ShipmentStatus"
+        partner_status:
+          type: string
+        delivered:
+          type: boolean
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackingEvent"
+        proof_of_delivery:
+          oneOf:
+            - $ref: "#/components/schemas/ProofOfDelivery"
+            - type: "null"
+        observed_at:
+          type: string
+          format: date-time
+
+    BalanceResponse:
+      type: object
+      required: [balance, currency, observed_at, authoritative]
+      properties:
+        balance:
+          type: integer
+        currency:
+          type: string
+          const: IDR
+        observed_at:
+          type: string
+          format: date-time
+        authoritative:
+          type: boolean
+
+    PaymentInquiryResponse:
+      type: object
+      required: [payment_id, status, amount, currency, observed_at]
+      properties:
+        payment_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, paid, failed, expired, refunded, unknown]
+        amount:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: IDR
+        qr_content:
+          type: [string, "null"]
+          description: Sensitif dan hanya diteruskan ke principal berhak
+        paid_at:
+          type: [string, "null"]
+          format: date-time
+        observed_at:
+          type: string
+          format: date-time
+
+    ShipmentEvent:
+      type: object
+      required:
+        - event_id
+        - event_type
+        - event_version
+        - occurred_at
+        - shipment
+        - event
+      properties:
+        event_id:
+          type: string
+          minLength: 16
+          maxLength: 128
+        event_type:
+          $ref: "#/components/schemas/EventType"
+        event_version:
+          type: integer
+          minimum: 1
+        occurred_at:
+          type: string
+          format: date-time
+        shipment:
+          $ref: "#/components/schemas/EventShipment"
+        event:
+          $ref: "#/components/schemas/TrackingEvent"
+        driver:
+          oneOf:
+            - $ref: "#/components/schemas/Driver"
+            - type: "null"
+        live_tracking:
+          oneOf:
+            - $ref: "#/components/schemas/LiveTracking"
+            - type: "null"
+        proof_of_delivery:
+          oneOf:
+            - $ref: "#/components/schemas/ProofOfDelivery"
+            - type: "null"
+        cost:
+          oneOf:
+            - $ref: "#/components/schemas/ShipmentCosts"
+            - type: "null"
+
+    EventShipment:
+      type: object
+      required:
+        - shipment_id
+        - partner_shipment_id
+        - awb
+        - status
+        - partner_status
+      properties:
+        shipment_id:
+          type: string
+        partner_shipment_id:
+          type: string
+        awb:
+          type:
+            - string
+            - "null"
+        status:
+          $ref: "#/components/schemas/ShipmentStatus"
+        partner_status:
+          type: string
+
+    TrackingEvent:
+      type: object
+      required: [code, description, occurred_at]
+      properties:
+        code:
+          type: string
+        description:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        location:
+          type:
+            - string
+            - "null"
+        raw_code:
+          type: [string, "null"]
+        raw_description:
+          type: [string, "null"]
+
+    EventAcknowledgement:
+      type: object
+      required: [event_id, accepted, duplicate]
+      properties:
+        event_id:
+          type: string
+        accepted:
+          type: boolean
+          const: true
+        duplicate:
+          type: boolean
+
+    EventType:
+      type: string
+      enum:
+        - shipment.awb_assigned
+        - shipment.booked
+        - shipment.pickup_requested
+        - shipment.driver_searching
+        - shipment.driver_allocated
+        - shipment.driver_arrived
+        - shipment.picked_up
+        - shipment.in_transit
+        - shipment.out_for_delivery
+        - shipment.delivery_failed
+        - shipment.problem
+        - shipment.cancellation_pending
+        - shipment.delivered
+        - shipment.cancelled
+        - shipment.returning
+        - shipment.returned
+        - shipment.damaged
+        - shipment.lost
+        - shipment.cost_adjusted
+        - shipment.refunded
+
+    ShipmentStatus:
+      type: string
+      enum:
+        - booking_pending
+        - booked
+        - pickup_requested
+        - driver_searching
+        - driver_allocated
+        - arrived_at_pickup
+        - picked_up
+        - in_transit
+        - out_for_delivery
+        - delivery_failed
+        - problem
+        - cancellation_pending
+        - delivered
+        - cancelled
+        - returning
+        - returned
+        - damaged
+        - lost
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, retryable, request_id, details]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            retryable:
+              type: boolean
+            request_id:
+              type: string
+            details:
+              type: object
+              additionalProperties: true

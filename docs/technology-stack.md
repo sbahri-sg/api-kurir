@@ -385,9 +385,11 @@ secret provider dan database pada secret manager.
 4. Implementasikan adapter RajaOngkir dengan quota ledger dan coalescing.
 5. Pisahkan worker River untuk rate refresh dan tracking.
 6. Bangun dashboard Vite/React untuk provider, rate card, rules, dan operasi.
-7. Tambahkan Karrio sebagai adapter internal bila memberi coverage nyata.
-8. Load test, chaos test provider, dan drill quota exhaustion.
-9. Onboard direct carrier berdasarkan volume penggunaan tertinggi.
+7. Implementasikan Partner Connector client, Provider Account API, dan
+   contract test canonical.
+8. Load test, chaos test partner, dan drill quota exhaustion.
+9. Onboard partner berdasarkan volume penggunaan tertinggi; partner menangani
+   API native dan mapping internalnya sendiri.
 
 Fondasi dianggap siap produksi setelah gate pada dokumen
 [Operasional, Kuota, dan Kepatuhan](operations-and-compliance.md) terpenuhi.

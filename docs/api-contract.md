@@ -1,5 +1,11 @@
 # Kontrak API Publik
 
+Dokumen ini hanya untuk Emisell/client yang memakai API Kurir. Lifecycle
+credential seller berada di [Provider Account API](provider-account-api-v1.md),
+sedangkan kontrak vendor/ekspedisi berada di
+[Partner Integration Contract](partner-api-v1.md). Public API tidak menerima
+atau mengembalikan secret RajaOngkir, KiriminAja, maupun partner lain.
+
 ## 1. Tujuan kompatibilitas
 
 Kontrak publik mengikuti pola RajaOngkir agar integrasi Emisell familiar:
