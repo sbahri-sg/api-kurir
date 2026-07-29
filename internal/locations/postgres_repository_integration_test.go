@@ -132,7 +132,7 @@ func TestProviderHierarchyAndPostalCodeSearch(t *testing.T) {
 		)
 	}
 
-	found, err := repository.Search(ctx, postalCode, 20)
+	found, err := repository.Search(ctx, postalCode, 20, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +144,21 @@ func TestProviderHierarchyAndPostalCodeSearch(t *testing.T) {
 		len(found[0].PostalCodes) != 1 ||
 		found[0].PostalCodes[0] != postalCode {
 		t.Fatalf("unexpected postal result: %#v", found[0])
+	}
+	hierarchyIDs := map[string]struct{}{}
+	for _, publicID := range []string{
+		found[0].ProvinceID,
+		found[0].CityID,
+		found[0].DistrictID,
+		found[0].SubdistrictID,
+	} {
+		if publicID == "" {
+			t.Fatalf("hierarchy ID must not be empty: %#v", found[0])
+		}
+		hierarchyIDs[publicID] = struct{}{}
+	}
+	if len(hierarchyIDs) != 4 {
+		t.Fatalf("hierarchy IDs must be distinct: %#v", found[0])
 	}
 
 	if err := repository.MarkSyncCheckpointCompleted(

@@ -126,6 +126,7 @@ func run(logger *slog.Logger) error {
 	adminRepository := admin.NewPostgresRepository(pool)
 	customerAPIKeyService := apikeys.NewService(apikeys.NewPostgresRepository(pool))
 	var trackingService *tracking.Service
+	var immediateTrackingAdapter tracking.Adapter
 	if cfg.Tracking.Enabled {
 		trackingCipher, err := tracking.NewCipher(cfg.Tracking.EncryptionKey)
 		if err != nil {
@@ -135,6 +136,15 @@ func run(logger *slog.Logger) error {
 			tracking.NewPostgresRepository(pool),
 			trackingCipher,
 			cfg.RajaOngkir.TrackingCouriers...,
+		)
+		immediateTrackingAdapter = rajaongkir.NewDynamicTrackingAdapter(
+			providerResolver,
+			cfg.RajaOngkir.BaseURL,
+			cfg.RajaOngkir.Timeout,
+			cfg.RajaOngkir.MinRequestInterval,
+			rateRepository,
+			rateRepository,
+			cfg.RajaOngkir.TrackingCouriers,
 		)
 		logger.Info("tracking registration enabled; waybills encrypted at application layer")
 	}
@@ -146,6 +156,7 @@ func run(logger *slog.Logger) error {
 		courierRepository,
 		adminRepository,
 		trackingService,
+		immediateTrackingAdapter,
 		customerAPIKeyService,
 		providerCredentialService,
 		cfg.APIKeys,

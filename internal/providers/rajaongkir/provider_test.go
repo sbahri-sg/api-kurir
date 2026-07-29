@@ -2,6 +2,7 @@ package rajaongkir
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -159,5 +160,38 @@ func TestSelectExactDestinationNormalizesJakartaProvinceAlias(t *testing.T) {
 	}
 	if selected.ID != "destination-cakung-timur" {
 		t.Fatalf("unexpected destination: %#v", selected)
+	}
+}
+
+func TestSelectExactHierarchyLocationToleratesSmallOfficialNameDifference(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	selected, err := selectExactHierarchyLocation(
+		"Husein Sastranegara",
+		[]HierarchyLocation{
+			{ID: "1", Name: "Arjuna"},
+			{ID: "2", Name: "Husein Sastranagara"},
+			{ID: "3", Name: "Pajajaran"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != "2" {
+		t.Fatalf("unexpected hierarchy selection: %#v", selected)
+	}
+}
+
+func TestSelectExactHierarchyLocationDoesNotFuzzyMatchShortNames(t *testing.T) {
+	t.Parallel()
+
+	_, err := selectExactHierarchyLocation(
+		"Turi",
+		[]HierarchyLocation{{ID: "123", Name: "Puri"}},
+	)
+	if !errors.Is(err, rates.ErrProviderLocationMapping) {
+		t.Fatalf("expected provider mapping error, got %v", err)
 	}
 }

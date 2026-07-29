@@ -116,6 +116,12 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 		return nil, ErrRateNotAvailable
 	}
 	sortResults(results)
+	switch request.PriceFilter {
+	case "lowest":
+		results = results[:1]
+	case "highest":
+		results = results[len(results)-1:]
+	}
 	return results, nil
 }
 
@@ -226,9 +232,11 @@ func requestKey(request Request) string {
 		)
 	}
 	return fmt.Sprintf(
-		"%s:%s:%d:%s:%s:%d:%t",
+		"%s:%s:%s:%s:%d:%s:%s:%d:%t",
 		request.Origin,
 		request.Destination,
+		request.Granularity,
+		request.PriceFilter,
 		request.ActualWeightGrams,
 		strings.Join(couriers, ":"),
 		dimensions,

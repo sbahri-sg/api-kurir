@@ -10,7 +10,8 @@ menambahkan metadata sumber, freshness, dan rincian berat.
 Base URL:
 
 ```text
-https://api-kurir.example.com/v1
+SDK RajaOngkir V2: https://api-kurir.example.com/api/v1
+API Kurir lama:    https://api-kurir.example.com/v1
 ```
 
 Header:
@@ -25,6 +26,25 @@ Idempotency-Key: <uuid-untuk-request-mutasi>
 Uang menggunakan integer rupiah. Berat input dan penyimpanan menggunakan gram.
 Timestamp menggunakan ISO 8601 UTC.
 
+### Mode kompatibilitas RajaOngkir V2
+
+API publik mendukung dua kontrak pada endpoint yang sama:
+
+- `Authorization: Bearer <api-key>` mempertahankan respons internal API Kurir;
+- `key: <api-key>` mengaktifkan respons 1:1 RajaOngkir V2 untuk SDK Emisell.
+
+Pada mode `key`, ID lokasi diterbitkan sebagai integer stabil dan request
+kalkulasi memakai `application/x-www-form-urlencoded`. ID integer tersebut
+adalah alias API Kurir yang dipetakan ke master Kemendagri lokal; client harus
+mengambil ID dari endpoint API Kurir dan tidak memakai ID hard-code provider.
+Path `/api/v1` sama dengan base path resmi RajaOngkir V2. Alias `/v1` tetap
+tersedia agar dashboard dan client API Kurir lama tidak putus.
+
+ID kompatibilitas dibentuk dari kode wilayah resmi tanpa tanda titik, misalnya
+provinsi `32`, kota `3273`, kecamatan `327306`, dan kelurahan
+`3273061001`. Karena ID kelurahan dapat mencapai 10 digit, SDK harus membaca
+field `id`, `origin`, dan `destination` sebagai integer 64-bit.
+
 ## 2. Destination
 
 ### `GET /destination/domestic-destination`
@@ -37,29 +57,42 @@ Query:
 | Field | Wajib | Keterangan |
 |---|---:|---|
 | `search` | Ya | Nama kota, kecamatan, kelurahan, atau kode pos |
-| `limit` | Tidak | Default 20, maksimum 50 |
-| `cursor` | Tidak | Cursor halaman berikutnya |
+| `limit` | Tidak | Default 20; maksimum 50 pada mode Bearer atau 1.000 pada mode SDK |
+| `offset` | Tidak | Offset hasil, default 0 |
 
 Contoh:
 
 ```http
-GET /v1/destination/domestic-destination?search=Beji%20Depok
+GET /api/v1/destination/domestic-destination?search=Beji%20Depok
+key: <api-key>
 ```
 
 ```json
 {
   "meta": {
+    "message": "Success Get Domestic Destinations",
+    "code": 200,
+    "status": "success",
     "request_id": "req_01J...",
     "next_cursor": null
   },
   "data": [
     {
-      "id": "loc_id_3276010",
-      "label": "Beji, Depok, Jawa Barat, 16421",
+      "id": "loc_idn_32_76_01_1001",
+      "label": "Beji, Beji, Kota Depok, Jawa Barat, 16421",
+      "province_id": "loc_idn_32",
+      "city_id": "loc_idn_32_76",
+      "district_id": "loc_idn_32_76_01",
+      "subdistrict_id": "loc_idn_32_76_01_1001",
+      "province_name": "Jawa Barat",
+      "city_name": "Kota Depok",
+      "district_name": "Beji",
+      "subdistrict_name": "Beji",
+      "zip_code": "16421",
       "province": "Jawa Barat",
-      "city": "Depok",
+      "city": "Kota Depok",
       "district": "Beji",
-      "subdistrict": null,
+      "subdistrict": "Beji",
       "postal_code": "16421",
       "postal_codes": ["16421"]
     }
@@ -67,8 +100,15 @@ GET /v1/destination/domestic-destination?search=Beji%20Depok
 }
 ```
 
-`id` adalah ID stabil milik API Kurir. ID RajaOngkir atau carrier tidak boleh
-diekspos sebagai primary ID.
+`meta.message`, `meta.code`, `meta.status`, `province_name`, `city_name`,
+`district_name`, `subdistrict_name`, dan `zip_code` mengikuti bentuk respons
+RajaOngkir V2. Field tanpa akhiran `_name` dan `postal_code` tetap tersedia
+sebagai alias sementara agar dashboard/client lama tidak putus.
+
+`id` adalah ID lokasi akhir yang stabil milik API Kurir. `province_id`,
+`city_id`, `district_id`, dan `subdistrict_id` adalah ID lokal unik pada setiap
+level; keempat nilai tersebut tidak boleh disalin dari satu ID yang sama. ID
+RajaOngkir atau carrier tidak diekspos sebagai primary ID.
 
 `postal_code` mempertahankan kompatibilitas dengan client lama.
 `postal_codes` berisi seluruh kode pos valid dari dataset wilayah/kode pos
@@ -79,6 +119,61 @@ Pencarian customer hanya menerbitkan lokasi level kelurahan/desa
 (`subdistrict`). Provinsi, kota, dan kecamatan disimpan sebagai parent
 hierarki, tetapi tidak dipakai sebagai destination ID pada metode direct
 search RajaOngkir.
+
+### Endpoint hierarki RajaOngkir V2
+
+Untuk SDK atau form cascading, API juga menyediakan pola endpoint bertingkat:
+
+| Level | Endpoint | Parent |
+|---|---|---|
+| Provinsi | `GET /destination/province` | - |
+| Kota/kabupaten | `GET /destination/city/{province_id}` | ID provinsi lokal |
+| Kecamatan | `GET /destination/district/{city_id}` | ID kota lokal |
+| Kelurahan/desa | `GET /destination/sub-district/{district_id}` | ID kecamatan lokal |
+
+Contoh:
+
+```json
+{
+  "meta": {
+    "message": "Success Get City By Province ID",
+    "code": 200,
+    "status": "success",
+    "request_id": "req_01J..."
+  },
+  "data": [
+    {
+      "id": "loc_idn_32_73",
+      "name": "Kota Bandung",
+      "zip_code": ""
+    }
+  ]
+}
+```
+
+Seluruh endpoint ini membaca master Kemendagri lokal dan tidak memakai hit
+RajaOngkir. ID parent harus diambil dari endpoint level sebelumnya; ID
+kelurahan/desa dapat dipakai sebagai `origin` atau `destination` pada metode
+direct search API Kurir.
+
+Dengan header `key`, bentuk respons endpoint hierarki mengikuti RajaOngkir V2:
+
+```json
+{
+  "meta": {
+    "message": "Success Get District By City ID",
+    "code": 200,
+    "status": "success"
+  },
+  "data": [
+    {
+      "id": 327306,
+      "name": "Cicendo",
+      "zip_code": ""
+    }
+  ]
+}
+```
 
 ## 3. Daftar kurir
 
@@ -131,6 +226,27 @@ kalkulasinya.
 ## 4. Cek ongkir
 
 ### `POST /calculate/domestic-cost`
+
+Mode SDK RajaOngkir V2:
+
+```http
+POST /api/v1/calculate/domestic-cost
+key: <api-key>
+Content-Type: application/x-www-form-urlencoded
+
+origin=3273061001&destination=3212122001&weight=1000&courier=jne&price=lowest
+```
+
+Kalkulasi berdasarkan kecamatan tersedia pada:
+
+```http
+POST /api/v1/calculate/district/domestic-cost
+```
+
+Endpoint district memakai ID dari
+`GET /api/v1/destination/district/{city_id}` dan meneruskan quote miss ke endpoint
+district resmi provider. Mode SDK mengembalikan field flat
+`name`, `code`, `service`, `description`, `cost`, dan `etd`.
 
 Request:
 
@@ -285,7 +401,102 @@ bukti tarif per kilogram, minimum berat, atau aturan pembulatan.
 
 ## 6. Tracking resi
 
-### `POST /track/waybill`
+### Mode SDK RajaOngkir V2 — `POST /api/v1/track/waybill`
+
+Gunakan header customer API key:
+
+```http
+key: <customer-api-key>
+```
+
+Parameter dapat dikirim melalui query string seperti SDK RajaOngkir V2:
+
+```http
+POST /api/v1/track/waybill?awb=MT685U91&courier=wahana
+```
+
+atau sebagai `application/x-www-form-urlencoded`:
+
+```text
+awb=MT685U91&courier=wahana
+```
+
+`last_phone_number` bersifat opsional dan berisi lima digit terakhir nomor
+telepon penerima. Parameter ini hanya perlu dikirim apabila ekspedisi/provider
+meminta validasi tambahan. API Kurir tidak mewajibkannya untuk pengecekan resi
+normal.
+
+Respons sukses mengikuti kontrak RajaOngkir V2:
+
+```json
+{
+  "meta": {
+    "message": "Success Tracking AWB",
+    "code": 200,
+    "status": "success"
+  },
+  "data": {
+    "delivered": true,
+    "summary": {
+      "courier_code": "wahana",
+      "courier_name": "Wahana Prestasi Logistik",
+      "waybill_number": "MT685U91",
+      "service_code": "",
+      "waybill_date": "2024-10-09",
+      "shipper_name": "",
+      "receiver_name": "FIKRI EL SARA",
+      "origin": "JAKARTA",
+      "destination": "SUKABUMI",
+      "status": "DELIVERED"
+    },
+    "details": {
+      "waybill_number": "MT685U91",
+      "waybill_date": "2024-10-09",
+      "waybill_time": "",
+      "weight": "",
+      "origin": "JAKARTA",
+      "destination": "SUKABUMI",
+      "shipper_name": "",
+      "shipper_address1": "",
+      "shipper_address2": "",
+      "shipper_address3": "",
+      "shipper_city": "",
+      "receiver_name": "FIKRI EL SARA",
+      "receiver_address1": "",
+      "receiver_address2": "",
+      "receiver_address3": "",
+      "receiver_city": ""
+    },
+    "delivery_status": {
+      "status": "DELIVERED",
+      "pod_receiver": "FIKRI EL SARA",
+      "pod_date": "2024-10-11",
+      "pod_time": "09:26:00"
+    },
+    "manifest": [
+      {
+        "manifest_code": "",
+        "manifest_description": "Diterima oleh FIKRI EL SARA (Penerima Langsung)",
+        "manifest_date": "2024-10-11",
+        "manifest_time": "09:26:00",
+        "city_name": "SUKABUMI"
+      }
+    ]
+  }
+}
+```
+
+Respons error juga memakai envelope RajaOngkir `meta` dan `data: null`.
+Request pertama untuk resi yang belum tersimpan akan mengambil data provider
+dan menyimpan snapshot. Request berikutnya memakai snapshot selama masih
+fresh atau status sudah final. Request bersamaan untuk resi yang sama pada
+proses API yang sama digabung menjadi satu hit provider.
+
+### Mode API Kurir lama — `POST /v1/track/waybill`
+
+Mode ini tetap tersedia untuk dashboard dan integrasi lama. Autentikasi
+menggunakan `Authorization: Bearer <customer-api-key>` dan responsnya
+asynchronous.
 
 Request:
 

@@ -131,6 +131,7 @@ func (r *PostgresRepository) ImportOfficialLocations(
 				subdistrict,
 				postal_code,
 				official_region_code,
+				compatibility_id,
 				active
 			)
 			SELECT
@@ -143,6 +144,7 @@ func (r *PostgresRepository) ImportOfficialLocations(
 				stage.subdistrict,
 				stage.postal_code,
 				stage.code,
+				replace(stage.code, '.', '')::bigint,
 				true
 			FROM official_location_stage stage
 			LEFT JOIN locations parent
@@ -158,6 +160,7 @@ func (r *PostgresRepository) ImportOfficialLocations(
 			    district = EXCLUDED.district,
 			    subdistrict = EXCLUDED.subdistrict,
 			    postal_code = EXCLUDED.postal_code,
+			    compatibility_id = EXCLUDED.compatibility_id,
 			    active = true,
 			    updated_at = now()
 		`, level); err != nil {

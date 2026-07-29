@@ -56,6 +56,15 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
     {
       "id": "loc_idn_32_73_02_1004",
       "label": "Dago, Coblong, Kota Bandung, Jawa Barat",
+      "province_id": "loc_idn_32",
+      "city_id": "loc_idn_32_73",
+      "district_id": "loc_idn_32_73_02",
+      "subdistrict_id": "loc_idn_32_73_02_1004",
+      "province_name": "Jawa Barat",
+      "city_name": "Kota Bandung",
+      "district_name": "Coblong",
+      "subdistrict_name": "Dago",
+      "zip_code": "40135",
       "province": "Jawa Barat",
       "city": "Kota Bandung",
       "district": "Coblong",
@@ -65,9 +74,146 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
     }
   ],
   "meta": {
+    "message": "Success Get Domestic Destinations",
+    "code": 200,
+    "status": "success",
     "request_id": "req_example",
     "next_cursor": null
   }
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/destination/domestic-destination",
+    title: "Cari lokasi SDK RajaOngkir V2",
+    description:
+      "Direct search wilayah lokal dengan path, header, query, ID numerik, dan respons RajaOngkir V2.",
+    authentication: "Header key: customer API key",
+    parameters: [
+      "search — wajib, minimal 2 karakter",
+      "limit — opsional, 1–1.000; default 20",
+      "offset — opsional, default 0",
+    ],
+    request: `GET {{base_url}}/api/v1/destination/domestic-destination?search=Husein Sastranegara&limit=20&offset=0
+key: {{api_key}}`,
+    response: `{
+  "meta": {
+    "message": "Success Get Domestic Destinations",
+    "code": 200,
+    "status": "success"
+  },
+  "data": [
+    {
+      "id": 3273061001,
+      "label": "Husein Sastranegara, Cicendo, Kota Bandung, Jawa Barat, 40174",
+      "province_name": "Jawa Barat",
+      "city_name": "Kota Bandung",
+      "district_name": "Cicendo",
+      "subdistrict_name": "Husein Sastranegara",
+      "zip_code": "40174"
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/destination/province",
+    title: "Daftar provinsi",
+    description:
+      "Membaca daftar provinsi dari master Kemendagri lokal dengan bentuk respons hierarki RajaOngkir V2.",
+    authentication: "Header key: customer API key (mode SDK RajaOngkir V2)",
+    request: `GET {{base_url}}/api/v1/destination/province`,
+    response: `{
+  "meta": {
+    "message": "Success Get Province",
+    "code": 200,
+    "status": "success"
+  },
+  "data": [
+    {
+      "id": 32,
+      "name": "Jawa Barat"
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/destination/city/{province_id}",
+    title: "Kota per provinsi",
+    description:
+      "Membaca kota/kabupaten berdasarkan ID provinsi lokal. ID hasil berbeda dari ID provinsi.",
+    authentication: "Header key: customer API key (mode SDK RajaOngkir V2)",
+    parameters: [
+      "province_id — wajib, ID dari endpoint daftar provinsi",
+    ],
+    request: `GET {{base_url}}/api/v1/destination/city/32`,
+    response: `{
+  "meta": {
+    "message": "Success Get City By Province ID",
+    "code": 200,
+    "status": "success"
+  },
+  "data": [
+    {
+      "id": 3273,
+      "name": "Kota Bandung",
+      "zip_code": ""
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/destination/district/{city_id}",
+    title: "Kecamatan per kota",
+    description:
+      "Membaca kecamatan berdasarkan ID kota/kabupaten lokal.",
+    authentication: "Header key: customer API key (mode SDK RajaOngkir V2)",
+    parameters: ["city_id — wajib, ID dari endpoint daftar kota"],
+    request: `GET {{base_url}}/api/v1/destination/district/3273`,
+    response: `{
+  "meta": {
+    "message": "Success Get District By City ID",
+    "code": 200,
+    "status": "success"
+  },
+  "data": [
+    {
+      "id": 327306,
+      "name": "Cicendo",
+      "zip_code": ""
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/destination/sub-district/{district_id}",
+    title: "Kelurahan per kecamatan",
+    description:
+      "Membaca kelurahan/desa berdasarkan ID kecamatan lokal sampai kode pos.",
+    authentication: "Header key: customer API key (mode SDK RajaOngkir V2)",
+    parameters: ["district_id — wajib, ID dari endpoint daftar kecamatan"],
+    request: `GET {{base_url}}/api/v1/destination/sub-district/327306`,
+    response: `{
+  "meta": {
+    "message": "Success Get Sub District By District ID",
+    "code": 200,
+    "status": "success"
+  },
+  "data": [
+    {
+      "id": 3273061001,
+      "name": "Husein Sastranegara",
+      "zip_code": "40174"
+    }
+  ]
 }`,
   },
   {
@@ -173,8 +319,145 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
   {
     scope: "customer",
     method: "POST",
+    path: "/api/v1/calculate/domestic-cost",
+    title: "Cek ongkir SDK V2 · kelurahan",
+    description:
+      "Endpoint form-urlencoded RajaOngkir V2 untuk origin dan destination hasil direct search atau endpoint sub-district.",
+    authentication: "Header key: customer API key",
+    parameters: [
+      "origin dan destination — ID integer hasil endpoint sub-district atau domestic-destination",
+      "weight — berat gram",
+      "courier — kode kurir dipisahkan titik dua",
+      "price — lowest atau highest, opsional",
+    ],
+    request: `POST {{base_url}}/api/v1/calculate/domestic-cost
+Content-Type: application/x-www-form-urlencoded
+key: {{api_key}}
+
+origin=3273061001&destination=3212122001&weight=1000&courier=jne&price=lowest`,
+    response: `{
+  "meta": {
+    "message": "Success Calculate Domestic Shipping cost",
+    "code": 200,
+    "status": "success"
+  },
+  "data": [
+    {
+      "name": "Jalur Nugraha Ekakurir (JNE)",
+      "code": "jne",
+      "service": "REG",
+      "description": "Layanan Reguler",
+      "cost": 20000,
+      "etd": "3"
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/calculate/district/domestic-cost",
+    title: "Cek ongkir SDK V2 · kecamatan",
+    description:
+      "Drop-in endpoint form-urlencoded untuk SDK RajaOngkir V2. Gunakan /api/v1/calculate/domestic-cost dengan bentuk request yang sama untuk ID subdistrict.",
+    authentication: "Header key: customer API key",
+    parameters: [
+      "origin dan destination — ID integer hasil endpoint district",
+      "weight — berat gram",
+      "courier — kode kurir dipisahkan titik dua",
+      "price — lowest atau highest, opsional",
+    ],
+    request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
+Content-Type: application/x-www-form-urlencoded
+key: {{api_key}}
+
+origin=327306&destination=321212&weight=1000&courier=jne&price=lowest`,
+    response: `{
+  "meta": {
+    "message": "Success Calculate Domestic Shipping cost",
+    "code": 200,
+    "status": "success"
+  },
+  "data": [
+    {
+      "name": "Jalur Nugraha Ekakurir (JNE)",
+      "code": "jne",
+      "service": "REG",
+      "description": "Layanan Reguler",
+      "cost": 20000,
+      "etd": "3"
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/track/waybill",
+    title: "Cek resi SDK RajaOngkir V2",
+    description:
+      "Drop-in tracking sinkron dengan envelope dan field RajaOngkir V2. Hasil disimpan sebagai snapshot agar pengecekan berulang tidak selalu memakai hit provider.",
+    authentication: "Header key: customer API key",
+    parameters: [
+      "awb — nomor resi 6–40 karakter",
+      "courier — jne, sap, ninja, jnt, tiki, wahana, pos, atau lion",
+      "last_phone_number — opsional; 5 digit terakhir nomor penerima hanya jika provider memintanya",
+    ],
+    request: `POST {{base_url}}/api/v1/track/waybill?awb={{waybill}}&courier={{courier}}
+key: {{api_key}}`,
+    response: `{
+  "meta": {
+    "message": "Success Tracking AWB",
+    "code": 200,
+    "status": "success"
+  },
+  "data": {
+    "delivered": true,
+    "summary": {
+      "courier_code": "wahana",
+      "courier_name": "Wahana Prestasi Logistik",
+      "waybill_number": "MT685U91",
+      "service_code": "",
+      "waybill_date": "2024-10-09",
+      "shipper_name": "",
+      "receiver_name": "FIKRI EL SARA",
+      "origin": "JAKARTA",
+      "destination": "SUKABUMI",
+      "status": "DELIVERED"
+    },
+    "details": {
+      "waybill_number": "MT685U91",
+      "waybill_date": "2024-10-09",
+      "waybill_time": "",
+      "weight": "",
+      "origin": "JAKARTA",
+      "destination": "SUKABUMI",
+      "shipper_name": "",
+      "shipper_address1": "",
+      "shipper_address2": "",
+      "shipper_address3": "",
+      "shipper_city": "",
+      "receiver_name": "FIKRI EL SARA",
+      "receiver_address1": "",
+      "receiver_address2": "",
+      "receiver_address3": "",
+      "receiver_city": ""
+    },
+    "delivery_status": {
+      "status": "DELIVERED",
+      "pod_receiver": "FIKRI EL SARA",
+      "pod_date": "2024-10-11",
+      "pod_time": "09:26:00"
+    },
+    "manifest": []
+  }
+}`,
+  },
+  {
+    scope: "customer",
+    method: "POST",
     path: "/v1/track/waybill",
-    title: "Cek resi",
+    title: "Cek resi asynchronous (legacy)",
     description:
       "Membaca snapshot tracking yang tersimpan atau mengantrikan refresh. Cukup kirim nomor resi dan ekspedisi.",
     authentication: "Bearer customer API key",

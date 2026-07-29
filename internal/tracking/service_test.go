@@ -14,6 +14,7 @@ type trackingRepositoryStub struct {
 	providerContextCiphertext []byte
 	job                       Job
 	result                    Result
+	shipment                  Shipment
 	failed                    bool
 }
 
@@ -27,10 +28,38 @@ func (r *trackingRepositoryStub) Register(
 ) (Shipment, error) {
 	r.ciphertext = append([]byte(nil), waybillCiphertext...)
 	r.providerContextCiphertext = append([]byte(nil), providerContextCiphertext...)
-	return Shipment{
+	shipment := Shipment{
 		ID: "shipment-1", CourierCode: courierCode, WaybillMasked: waybillMasked,
 		NormalizedStatus: "unknown", RefreshQueued: true,
-	}, nil
+	}
+	r.shipment = shipment
+	return shipment, nil
+}
+
+func (r *trackingRepositoryStub) RegisterImmediate(
+	ctx context.Context,
+	courierCode string,
+	waybillHash string,
+	waybillMasked string,
+	waybillCiphertext []byte,
+	providerContextCiphertext []byte,
+) (Shipment, error) {
+	if r.shipment.ProviderFetchedAt != nil {
+		return r.shipment, nil
+	}
+	shipment, err := r.Register(
+		ctx,
+		courierCode,
+		waybillHash,
+		waybillMasked,
+		waybillCiphertext,
+		providerContextCiphertext,
+	)
+	if err == nil {
+		shipment.RefreshQueued = false
+		r.shipment = shipment
+	}
+	return shipment, err
 }
 
 func (r *trackingRepositoryStub) Claim(
@@ -43,6 +72,24 @@ func (r *trackingRepositoryStub) Claim(
 
 func (r *trackingRepositoryStub) Complete(_ context.Context, _ Job, result Result) error {
 	r.result = result
+	return nil
+}
+
+func (r *trackingRepositoryStub) CompleteImmediate(
+	_ context.Context,
+	_ string,
+	result Result,
+) error {
+	r.result = result
+	fetchedAt := result.FetchedAt
+	r.shipment.NormalizedStatus = result.NormalizedStatus
+	r.shipment.StatusLabel = result.StatusLabel
+	r.shipment.Summary = result.Summary
+	r.shipment.Events = result.Events
+	r.shipment.ProviderCode = result.ProviderCode
+	r.shipment.ProviderFetchedAt = &fetchedAt
+	r.shipment.NextRefreshAt = result.NextRefreshAt
+	r.shipment.IsFinal = result.IsFinal
 	return nil
 }
 
@@ -153,6 +200,70 @@ func TestServiceRejectsUnsupportedCourier(t *testing.T) {
 	_, err := service.Register(context.Background(), "sicepat", "ABC123456789", "")
 	if !errors.Is(err, ErrUnsupportedCourier) {
 		t.Fatalf("expected unsupported courier, got %v", err)
+	}
+}
+
+type countingTrackingAdapterStub struct {
+	calls  int
+	result Result
+	err    error
+}
+
+func (a *countingTrackingAdapterStub) Code() string { return "test" }
+func (a *countingTrackingAdapterStub) CourierCodes() []string {
+	return []string{"jne"}
+}
+func (a *countingTrackingAdapterStub) Track(
+	context.Context,
+	Request,
+) (Result, error) {
+	a.calls++
+	return a.result, a.err
+}
+
+func TestTrackNowReusesFreshPersistentSnapshot(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 7, 29, 8, 0, 0, 0, time.UTC)
+	nextRefreshAt := now.Add(time.Hour)
+	repository := &trackingRepositoryStub{}
+	service := NewService(repository, testCipher(t), "jne")
+	service.now = func() time.Time { return now }
+	adapter := &countingTrackingAdapterStub{result: Result{
+		NormalizedStatus: "in_transit",
+		StatusLabel:      "Dalam perjalanan",
+		Summary:          map[string]any{"status": "IN TRANSIT"},
+		ProviderCode:     "rajaongkir",
+		FetchedAt:        now,
+		NextRefreshAt:    &nextRefreshAt,
+	}}
+
+	first, err := service.TrackNow(
+		context.Background(),
+		adapter,
+		"jne",
+		"ABC123456789",
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.TrackNow(
+		context.Background(),
+		adapter,
+		"jne",
+		"ABC123456789",
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.calls != 1 {
+		t.Fatalf("provider calls: got %d want 1", adapter.calls)
+	}
+	if first.NormalizedStatus != "in_transit" ||
+		second.NormalizedStatus != "in_transit" {
+		t.Fatalf("unexpected results: first=%#v second=%#v", first, second)
 	}
 }
 

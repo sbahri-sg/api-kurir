@@ -5,10 +5,16 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");
   const apiTarget =
     env.VITE_DEV_API_TARGET?.trim() || "http://127.0.0.1:8080";
+  const proxyOptions = {
+    target: apiTarget,
+    changeOrigin: true,
+  };
   const apiProxy = {
     "/v1": {
-      target: apiTarget,
-      changeOrigin: true,
+      ...proxyOptions,
+    },
+    "/api/v1": {
+      ...proxyOptions,
     },
   };
 

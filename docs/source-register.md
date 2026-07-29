@@ -30,7 +30,7 @@ wilayah, parent-child, kode baru/hilang, dan kode pos berubah.
 | RajaOngkir V2 | [Calculate Domestic](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-search-base/calculate-domestic-cost) | Form origin, destination, weight, courier; struktur quote | Endpoint publik tidak mendokumentasikan formula rate per kg |
 | RajaOngkir V2 | [Search Destination](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-search-base/search-destination-rajaongkir) | Import lokasi on-demand dan provider ID | Tidak dipanggil saat customer mengetik |
 | RajaOngkir V2 | [Courier Availability](https://www.rajaongkir.com/docs/shipping-cost/getting_started/courier_availability) | Kode dan capability kurir | Capability dapat berubah; sinkronkan berkala secara terkontrol |
-| RajaOngkir V2 | [Tracking AWB](https://www.rajaongkir.com/docs/shipping-cost/tracking) | Parameter AWB, courier, validasi nomor telepon, struktur summary/manifest | Dipanggil worker; tidak ada raw response atau data alamat yang disimpan |
+| RajaOngkir V2 | [Tracking AWB](https://www.rajaongkir.com/docs/shipping-cost/tracking) | Parameter AWB, courier, validasi nomor telepon, struktur summary/manifest | Dipanggil sinkron saat snapshot miss/stale atau oleh worker; raw response tidak disimpan |
 | Karrio | [Repository resmi](https://github.com/karrioapi/karrio) | Orkestrasi carrier, lisensi core | Multi-tenancy tetap tanggung jawab API Kurir |
 
 ## Framework dan infrastruktur

@@ -4,7 +4,8 @@
 
 - Cek ongkir cache/rate card lokal: p95 di bawah 150 ms.
 - Tracking dari snapshot lokal: p95 di bawah 200 ms.
-- Tidak ada request customer yang otomatis menjadi satu hit tracking provider.
+- Tracking dari snapshot fresh/final tidak memakai hit provider; hanya
+  miss/stale yang memakai satu hit dan menyimpan hasilnya.
 - Provider outage tidak menjatuhkan seluruh API.
 - Tarif dan event selalu memiliki sumber serta waktu pengambilan.
 

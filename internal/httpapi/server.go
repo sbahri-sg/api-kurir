@@ -26,6 +26,8 @@ import (
 
 var validRequestID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
+const rajaOngkirV2CompatibilityContextKey = "rajaongkir_v2_compatibility"
+
 type Server struct {
 	Echo *echo.Echo
 }
@@ -37,6 +39,7 @@ func New(
 	courierRepository couriers.Repository,
 	adminRepository admin.Repository,
 	trackingService *tracking.Service,
+	immediateTrackingAdapter tracking.Adapter,
 	customerAPIKeyService *apikeys.Service,
 	providerCredentialService *providercredentials.Service,
 	apiKeys []string,
@@ -86,12 +89,26 @@ func New(
 	})
 	e.GET("/health/ready", readinessHandler(pool))
 
-	v1 := e.Group("/v1")
-	v1.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
-	v1.GET("/destination/domestic-destination", locationSearchHandler(locationRepository))
-	v1.GET("/couriers", courierListHandler(courierRepository))
-	v1.POST("/calculate/domestic-cost", calculateRateHandler(rateService))
-	v1.POST("/track/waybill", trackingHandler(trackingService))
+	registerCustomerRoutes(
+		e.Group("/v1"),
+		rateService,
+		locationRepository,
+		courierRepository,
+		trackingService,
+		immediateTrackingAdapter,
+		customerAPIKeyService,
+		apiKeys,
+	)
+	registerCustomerRoutes(
+		e.Group("/api/v1"),
+		rateService,
+		locationRepository,
+		courierRepository,
+		trackingService,
+		immediateTrackingAdapter,
+		customerAPIKeyService,
+		apiKeys,
+	)
 
 	adminGroup := e.Group("/v1/admin")
 	adminGroup.Use(apiKeyMiddleware(adminAPIKeys))
@@ -121,6 +138,77 @@ func New(
 	)
 
 	return &Server{Echo: e}
+}
+
+func registerCustomerRoutes(
+	group *echo.Group,
+	rateService *rates.Service,
+	locationRepository locations.Repository,
+	courierRepository couriers.Repository,
+	trackingService *tracking.Service,
+	immediateTrackingAdapter tracking.Adapter,
+	customerAPIKeyService customerKeyAuthenticator,
+	apiKeys []string,
+) {
+	group.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
+	group.GET("/destination/domestic-destination", locationSearchHandler(locationRepository))
+	group.GET(
+		"/destination/province",
+		locationHierarchyHandler(
+			locationRepository,
+			"province",
+			"",
+			"Success Get Province",
+		),
+	)
+	group.GET(
+		"/destination/city/:province_id",
+		locationHierarchyHandler(
+			locationRepository,
+			"city",
+			"province_id",
+			"Success Get City By Province ID",
+		),
+	)
+	group.GET(
+		"/destination/district/:city_id",
+		locationHierarchyHandler(
+			locationRepository,
+			"district",
+			"city_id",
+			"Success Get District By City ID",
+		),
+	)
+	group.GET(
+		"/destination/sub-district/:district_id",
+		locationHierarchyHandler(
+			locationRepository,
+			"subdistrict",
+			"district_id",
+			"Success Get Sub District By District ID",
+		),
+	)
+	group.GET("/couriers", courierListHandler(courierRepository))
+	group.POST(
+		"/calculate/domestic-cost",
+		calculatePublicRateHandler(
+			rateService,
+			locationRepository,
+			"subdistrict",
+		),
+	)
+	group.POST(
+		"/calculate/district/domestic-cost",
+		calculatePublicRateHandler(
+			rateService,
+			locationRepository,
+			"district",
+		),
+	)
+	group.POST(
+		"/track/waybill",
+		trackingPublicHandler(trackingService, immediateTrackingAdapter),
+	)
 }
 
 func securityHeadersMiddleware(appEnv string) echo.MiddlewareFunc {
@@ -193,7 +281,12 @@ func customerAPIKeyMiddleware(
 ) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			token := bearerToken(c.Request().Header.Get("Authorization"))
+			token := strings.TrimSpace(c.Request().Header.Get("key"))
+			if token != "" {
+				c.Set(rajaOngkirV2CompatibilityContextKey, true)
+			} else {
+				token = bearerToken(c.Request().Header.Get("Authorization"))
+			}
 			if token == "" {
 				return writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "API key tidak valid.", nil)
 			}
@@ -230,7 +323,7 @@ func developmentCORSMiddleware() echo.MiddlewareFunc {
 			if origin == "http://localhost:5173" || origin == "http://127.0.0.1:5173" {
 				headers := c.Response().Header()
 				headers.Set("Access-Control-Allow-Origin", origin)
-				headers.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, X-Admin-Actor")
+				headers.Set("Access-Control-Allow-Headers", "Authorization, key, Content-Type, X-Request-Id, X-Admin-Actor")
 				headers.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 				headers.Set("Vary", "Origin")
 			}
@@ -282,6 +375,16 @@ func writeError(
 	message string,
 	details map[string]any,
 ) error {
+	if rajaOngkirV2Compatibility(c) {
+		return c.JSON(status, map[string]any{
+			"meta": map[string]any{
+				"message": message,
+				"code":    status,
+				"status":  "error",
+			},
+			"data": nil,
+		})
+	}
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,
@@ -290,4 +393,9 @@ func writeError(
 			"details":    details,
 		},
 	})
+}
+
+func rajaOngkirV2Compatibility(c *echo.Context) bool {
+	enabled, _ := c.Get(rajaOngkirV2CompatibilityContextKey).(bool)
+	return enabled
 }

@@ -66,8 +66,21 @@ Rate dan tracking menggunakan pool key serta quota ledger yang sama.
 
 ## 4. Alur
 
+Mode SDK RajaOngkir V2 bersifat sinkron:
+
 ```text
-customer request
+POST /api/v1/track/waybill?awb=<nomor-resi>&courier=<kode-kurir>
+key: <customer-api-key>
+  -> validasi dan hash
+  -> snapshot fresh/final tersedia: respons langsung tanpa hit provider
+  -> snapshot miss/stale: satu hit provider, simpan snapshot, lalu respons
+```
+
+Mode API Kurir lama tetap asynchronous:
+
+```text
+POST /v1/track/waybill
+Authorization: Bearer <customer-api-key>
   -> validasi courier dan AWB
   -> hash untuk deduplikasi
   -> enkripsi AWB dan provider context
@@ -104,11 +117,15 @@ waybill_hash
 waybill_masked
 waybill_ciphertext
 provider_context_ciphertext
+summary_json
+events_json
 ```
 
-Nama penerima, nama pengirim, alamat, nomor telepon lengkap, dan raw response
-provider tidak disimpan. Snapshot summary dibatasi pada courier, service,
-origin, destination, weight, tanggal resi, dan status delivered.
+Raw response provider dan nomor telepon lengkap tidak disimpan. Untuk
+kompatibilitas respons V2, snapshot terstruktur dapat memuat nama
+pengirim/penerima serta alamat yang memang dikembalikan provider. Batasi akses
+database, enkripsi volume/backup, terapkan retention, dan jangan mencetak field
+tersebut pada log.
 
 ## 6. Normalisasi status dan interval
 
@@ -143,6 +160,7 @@ memeriksa penyebab terlebih dahulu agar tidak membakar quota.
 - Satu pasangan `courier + waybill` menghasilkan satu shipment.
 - Partial unique index mencegah dua job aktif untuk shipment yang sama.
 - Banyak customer membaca snapshot lokal yang sama.
+- Request sinkron bersamaan untuk resi yang sama digabung per proses API.
 - Status final tidak dipolling lagi.
 - Refresh menyesuaikan status; tidak memakai interval agresif global.
 - Ledger dicek sebelum request keluar.

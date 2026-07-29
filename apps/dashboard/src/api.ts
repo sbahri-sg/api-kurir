@@ -34,6 +34,15 @@ export type Overview = {
 export type LocationOption = {
   id: string;
   label: string;
+  province_id: string;
+  city_id: string;
+  district_id: string;
+  subdistrict_id: string;
+  province_name: string;
+  city_name: string;
+  district_name: string;
+  subdistrict_name: string;
+  zip_code: string;
   province: string;
   city: string;
   district: string;

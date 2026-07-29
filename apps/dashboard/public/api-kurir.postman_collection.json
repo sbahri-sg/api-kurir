@@ -148,6 +148,274 @@
             "description": "Mencari destination dan menyimpan ID hasil pertama ke destination_id."
           },
           "response": []
+        },
+        {
+          "name": "List Provinces (V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data[0]) {",
+                  "  pm.environment.set('province_id', payload.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/destination/province",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "destination", "province"]
+            },
+            "description": "Daftar provinsi Kemendagri lokal dengan bentuk respons RajaOngkir V2."
+          },
+          "response": []
+        },
+        {
+          "name": "List Cities by Province (V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data[0]) {",
+                  "  pm.environment.set('city_id', payload.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/destination/city/{{province_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "destination", "city", "{{province_id}}"]
+            },
+            "description": "Daftar kota/kabupaten berdasarkan ID provinsi lokal."
+          },
+          "response": []
+        },
+        {
+          "name": "List Districts by City (V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data[0]) {",
+                  "  pm.environment.set('district_id', payload.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/destination/district/{{city_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "destination", "district", "{{city_id}}"]
+            },
+            "description": "Daftar kecamatan berdasarkan ID kota/kabupaten lokal."
+          },
+          "response": []
+        },
+        {
+          "name": "List Subdistricts by District (V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data[0]) {",
+                  "  pm.environment.set('subdistrict_id', payload.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/destination/sub-district/{{district_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "destination", "sub-district", "{{district_id}}"]
+            },
+            "description": "Daftar kelurahan/desa dan kode pos berdasarkan ID kecamatan lokal."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Origin (SDK V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data[0]) {",
+                  "  pm.environment.set('sdk_origin_id', payload.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/destination/domestic-destination?search={{origin_search}}&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "destination", "domestic-destination"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{origin_search}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Direct search kompatibel SDK dan menyimpan ID numerik origin."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Destination (SDK V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data[0]) {",
+                  "  pm.environment.set('sdk_destination_id', payload.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/destination/domestic-destination?search={{destination_search}}&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "destination", "domestic-destination"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{destination_search}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Direct search kompatibel SDK dan menyimpan ID numerik destination."
+          },
+          "response": []
         }
       ]
     },
@@ -212,6 +480,148 @@
             "description": "Cek ongkir dengan ID lokasi yang otomatis diisi oleh request pencarian."
           },
           "response": []
+        },
+        {
+          "name": "Calculate Domestic Cost (SDK V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Respons mengikuti status shipping-cost', function () {",
+                  "  pm.expect([200, 400, 502, 503]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "origin",
+                  "value": "{{sdk_origin_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "destination",
+                  "value": "{{sdk_destination_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "weight",
+                  "value": "{{weight_grams}}",
+                  "type": "text"
+                },
+                {
+                  "key": "courier",
+                  "value": "{{courier}}",
+                  "type": "text"
+                },
+                {
+                  "key": "price",
+                  "value": "lowest",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/calculate/domestic-cost",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "calculate", "domestic-cost"]
+            },
+            "description": "Drop-in request direct shipping-cost untuk SDK RajaOngkir V2."
+          },
+          "response": []
+        },
+        {
+          "name": "Calculate District Cost (SDK V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Respons mengikuti status shipping-cost', function () {",
+                  "  pm.expect([200, 400, 502, 503]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "origin",
+                  "value": "327306",
+                  "type": "text"
+                },
+                {
+                  "key": "destination",
+                  "value": "321212",
+                  "type": "text"
+                },
+                {
+                  "key": "weight",
+                  "value": "{{weight_grams}}",
+                  "type": "text"
+                },
+                {
+                  "key": "courier",
+                  "value": "{{courier}}",
+                  "type": "text"
+                },
+                {
+                  "key": "price",
+                  "value": "lowest",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/calculate/district/domestic-cost",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "calculate", "district", "domestic-cost"]
+            },
+            "description": "Drop-in request district shipping-cost untuk SDK RajaOngkir V2."
+          },
+          "response": []
         }
       ]
     },
@@ -219,7 +629,54 @@
       "name": "3. Tracking",
       "item": [
         {
-          "name": "Track Waybill",
+          "name": "Track Waybill (SDK RajaOngkir V2)",
+          "auth": {
+            "type": "noauth"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.expect([200, 400, 404, 422, 502, 503, 504]).to.include(pm.response.code);",
+                  "const payload = pm.response.json();",
+                  "pm.expect(payload).to.have.property('meta');",
+                  "pm.expect(payload).to.have.property('data');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "key",
+                "value": "{{api_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/track/waybill?awb={{waybill}}&courier={{courier}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "track", "waybill"],
+              "query": [
+                {
+                  "key": "awb",
+                  "value": "{{waybill}}"
+                },
+                {
+                  "key": "courier",
+                  "value": "{{courier}}"
+                }
+              ]
+            },
+            "description": "Kontrak sinkron RajaOngkir V2. last_phone_number tidak wajib; tambahkan hanya jika provider meminta validasi lima digit terakhir nomor penerima."
+          },
+          "response": []
+        },
+        {
+          "name": "Track Waybill (Legacy Async)",
           "request": {
             "method": "POST",
             "header": [

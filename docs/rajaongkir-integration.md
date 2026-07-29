@@ -10,8 +10,9 @@ Integrasi fase ini mencakup:
 - mapping lokasi internal ke ID RajaOngkir;
 - master lokasi lokal dari dataset wilayah Kemendagri;
 - timeout, request coalescing, dan distributed lock;
-- normalisasi respons tanpa mengekspos payload atau API key.
-- tracking AWB asynchronous melalui durable worker.
+- normalisasi respons tanpa mengekspos payload atau API key;
+- tracking AWB sinkron untuk façade SDK dan asynchronous melalui durable
+  worker untuk kontrak lama.
 
 ## 2. Kontrak resmi
 
@@ -27,6 +28,10 @@ Endpoint yang digunakan:
 |---|---|---|
 | Cek ongkir domestik | POST | `calculate/domestic-cost` |
 | Search destination | GET | `destination/domestic-destination` |
+| Daftar provinsi | GET | `destination/province` |
+| Kota per provinsi | GET | `destination/city/{province_id}` |
+| Kecamatan per kota | GET | `destination/district/{city_id}` |
+| Kelurahan per kecamatan | GET | `destination/sub-district/{district_id}` |
 | Tracking AWB | POST | `track/waybill` |
 
 Autentikasi menggunakan header:
@@ -35,12 +40,30 @@ Autentikasi menggunakan header:
 key: <shipping-cost-api-key>
 ```
 
+API Kurir juga menerima header `key` dari customer untuk mengaktifkan façade
+RajaOngkir V2. Key tersebut adalah customer API key API Kurir, bukan provider
+key yang tersimpan terenkripsi. Request Bearer tetap menggunakan kontrak
+internal sehingga dashboard tidak terpengaruh.
+
+Façade mendukung:
+
+- ID integer pada destination dan seluruh endpoint hierarki;
+- `limit` sampai 1000 serta `offset`;
+- request ongkir `application/x-www-form-urlencoded`;
+- `POST calculate/domestic-cost` untuk subdistrict;
+- `POST calculate/district/domestic-cost` untuk district;
+- response sukses/error `meta + data` seperti RajaOngkir V2.
+
 Dokumentasi resmi:
 
 - [Getting Started dan endpoint](https://www.rajaongkir.com/docs/shipping-cost/getting_started/endpoint)
 - [Authorization](https://rajaongkir.com/docs/shipping-cost/getting_started/apikey)
 - [Calculate Domestic Cost](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-search-base/calculate-domestic-cost)
 - [Search Domestic Destination](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-search-base/search-destination-rajaongkir)
+- [Search Province](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-form-base-calculate-cost/search_province)
+- [Search City](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-form-base-calculate-cost/search_city)
+- [Search District](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-form-base-calculate-cost/search_district)
+- [Search Subdistrict](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-form-base-calculate-cost/search_subdistrict)
 - [Tracking AWB](https://www.rajaongkir.com/docs/shipping-cost/tracking)
 - [Courier Availability](https://www.rajaongkir.com/docs/shipping-cost/getting_started/courier_availability)
 
@@ -89,10 +112,60 @@ awal 50.000 hit/hari. Jika ada beberapa key aktif, resolver memilih rasio
 dipilih. Pool yang seluruhnya habis mengembalikan quota exhausted dan tidak
 jatuh ke fallback legacy.
 
-## 4. Alur rate miss
+## 4. Façade SDK RajaOngkir V2
+
+Emisell dapat mengarahkan base URL SDK ke:
 
 ```text
-POST /v1/calculate/domestic-cost
+https://<domain-api-kurir>/api/v1
+```
+
+Kontrak shipping-cost yang tersedia pada base path tersebut:
+
+- header autentikasi `key`;
+- `GET /destination/domestic-destination`;
+- `GET /destination/province`;
+- `GET /destination/city/{province_id}`;
+- `GET /destination/district/{city_id}`;
+- `GET /destination/sub-district/{district_id}`;
+- `POST /calculate/domestic-cost`;
+- `POST /calculate/district/domestic-cost`;
+- `POST /track/waybill`;
+- request kalkulasi `application/x-www-form-urlencoded`;
+- respons dan error memakai envelope `meta` dan `data`.
+
+ID wilayah yang dikembalikan adalah integer stabil milik API Kurir dan harus
+dipakai kembali pada request berikutnya. ID ini bukan ID provider RajaOngkir;
+adapter menerjemahkannya ke provider secara lazy. Karena ID kelurahan dapat
+mencapai 10 digit, gunakan integer 64-bit pada SDK.
+
+Base path lama `/v1` tetap aktif untuk dashboard dan integrasi JSON API Kurir.
+Dengan header Bearer, kontrak tracking lama tetap asynchronous agar dashboard
+dan integrasi lama tidak berubah.
+
+Tracking kompatibel SDK tersedia pada:
+
+```http
+POST /api/v1/track/waybill?awb=<nomor-resi>&courier=<kode-kurir>
+key: <customer-api-key>
+```
+
+Parameter `last_phone_number` opsional. Nilai lima digit terakhir nomor
+telepon penerima hanya perlu dikirim jika provider meminta validasi tambahan;
+API Kurir tidak memaksanya pada semua ekspedisi. Respons sinkron memakai field
+RajaOngkir V2 `delivered`, `summary`, `details`, `delivery_status`, dan
+`manifest`.
+
+Untuk menghemat kuota, hasil provider disimpan pada snapshot tracking yang
+sama dengan worker lama. Snapshot yang masih fresh atau sudah final langsung
+dikembalikan tanpa hit provider baru. Miss/stale memanggil provider satu kali
+dan menyimpan hasilnya. Request bersamaan untuk kombinasi ekspedisi dan resi
+yang sama digabung per proses API.
+
+## 5. Alur rate miss
+
+```text
+POST /api/v1/calculate/domestic-cost
   -> cari active local rate card
   -> bila ada, hitung lokal
   -> cari exact provider quote snapshot
@@ -112,7 +185,7 @@ POST /v1/calculate/domestic-cost
 Request kedua yang identik tidak membuat hit provider selama snapshot masih
 aktif.
 
-## 5. Exact quote, bukan rate card
+## 6. Exact quote, bukan rate card
 
 Respons RajaOngkir berisi total biaya untuk input tertentu. Satu quote tidak
 cukup untuk membuktikan:
@@ -149,7 +222,7 @@ kelak dibutuhkan master tarif per kilogram/minimum berat, pembentukannya harus
 melalui proses otomatis yang memerlukan rate sheet resmi atau rangkaian probe
 tervalidasi—bukan input operator.
 
-## 6. Berat dan dimensi
+## 7. Berat dan dimensi
 
 Dokumentasi Calculate Domestic V2 saat ini mendokumentasikan form:
 
@@ -173,7 +246,7 @@ mengirim `weight` ke RajaOngkir. Jika request API Kurir menyertakan dimensi:
 Rate card lokal yang sudah memiliki divisor resmi tetap menghitung volumetrik
 di API Kurir.
 
-## 7. Master lokasi lokal dan mapping lazy
+## 8. Master lokasi lokal dan mapping lazy
 
 Customer tidak melakukan search ke RajaOngkir. Endpoint customer membaca tabel
 `locations` lokal yang diisi oleh `apps/region-import`.
@@ -216,7 +289,7 @@ Full sync hierarki RajaOngkir bukan lagi sumber master dan tidak berjalan
 secara default. Tool lama hanya tersedia melalui profile
 `legacy-provider-full-sync` untuk kebutuhan diagnosis.
 
-## 8. Quota ledger
+## 9. Quota ledger
 
 Sebelum upstream call, service melakukan increment atomik:
 
@@ -240,7 +313,7 @@ Tanggal quota mengikuti UTC+7. Hit validasi credential, pencarian mapping,
 quote tarif, dan tracking semuanya mengurangi ledger alias terkait. Credential
 hanya dicatat sebagai alias, bukan nilai API key.
 
-## 9. Error mapping
+## 10. Error mapping
 
 | Kondisi | API Kurir |
 |---|---|
@@ -255,7 +328,7 @@ Request `400`, `404`, dan `422` provider tidak di-retry. Versi awal juga tidak
 melakukan automatic retry untuk timeout/5xx agar satu request customer tidak
 diam-diam menghabiskan beberapa hit.
 
-## 10. Cara menjalankan
+## 11. Cara menjalankan
 
 Development:
 
@@ -289,9 +362,11 @@ curl -X POST http://localhost:8080/v1/calculate/domestic-cost \
 Jangan memasukkan provider ID langsung ke public request. Gunakan ID lokal
 hasil endpoint destination API Kurir.
 
-## 11. Tracking
+## 12. Tracking
 
-Tracking berjalan asynchronous. API mendaftarkan resi terenkripsi, sedangkan
-worker melakukan hit provider satu kali untuk shipment yang due. Konfigurasi
-dan kebijakan polling dijelaskan di
+Façade `/api/v1/track/waybill` memberikan respons sinkron kompatibel
+RajaOngkir V2 dari snapshot atau provider. Kontrak lama `/v1/track/waybill`
+tetap asynchronous: API mendaftarkan resi terenkripsi, sedangkan worker
+melakukan hit provider satu kali untuk shipment yang due. Konfigurasi dan
+kebijakan polling dijelaskan di
 [Operasional adapter tracking RajaOngkir](rajaongkir-tracking.md).

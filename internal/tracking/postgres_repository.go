@@ -27,6 +27,45 @@ func (r *PostgresRepository) Register(
 	waybillCiphertext []byte,
 	providerContextCiphertext []byte,
 ) (Shipment, error) {
+	return r.register(
+		ctx,
+		courierCode,
+		waybillHash,
+		waybillMasked,
+		waybillCiphertext,
+		providerContextCiphertext,
+		true,
+	)
+}
+
+func (r *PostgresRepository) RegisterImmediate(
+	ctx context.Context,
+	courierCode string,
+	waybillHash string,
+	waybillMasked string,
+	waybillCiphertext []byte,
+	providerContextCiphertext []byte,
+) (Shipment, error) {
+	return r.register(
+		ctx,
+		courierCode,
+		waybillHash,
+		waybillMasked,
+		waybillCiphertext,
+		providerContextCiphertext,
+		false,
+	)
+}
+
+func (r *PostgresRepository) register(
+	ctx context.Context,
+	courierCode string,
+	waybillHash string,
+	waybillMasked string,
+	waybillCiphertext []byte,
+	providerContextCiphertext []byte,
+	enqueue bool,
+) (Shipment, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return Shipment{}, fmt.Errorf("begin register tracking shipment: %w", err)
@@ -63,17 +102,21 @@ func (r *PostgresRepository) Register(
 		return Shipment{}, fmt.Errorf("upsert tracking shipment: %w", err)
 	}
 
-	tag, err := tx.Exec(ctx, `
-		INSERT INTO tracking_refresh_jobs (shipment_id)
-		SELECT id
-		FROM tracking_shipments
-		WHERE id = $1::uuid
-		  AND NOT is_final
-		  AND (next_refresh_at IS NULL OR next_refresh_at <= now())
-		ON CONFLICT (shipment_id) WHERE status IN ('pending', 'running') DO NOTHING
-	`, shipmentID)
-	if err != nil {
-		return Shipment{}, fmt.Errorf("enqueue tracking refresh: %w", err)
+	refreshQueued := false
+	if enqueue {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO tracking_refresh_jobs (shipment_id)
+			SELECT id
+			FROM tracking_shipments
+			WHERE id = $1::uuid
+			  AND NOT is_final
+			  AND (next_refresh_at IS NULL OR next_refresh_at <= now())
+			ON CONFLICT (shipment_id) WHERE status IN ('pending', 'running') DO NOTHING
+		`, shipmentID)
+		if err != nil {
+			return Shipment{}, fmt.Errorf("enqueue tracking refresh: %w", err)
+		}
+		refreshQueued = tag.RowsAffected() == 1
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Shipment{}, fmt.Errorf("commit register tracking shipment: %w", err)
@@ -82,7 +125,7 @@ func (r *PostgresRepository) Register(
 	if err != nil {
 		return Shipment{}, err
 	}
-	shipment.RefreshQueued = tag.RowsAffected() == 1 || shipment.RefreshQueued
+	shipment.RefreshQueued = refreshQueued || shipment.RefreshQueued
 	return shipment, nil
 }
 
@@ -212,6 +255,87 @@ func (r *PostgresRepository) Complete(
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit tracking refresh: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) CompleteImmediate(
+	ctx context.Context,
+	shipmentID string,
+	result Result,
+) error {
+	summaryJSON, err := json.Marshal(result.Summary)
+	if err != nil {
+		return fmt.Errorf("encode immediate tracking summary: %w", err)
+	}
+	eventsJSON, err := json.Marshal(result.Events)
+	if err != nil {
+		return fmt.Errorf("encode immediate tracking events: %w", err)
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin immediate tracking completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE tracking_shipments
+		SET normalized_status = $2,
+		    status_label = $3,
+		    summary_json = $4::jsonb,
+		    events_json = $5::jsonb,
+		    provider_code = $6,
+		    provider_fetched_at = $7,
+		    next_refresh_at = $8,
+		    is_final = $9,
+		    last_error_code = NULL,
+		    updated_at = now()
+		WHERE id = $1::uuid
+	`,
+		shipmentID,
+		result.NormalizedStatus,
+		result.StatusLabel,
+		string(summaryJSON),
+		string(eventsJSON),
+		result.ProviderCode,
+		result.FetchedAt,
+		result.NextRefreshAt,
+		result.IsFinal,
+	)
+	if err != nil {
+		return fmt.Errorf("update immediate tracking shipment: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+
+	completedJobs, err := tx.Exec(ctx, `
+		UPDATE tracking_refresh_jobs
+		SET status = 'completed',
+		    locked_at = NULL,
+		    locked_by = NULL,
+		    updated_at = now()
+		WHERE shipment_id = $1::uuid
+		  AND status = 'pending'
+	`, shipmentID)
+	if err != nil {
+		return fmt.Errorf("complete pending tracking refresh: %w", err)
+	}
+	if completedJobs.RowsAffected() > 0 &&
+		!result.IsFinal &&
+		result.NextRefreshAt != nil {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tracking_refresh_jobs (shipment_id, available_at)
+			VALUES ($1::uuid, $2)
+			ON CONFLICT (shipment_id) WHERE status IN ('pending', 'running') DO NOTHING
+		`, shipmentID, result.NextRefreshAt); err != nil {
+			return fmt.Errorf("schedule immediate tracking refresh: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit immediate tracking completion: %w", err)
 	}
 	return nil
 }

@@ -3,8 +3,10 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -86,5 +88,136 @@ func TestRateResponseIncludesCanonicalServiceGrouping(t *testing.T) {
 		service["type"] != "cargo" ||
 		service["variant_code"] != "JTR>130" {
 		t.Fatalf("unexpected canonical service response: %#v", service)
+	}
+}
+
+func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
+	t.Parallel()
+
+	service := rates.NewService(staticRateRepository{
+		cards: []rates.RateCard{{
+			CourierCode:            "jne",
+			CourierName:            "JNE",
+			ServiceCode:            "REG",
+			ServiceName:            "Layanan Reguler",
+			PricingModel:           "flat",
+			BasePrice:              15000,
+			WeightIncrementGrams:   1000,
+			RoundingMode:           "ceil",
+			RoundingIncrementGrams: 1000,
+		}},
+	}, time.Second)
+	e := echo.New()
+	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
+	e.POST(
+		"/v1/calculate/domestic-cost",
+		calculatePublicRateHandler(
+			service,
+			locationHTTPRepositoryStub{},
+			"subdistrict",
+		),
+	)
+
+	form := url.Values{}
+	form.Set("origin", "3273061001")
+	form.Set("destination", "3212122001")
+	form.Set("weight", "1000")
+	form.Set("courier", "jne")
+	form.Set("price", "lowest")
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/calculate/domestic-cost",
+		bytes.NewBufferString(form.Encode()),
+	)
+	request.Header.Set("key", "sdk-key")
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf(
+			"status: got %d want %d, body=%s",
+			response.Code,
+			http.StatusOK,
+			response.Body.String(),
+		)
+	}
+	var payload struct {
+		Meta map[string]any `json:"meta"`
+		Data []struct {
+			Name        string `json:"name"`
+			Code        string `json:"code"`
+			Service     string `json:"service"`
+			Description string `json:"description"`
+			Cost        int64  `json:"cost"`
+			ETD         string `json:"etd"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data) != 1 ||
+		payload.Data[0].Code != "jne" ||
+		payload.Data[0].Service != "REG" ||
+		payload.Data[0].Cost != 15000 {
+		t.Fatalf("unexpected response: %#v", payload)
+	}
+	if _, exists := payload.Meta["request_id"]; exists {
+		t.Fatalf("compatibility meta contains internal extension: %#v", payload.Meta)
+	}
+}
+
+func TestRajaOngkirV2CalculateRejectsInvalidCourierWith422(t *testing.T) {
+	t.Parallel()
+
+	service := rates.NewService(staticRateRepository{}, time.Second)
+	e := echo.New()
+	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
+	e.POST(
+		"/api/v1/calculate/domestic-cost",
+		calculatePublicRateHandler(
+			service,
+			locationHTTPRepositoryStub{},
+			"subdistrict",
+		),
+	)
+
+	form := url.Values{}
+	form.Set("origin", "3273061001")
+	form.Set("destination", "3212122001")
+	form.Set("weight", "1000")
+	form.Set("courier", "JNE!")
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/calculate/domestic-cost",
+		bytes.NewBufferString(form.Encode()),
+	)
+	request.Header.Set("key", "sdk-key")
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf(
+			"status: got %d want %d, body=%s",
+			response.Code,
+			http.StatusUnprocessableEntity,
+			response.Body.String(),
+		)
+	}
+	var payload struct {
+		Meta struct {
+			Code   int    `json:"code"`
+			Status string `json:"status"`
+		} `json:"meta"`
+		Data any `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Meta.Code != http.StatusUnprocessableEntity ||
+		payload.Meta.Status != "error" ||
+		payload.Data != nil {
+		t.Fatalf("unexpected response: %#v", payload)
 	}
 }

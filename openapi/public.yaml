@@ -1,18 +1,20 @@
 openapi: 3.1.0
 info:
   title: API Kurir
-  version: 0.9.0
+  version: 1.0.0
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
   description: >
-    API ongkir internal Emisell dengan bentuk yang familier seperti
-    RajaOngkir. Uang menggunakan integer rupiah dan berat menggunakan gram.
+    API ongkir internal Emisell. Endpoint customer pada /api/v1 kompatibel
+    dengan kontrak shipping-cost RajaOngkir V2; /v1 tetap menjadi alias untuk
+    client lama. Uang menggunakan integer rupiah dan berat menggunakan gram.
 servers:
   - url: /
     description: Host API Kurir aktif
 security:
   - bearerAuth: []
+  - rajaOngkirKeyAuth: []
 tags:
   - name: Health
     description: Liveness dan readiness service
@@ -74,11 +76,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /v1/destination/domestic-destination:
+  /api/v1/destination/domestic-destination:
     get:
       tags: [Locations]
       operationId: searchDomesticDestination
-      summary: Mencari master lokasi lokal
+      summary: Mencari master lokasi lokal dengan respons RajaOngkir V2
+      security:
+        - bearerAuth: []
+        - rajaOngkirKeyAuth: []
       parameters:
         - name: search
           in: query
@@ -92,21 +97,102 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 50
+            maximum: 1000
             default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100000
+            default: 0
       responses:
         "200":
           description: Hasil pencarian
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LocationSearchResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/LocationSearchResponse"
+                  - $ref: "#/components/schemas/RajaOngkirDestinationSearchResponse"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Parameter pencarian tidak lengkap atau tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
 
-  /v1/couriers:
+  /api/v1/destination/province:
+    get:
+      tags: [Locations]
+      operationId: listProvinces
+      summary: Mendapatkan daftar provinsi lokal
+      responses:
+        "200":
+          description: Daftar provinsi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationHierarchyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/destination/city/{province_id}:
+    get:
+      tags: [Locations]
+      operationId: listCitiesByProvince
+      summary: Mendapatkan kota/kabupaten berdasarkan ID provinsi
+      parameters:
+        - $ref: "#/components/parameters/ProvinceID"
+      responses:
+        "200":
+          description: Daftar kota/kabupaten
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationHierarchyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/destination/district/{city_id}:
+    get:
+      tags: [Locations]
+      operationId: listDistrictsByCity
+      summary: Mendapatkan kecamatan berdasarkan ID kota/kabupaten
+      parameters:
+        - $ref: "#/components/parameters/CityID"
+      responses:
+        "200":
+          description: Daftar kecamatan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationHierarchyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/destination/sub-district/{district_id}:
+    get:
+      tags: [Locations]
+      operationId: listSubdistrictsByDistrict
+      summary: Mendapatkan kelurahan/desa berdasarkan ID kecamatan
+      parameters:
+        - $ref: "#/components/parameters/DistrictID"
+      responses:
+        "200":
+          description: Daftar kelurahan/desa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationHierarchyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/couriers:
     get:
       tags: [Couriers]
       operationId: listCouriers
@@ -121,11 +207,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /v1/calculate/domestic-cost:
+  /api/v1/calculate/domestic-cost:
     post:
       tags: [Rates]
       operationId: calculateDomesticCost
       summary: Menghitung ongkir dari rate card lokal atau exact provider quote
+      security:
+        - bearerAuth: []
+        - rajaOngkirKeyAuth: []
       requestBody:
         required: true
         content:
@@ -146,54 +235,145 @@ paths:
               options:
                 include_insurance: false
                 include_unverified: false
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/RajaOngkirCalculateCostRequest"
       responses:
         "200":
           description: Pilihan layanan dan biaya
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CalculateCostResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/CalculateCostResponse"
+                  - $ref: "#/components/schemas/RajaOngkirCalculateCostResponse"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
-          description: Tarif belum tersedia
+          description: Courier tidak valid atau tarif belum tersedia pada mode lama
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "502":
           description: Provider gagal atau menolak credential
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "503":
           description: Kuota provider habis
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
 
-  /v1/track/waybill:
+  /api/v1/calculate/district/domestic-cost:
+    post:
+      tags: [Rates]
+      operationId: calculateDistrictDomesticCost
+      summary: Menghitung ongkir berdasarkan ID kecamatan seperti RajaOngkir V2
+      security:
+        - rajaOngkirKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/RajaOngkirCalculateCostRequest"
+      responses:
+        "200":
+          description: Pilihan layanan dan biaya dalam kontrak RajaOngkir V2
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirCalculateCostResponse"
+        "400":
+          description: Parameter atau lokasi tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "401":
+          description: API key tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "422":
+          description: Courier tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "502":
+          description: Provider gagal atau menolak credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "503":
+          description: Kuota provider habis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+
+  /api/v1/track/waybill:
     post:
       tags: [Tracking]
       operationId: trackWaybill
-      summary: Membaca snapshot atau mengantrikan refresh resi
+      summary: Melacak AWB secara sinkron seperti RajaOngkir V2
+      description: >
+        Header key mengaktifkan kontrak sinkron RajaOngkir V2. Bearer tetap
+        memakai kontrak asynchronous API Kurir lama. Hasil sinkron memakai
+        snapshot PostgreSQL yang masih fresh agar tidak selalu memakai hit
+        provider.
+      parameters:
+        - name: awb
+          in: query
+          description: Wajib pada mode RajaOngkir V2
+          schema:
+            type: string
+            minLength: 6
+            maxLength: 40
+        - name: courier
+          in: query
+          description: Wajib pada mode RajaOngkir V2
+          schema:
+            type: string
+        - name: last_phone_number
+          in: query
+          description: Opsional; dipakai hanya bila courier meminta validasi telepon
+          schema:
+            type: string
+            pattern: "^[0-9]{5}$"
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/TrackingRequest"
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/RajaOngkirTrackingRequest"
       responses:
         "200":
-          description: Snapshot tracking tersedia
+          description: Tracking tersedia
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TrackingResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/TrackingResponse"
+                  - $ref: "#/components/schemas/RajaOngkirTrackingResponse"
         "202":
           description: Refresh tracking diantrikan
           content:
@@ -209,13 +389,35 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: Tracking belum dikonfigurasi
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "404":
+          description: AWB tidak ditemukan
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "502":
+          description: Provider tracking gagal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "503":
+          description: Tracking belum dikonfigurasi atau provider sedang dibatasi
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "504":
+          description: Provider tracking timeout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
 
   /v1/admin/overview:
     get:
@@ -604,6 +806,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: API key
+    rajaOngkirKeyAuth:
+      type: apiKey
+      in: header
+      name: key
+      description: Mengaktifkan façade kontrak RajaOngkir V2
     adminBearerAuth:
       type: http
       scheme: bearer
@@ -637,6 +844,39 @@ components:
       schema:
         type: string
         format: uuid
+    ProvinceID:
+      name: province_id
+      in: path
+      required: true
+      description: ID lokal provinsi dari endpoint daftar provinsi
+      schema:
+        oneOf:
+          - type: integer
+            format: int64
+          - type: string
+      example: 32
+    CityID:
+      name: city_id
+      in: path
+      required: true
+      description: ID lokal kota/kabupaten dari endpoint daftar kota
+      schema:
+        oneOf:
+          - type: integer
+            format: int64
+          - type: string
+      example: 3273
+    DistrictID:
+      name: district_id
+      in: path
+      required: true
+      description: ID lokal kecamatan dari endpoint daftar kecamatan
+      schema:
+        oneOf:
+          - type: integer
+            format: int64
+          - type: string
+      example: 327306
     AdminActor:
       name: X-Admin-Actor
       in: header
@@ -650,13 +890,17 @@ components:
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            oneOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - $ref: "#/components/schemas/RajaOngkirErrorResponse"
     Unauthorized:
       description: API key tidak valid
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            oneOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - $ref: "#/components/schemas/RajaOngkirErrorResponse"
 
   schemas:
     Health:
@@ -669,23 +913,63 @@ components:
 
     Location:
       type: object
-      required: [id, label]
+      required:
+        - id
+        - label
+        - province_id
+        - city_id
+        - district_id
+        - subdistrict_id
+        - province_name
+        - city_name
+        - district_name
+        - subdistrict_name
+        - zip_code
       properties:
         id:
           type: string
+          description: ID lokasi akhir yang dipakai sebagai origin atau destination
         label:
           type: string
+        province_id:
+          type: string
+        city_id:
+          type: string
+        district_id:
+          type: string
+        subdistrict_id:
+          type: string
+        province_name:
+          type: string
+        city_name:
+          type: string
+        district_name:
+          type: string
+        subdistrict_name:
+          type: string
+        zip_code:
+          type: string
+          pattern: "^[0-9]{5}$"
         province:
           type: string
+          deprecated: true
+          description: Alias kompatibilitas lama untuk province_name
         city:
           type: string
+          deprecated: true
+          description: Alias kompatibilitas lama untuk city_name
         district:
           type: string
+          deprecated: true
+          description: Alias kompatibilitas lama untuk district_name
         subdistrict:
           type: string
+          deprecated: true
+          description: Alias kompatibilitas lama untuk subdistrict_name
         postal_code:
           type: string
-          description: Kode pos utama yang terverifikasi dari provider
+          deprecated: true
+          description: Alias kompatibilitas lama untuk zip_code
           pattern: "^[0-9]{5}$"
         postal_codes:
           type: array
@@ -700,8 +984,17 @@ components:
       properties:
         meta:
           type: object
-          required: [request_id]
+          required: [message, code, status, request_id]
           properties:
+            message:
+              type: string
+              examples: [Success Get Domestic Destinations]
+            code:
+              type: integer
+              examples: [200]
+            status:
+              type: string
+              examples: [success]
             request_id:
               type: string
             next_cursor:
@@ -710,6 +1003,45 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Location"
+
+    HierarchyLocation:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          oneOf:
+            - type: integer
+              format: int64
+            - type: string
+          description: ID lokal unik untuk level lokasi ini
+        name:
+          type: string
+        zip_code:
+          type: string
+          description: Kode pos utama jika tersedia
+
+    LocationHierarchyResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          type: object
+          required: [message, code, status]
+          properties:
+            message:
+              type: string
+            code:
+              type: integer
+              examples: [200]
+            status:
+              type: string
+              examples: [success]
+            request_id:
+              type: string
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/HierarchyLocation"
 
     CourierService:
       type: object
@@ -809,6 +1141,27 @@ components:
         options:
           $ref: "#/components/schemas/CalculateOptions"
 
+    RajaOngkirCalculateCostRequest:
+      type: object
+      required: [origin, destination, weight, courier]
+      properties:
+        origin:
+          type: integer
+          format: int64
+        destination:
+          type: integer
+          format: int64
+        weight:
+          type: integer
+          format: int64
+          minimum: 1
+        courier:
+          type: string
+          pattern: "^[a-z0-9_-]+(:[a-z0-9_-]+)*$"
+        price:
+          type: string
+          enum: [lowest, highest]
+
     Dimensions:
       type: object
       additionalProperties: false
@@ -865,6 +1218,88 @@ components:
           type: array
           items:
             type: string
+
+    RajaOngkirCalculateCostResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RajaOngkirMeta"
+        data:
+          type: array
+          items:
+            type: object
+            required: [name, code, service, description, cost, etd]
+            properties:
+              name:
+                type: string
+              code:
+                type: string
+              service:
+                type: string
+              description:
+                type: string
+              cost:
+                type: integer
+                format: int64
+              etd:
+                type: string
+
+    RajaOngkirMeta:
+      type: object
+      required: [message, code, status]
+      properties:
+        message:
+          type: string
+        code:
+          type: integer
+        status:
+          type: string
+          enum: [success, error, failed]
+
+    RajaOngkirDestinationSearchResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RajaOngkirMeta"
+        data:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - label
+              - province_name
+              - city_name
+              - district_name
+              - subdistrict_name
+              - zip_code
+            properties:
+              id:
+                type: integer
+                format: int64
+              label:
+                type: string
+              province_name:
+                type: string
+              city_name:
+                type: string
+              district_name:
+                type: string
+              subdistrict_name:
+                type: string
+              zip_code:
+                type: string
+
+    RajaOngkirErrorResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RajaOngkirMeta"
+        data:
+          type: "null"
 
     RateResult:
       type: object
@@ -1031,6 +1466,171 @@ components:
           type: string
           const: if_stale
           default: if_stale
+
+    RajaOngkirTrackingRequest:
+      type: object
+      required: [awb, courier]
+      properties:
+        awb:
+          type: string
+          minLength: 6
+          maxLength: 40
+          pattern: "^[A-Za-z0-9-]+$"
+        courier:
+          type: string
+        last_phone_number:
+          type: string
+          pattern: "^[0-9]{5}$"
+          description: Opsional; isi hanya ketika provider meminta validasi telepon
+
+    RajaOngkirTrackingResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RajaOngkirMeta"
+        data:
+          type: object
+          required:
+            - delivered
+            - summary
+            - details
+            - delivery_status
+            - manifest
+          properties:
+            delivered:
+              type: boolean
+            summary:
+              $ref: "#/components/schemas/RajaOngkirTrackingSummary"
+            details:
+              $ref: "#/components/schemas/RajaOngkirTrackingDetails"
+            delivery_status:
+              $ref: "#/components/schemas/RajaOngkirDeliveryStatus"
+            manifest:
+              type: array
+              items:
+                $ref: "#/components/schemas/RajaOngkirManifest"
+
+    RajaOngkirTrackingSummary:
+      type: object
+      required:
+        - courier_code
+        - courier_name
+        - waybill_number
+        - service_code
+        - waybill_date
+        - shipper_name
+        - receiver_name
+        - origin
+        - destination
+        - status
+      properties:
+        courier_code:
+          type: string
+        courier_name:
+          type: string
+        waybill_number:
+          type: string
+        service_code:
+          type: string
+        waybill_date:
+          type: string
+        shipper_name:
+          type: string
+        receiver_name:
+          type: string
+        origin:
+          type: string
+        destination:
+          type: string
+        status:
+          type: string
+
+    RajaOngkirTrackingDetails:
+      type: object
+      required:
+        - waybill_number
+        - waybill_date
+        - waybill_time
+        - weight
+        - origin
+        - destination
+        - shipper_name
+        - shipper_address1
+        - shipper_address2
+        - shipper_address3
+        - shipper_city
+        - receiver_name
+        - receiver_address1
+        - receiver_address2
+        - receiver_address3
+        - receiver_city
+      properties:
+        waybill_number:
+          type: string
+        waybill_date:
+          type: string
+        waybill_time:
+          type: string
+        weight:
+          type: string
+        origin:
+          type: string
+        destination:
+          type: string
+        shipper_name:
+          type: string
+        shipper_address1:
+          type: string
+        shipper_address2:
+          type: string
+        shipper_address3:
+          type: string
+        shipper_city:
+          type: string
+        receiver_name:
+          type: string
+        receiver_address1:
+          type: string
+        receiver_address2:
+          type: string
+        receiver_address3:
+          type: string
+        receiver_city:
+          type: string
+
+    RajaOngkirDeliveryStatus:
+      type: object
+      required: [status, pod_receiver, pod_date, pod_time]
+      properties:
+        status:
+          type: string
+        pod_receiver:
+          type: string
+        pod_date:
+          type: string
+        pod_time:
+          type: string
+
+    RajaOngkirManifest:
+      type: object
+      required:
+        - manifest_code
+        - manifest_description
+        - manifest_date
+        - manifest_time
+        - city_name
+      properties:
+        manifest_code:
+          type: string
+        manifest_description:
+          type: string
+        manifest_date:
+          type: string
+        manifest_time:
+          type: string
+        city_name:
+          type: string
 
     TrackingEvent:
       type: object

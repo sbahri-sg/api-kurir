@@ -90,10 +90,9 @@ func (r *PostgresRepository) ResolveProviderLocation(
 		JOIN provider_location_mappings mapping
 		  ON mapping.location_id = location.id
 		 AND mapping.provider_code = $2
-		 AND mapping.granularity = 'subdistrict'
+		 AND mapping.granularity = location.level
 		 AND mapping.active
 		WHERE location.public_id = $1
-		  AND location.level = 'subdistrict'
 		  AND location.active
 		LIMIT 1
 	`,
@@ -117,6 +116,9 @@ func (r *PostgresRepository) FindByPublicID(
 	err := r.pool.QueryRow(ctx, `
 		SELECT
 			location.public_id,
+			location.compatibility_id,
+			coalesce(parent.public_id, ''),
+			location.level,
 			coalesce(location.province, ''),
 			coalesce(location.city, ''),
 			coalesce(location.district, ''),
@@ -132,6 +134,9 @@ func (r *PostgresRepository) FindByPublicID(
 			),
 			coalesce(postal.codes, ARRAY[]::text[])
 		FROM locations location
+		LEFT JOIN locations parent
+		  ON parent.id = location.parent_id
+		 AND parent.active
 		LEFT JOIN LATERAL (
 			SELECT array_agg(DISTINCT code.code ORDER BY code.code) AS codes
 			FROM location_postal_codes link
@@ -141,10 +146,12 @@ func (r *PostgresRepository) FindByPublicID(
 			  AND code.active
 		) postal ON true
 		WHERE location.public_id = $1
-		  AND location.level = 'subdistrict'
 		  AND location.active
 	`, strings.TrimSpace(publicID)).Scan(
 		&location.PublicID,
+		&location.CompatibilityID,
+		&location.ParentPublicID,
+		&location.Level,
 		&location.Province,
 		&location.City,
 		&location.District,
@@ -181,14 +188,13 @@ func (r *PostgresRepository) SaveProviderMapping(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var locationID string
+	var locationID, granularity string
 	err = tx.QueryRow(ctx, `
-		SELECT id::text
+		SELECT id::text, level
 		FROM locations
 		WHERE public_id = $1
-		  AND level = 'subdistrict'
 		  AND active
-	`, strings.TrimSpace(locationPublicID)).Scan(&locationID)
+	`, strings.TrimSpace(locationPublicID)).Scan(&locationID, &granularity)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrLocationNotFound
 	}
@@ -200,9 +206,9 @@ func (r *PostgresRepository) SaveProviderMapping(
 		DELETE FROM provider_location_mappings
 		WHERE location_id = $1::uuid
 		  AND provider_code = $2
-		  AND granularity = 'subdistrict'
+		  AND granularity = $4
 		  AND provider_location_id <> $3
-	`, locationID, providerCode, providerLocationID); err != nil {
+	`, locationID, providerCode, providerLocationID, granularity); err != nil {
 		return fmt.Errorf("remove superseded provider mapping: %w", err)
 	}
 
@@ -230,14 +236,14 @@ func (r *PostgresRepository) SaveProviderMapping(
 		)
 		VALUES (
 			$1::uuid,
-			$2,
-			$3,
-			nullif($4, ''),
-			'subdistrict',
-			now(),
-			'aggregator_direct',
-			nullif($5, ''),
-			$6,
+				$2,
+				$3,
+				nullif($4, ''),
+				$5,
+				now(),
+				'aggregator_direct',
+				nullif($6, ''),
+				$7,
 			now(),
 			1,
 			true
@@ -262,6 +268,7 @@ func (r *PostgresRepository) SaveProviderMapping(
 		providerCode,
 		providerLocationID,
 		strings.TrimSpace(providerLocationName),
+		granularity,
 		strings.TrimSpace(sourceEndpoint),
 		hex.EncodeToString(mappingHash[:]),
 	); err != nil {

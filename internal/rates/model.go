@@ -11,6 +11,8 @@ type Dimensions struct {
 type Request struct {
 	Origin            string
 	Destination       string
+	Granularity       string
+	PriceFilter       string
 	ActualWeightGrams int64
 	Couriers          []string
 	Dimensions        *Dimensions

@@ -81,8 +81,21 @@ type Repository interface {
 		waybillCiphertext []byte,
 		providerContextCiphertext []byte,
 	) (Shipment, error)
+	RegisterImmediate(
+		ctx context.Context,
+		courierCode string,
+		waybillHash string,
+		waybillMasked string,
+		waybillCiphertext []byte,
+		providerContextCiphertext []byte,
+	) (Shipment, error)
 	Claim(ctx context.Context, workerID string, courierCodes []string) (Job, error)
 	Complete(ctx context.Context, job Job, result Result) error
+	CompleteImmediate(
+		ctx context.Context,
+		shipmentID string,
+		result Result,
+	) error
 	Fail(ctx context.Context, job Job, errorCode, message string, retryAt time.Time) error
 }
 

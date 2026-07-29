@@ -65,6 +65,7 @@ type DomesticCostRequest struct {
 	Destination string
 	WeightGrams int64
 	Couriers    []string
+	PriceFilter string
 }
 
 type DomesticQuote struct {
@@ -92,27 +93,42 @@ type WaybillTracking struct {
 }
 
 type WaybillSummary struct {
-	CourierCode string
-	CourierName string
-	ServiceCode string
-	WaybillDate string
-	Origin      string
-	Destination string
-	Status      string
+	CourierCode   string
+	CourierName   string
+	WaybillNumber string
+	ServiceCode   string
+	WaybillDate   string
+	ShipperName   string
+	ReceiverName  string
+	Origin        string
+	Destination   string
+	Status        string
 }
 
 type WaybillDetails struct {
-	WaybillDate string
-	WaybillTime string
-	Weight      string
-	Origin      string
-	Destination string
+	WaybillNumber    string
+	WaybillDate      string
+	WaybillTime      string
+	Weight           string
+	Origin           string
+	Destination      string
+	ShipperName      string
+	ShipperAddress1  string
+	ShipperAddress2  string
+	ShipperAddress3  string
+	ShipperCity      string
+	ReceiverName     string
+	ReceiverAddress1 string
+	ReceiverAddress2 string
+	ReceiverAddress3 string
+	ReceiverCity     string
 }
 
 type WaybillDelivery struct {
-	Status  string
-	PODDate string
-	PODTime string
+	Status      string
+	PODReceiver string
+	PODDate     string
+	PODTime     string
 }
 
 type WaybillManifest struct {
@@ -183,25 +199,40 @@ type waybillResponse struct {
 	Data *struct {
 		Delivered bool `json:"delivered"`
 		Summary   struct {
-			CourierCode string `json:"courier_code"`
-			CourierName string `json:"courier_name"`
-			ServiceCode string `json:"service_code"`
-			WaybillDate string `json:"waybill_date"`
-			Origin      string `json:"origin"`
-			Destination string `json:"destination"`
-			Status      string `json:"status"`
+			CourierCode   string `json:"courier_code"`
+			CourierName   string `json:"courier_name"`
+			WaybillNumber string `json:"waybill_number"`
+			ServiceCode   string `json:"service_code"`
+			WaybillDate   string `json:"waybill_date"`
+			ShipperName   string `json:"shipper_name"`
+			ReceiverName  string `json:"receiver_name"`
+			Origin        string `json:"origin"`
+			Destination   string `json:"destination"`
+			Status        string `json:"status"`
 		} `json:"summary"`
 		Details struct {
-			WaybillDate string         `json:"waybill_date"`
-			WaybillTime string         `json:"waybill_time"`
-			Weight      flexibleString `json:"weight"`
-			Origin      string         `json:"origin"`
-			Destination string         `json:"destination"`
+			WaybillNumber    string         `json:"waybill_number"`
+			WaybillDate      string         `json:"waybill_date"`
+			WaybillTime      string         `json:"waybill_time"`
+			Weight           flexibleString `json:"weight"`
+			Origin           string         `json:"origin"`
+			Destination      string         `json:"destination"`
+			ShipperName      string         `json:"shipper_name"`
+			ShipperAddress1  string         `json:"shipper_address1"`
+			ShipperAddress2  string         `json:"shipper_address2"`
+			ShipperAddress3  string         `json:"shipper_address3"`
+			ShipperCity      string         `json:"shipper_city"`
+			ReceiverName     string         `json:"receiver_name"`
+			ReceiverAddress1 string         `json:"receiver_address1"`
+			ReceiverAddress2 string         `json:"receiver_address2"`
+			ReceiverAddress3 string         `json:"receiver_address3"`
+			ReceiverCity     string         `json:"receiver_city"`
 		} `json:"details"`
 		DeliveryStatus struct {
-			Status  string `json:"status"`
-			PODDate string `json:"pod_date"`
-			PODTime string `json:"pod_time"`
+			Status      string `json:"status"`
+			PODReceiver string `json:"pod_receiver"`
+			PODDate     string `json:"pod_date"`
+			PODTime     string `json:"pod_time"`
 		} `json:"delivery_status"`
 		Manifest []struct {
 			Code        string `json:"manifest_code"`
@@ -328,6 +359,29 @@ func (c *Client) CalculateDomestic(
 	ctx context.Context,
 	input DomesticCostRequest,
 ) ([]DomesticQuote, error) {
+	return c.calculateDomestic(
+		ctx,
+		"calculate/domestic-cost",
+		input,
+	)
+}
+
+func (c *Client) CalculateDistrictDomestic(
+	ctx context.Context,
+	input DomesticCostRequest,
+) ([]DomesticQuote, error) {
+	return c.calculateDomestic(
+		ctx,
+		"calculate/district/domestic-cost",
+		input,
+	)
+}
+
+func (c *Client) calculateDomestic(
+	ctx context.Context,
+	path string,
+	input DomesticCostRequest,
+) ([]DomesticQuote, error) {
 	if input.Origin == "" || input.Destination == "" || input.WeightGrams <= 0 || len(input.Couriers) == 0 {
 		return nil, errors.New("invalid RajaOngkir domestic cost request")
 	}
@@ -337,11 +391,14 @@ func (c *Client) CalculateDomestic(
 	form.Set("destination", input.Destination)
 	form.Set("weight", strconv.FormatInt(input.WeightGrams, 10))
 	form.Set("courier", strings.Join(input.Couriers, ":"))
+	if input.PriceFilter != "" {
+		form.Set("price", input.PriceFilter)
+	}
 
 	request, err := c.newRequest(
 		ctx,
 		http.MethodPost,
-		"calculate/domestic-cost",
+		path,
 		strings.NewReader(form.Encode()),
 	)
 	if err != nil {
@@ -541,25 +598,40 @@ func (c *Client) TrackWaybill(
 	result := WaybillTracking{
 		Delivered: response.Data.Delivered,
 		Summary: WaybillSummary{
-			CourierCode: strings.ToLower(strings.TrimSpace(response.Data.Summary.CourierCode)),
-			CourierName: strings.TrimSpace(response.Data.Summary.CourierName),
-			ServiceCode: strings.TrimSpace(response.Data.Summary.ServiceCode),
-			WaybillDate: strings.TrimSpace(response.Data.Summary.WaybillDate),
-			Origin:      strings.TrimSpace(response.Data.Summary.Origin),
-			Destination: strings.TrimSpace(response.Data.Summary.Destination),
-			Status:      strings.TrimSpace(response.Data.Summary.Status),
+			CourierCode:   strings.ToLower(strings.TrimSpace(response.Data.Summary.CourierCode)),
+			CourierName:   strings.TrimSpace(response.Data.Summary.CourierName),
+			WaybillNumber: strings.TrimSpace(response.Data.Summary.WaybillNumber),
+			ServiceCode:   strings.TrimSpace(response.Data.Summary.ServiceCode),
+			WaybillDate:   strings.TrimSpace(response.Data.Summary.WaybillDate),
+			ShipperName:   strings.TrimSpace(response.Data.Summary.ShipperName),
+			ReceiverName:  strings.TrimSpace(response.Data.Summary.ReceiverName),
+			Origin:        strings.TrimSpace(response.Data.Summary.Origin),
+			Destination:   strings.TrimSpace(response.Data.Summary.Destination),
+			Status:        strings.TrimSpace(response.Data.Summary.Status),
 		},
 		Details: WaybillDetails{
-			WaybillDate: strings.TrimSpace(response.Data.Details.WaybillDate),
-			WaybillTime: strings.TrimSpace(response.Data.Details.WaybillTime),
-			Weight:      strings.TrimSpace(string(response.Data.Details.Weight)),
-			Origin:      strings.TrimSpace(response.Data.Details.Origin),
-			Destination: strings.TrimSpace(response.Data.Details.Destination),
+			WaybillNumber:    strings.TrimSpace(response.Data.Details.WaybillNumber),
+			WaybillDate:      strings.TrimSpace(response.Data.Details.WaybillDate),
+			WaybillTime:      strings.TrimSpace(response.Data.Details.WaybillTime),
+			Weight:           strings.TrimSpace(string(response.Data.Details.Weight)),
+			Origin:           strings.TrimSpace(response.Data.Details.Origin),
+			Destination:      strings.TrimSpace(response.Data.Details.Destination),
+			ShipperName:      strings.TrimSpace(response.Data.Details.ShipperName),
+			ShipperAddress1:  strings.TrimSpace(response.Data.Details.ShipperAddress1),
+			ShipperAddress2:  strings.TrimSpace(response.Data.Details.ShipperAddress2),
+			ShipperAddress3:  strings.TrimSpace(response.Data.Details.ShipperAddress3),
+			ShipperCity:      strings.TrimSpace(response.Data.Details.ShipperCity),
+			ReceiverName:     strings.TrimSpace(response.Data.Details.ReceiverName),
+			ReceiverAddress1: strings.TrimSpace(response.Data.Details.ReceiverAddress1),
+			ReceiverAddress2: strings.TrimSpace(response.Data.Details.ReceiverAddress2),
+			ReceiverAddress3: strings.TrimSpace(response.Data.Details.ReceiverAddress3),
+			ReceiverCity:     strings.TrimSpace(response.Data.Details.ReceiverCity),
 		},
 		Delivery: WaybillDelivery{
-			Status:  strings.TrimSpace(response.Data.DeliveryStatus.Status),
-			PODDate: strings.TrimSpace(response.Data.DeliveryStatus.PODDate),
-			PODTime: strings.TrimSpace(response.Data.DeliveryStatus.PODTime),
+			Status:      strings.TrimSpace(response.Data.DeliveryStatus.Status),
+			PODReceiver: strings.TrimSpace(response.Data.DeliveryStatus.PODReceiver),
+			PODDate:     strings.TrimSpace(response.Data.DeliveryStatus.PODDate),
+			PODTime:     strings.TrimSpace(response.Data.DeliveryStatus.PODTime),
 		},
 		Manifest: make([]WaybillManifest, 0, len(response.Data.Manifest)),
 	}

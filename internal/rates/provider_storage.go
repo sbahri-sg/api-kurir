@@ -401,6 +401,8 @@ func providerRequestFingerprint(request Request) string {
 	payload := struct {
 		Origin            string
 		Destination       string
+		Granularity       string
+		PriceFilter       string
 		ActualWeightGrams int64
 		Couriers          []string
 		Dimensions        *Dimensions
@@ -408,6 +410,8 @@ func providerRequestFingerprint(request Request) string {
 	}{
 		Origin:            request.Origin,
 		Destination:       request.Destination,
+		Granularity:       request.Granularity,
+		PriceFilter:       request.PriceFilter,
 		ActualWeightGrams: request.ActualWeightGrams,
 		Couriers:          couriers,
 		Dimensions:        request.Dimensions,

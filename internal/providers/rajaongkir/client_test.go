@@ -51,7 +51,8 @@ func TestCalculateDomestic(t *testing.T) {
 			if form.Get("origin") != "100" ||
 				form.Get("destination") != "200" ||
 				form.Get("weight") != "10300" ||
-				form.Get("courier") != "jne:tiki" {
+				form.Get("courier") != "jne:tiki" ||
+				form.Get("price") != "lowest" {
 				t.Fatalf("unexpected form: %v", form)
 			}
 			return jsonResponse(http.StatusOK, `{
@@ -77,6 +78,7 @@ func TestCalculateDomestic(t *testing.T) {
 		Destination: "200",
 		WeightGrams: 10300,
 		Couriers:    []string{"jne", "tiki"},
+		PriceFilter: "lowest",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,6 +89,53 @@ func TestCalculateDomestic(t *testing.T) {
 	if quotes[0].ETDMinDays == nil || *quotes[0].ETDMinDays != 3 ||
 		quotes[0].ETDMaxDays == nil || *quotes[0].ETDMaxDays != 7 {
 		t.Fatalf("unexpected ETD: %#v", quotes[0])
+	}
+}
+
+func TestCalculateDistrictDomesticUsesDistrictEndpoint(t *testing.T) {
+	t.Parallel()
+
+	httpClient := &http.Client{
+		Timeout: time.Second,
+		Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path != "/api/v1/calculate/district/domestic-cost" {
+				t.Fatalf("path: got %s", request.URL.Path)
+			}
+			return jsonResponse(http.StatusOK, `{
+				"meta":{"message":"success","code":200,"status":"success"},
+				"data":[{
+					"name":"JNE",
+					"code":"jne",
+					"service":"REG",
+					"description":"Layanan Reguler",
+					"cost":15000,
+					"etd":"1-2"
+				}]
+			}`), nil
+		}),
+	}
+	client, err := NewClient(
+		"https://provider.test/api/v1/",
+		"test-secret",
+		httpClient,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quotes, err := client.CalculateDistrictDomestic(
+		context.Background(),
+		DomesticCostRequest{
+			Origin:      "1391",
+			Destination: "1376",
+			WeightGrams: 1000,
+			Couriers:    []string{"jne"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(quotes) != 1 || quotes[0].Cost != 15000 {
+		t.Fatalf("unexpected quote: %#v", quotes)
 	}
 }
 
@@ -255,20 +304,39 @@ func TestTrackWaybillDoesNotRequirePhoneContext(t *testing.T) {
 					"summary":{
 						"courier_code":"jne",
 						"courier_name":"JNE",
+						"waybill_number":"TEST123456789",
 						"service_code":"REG",
 						"waybill_date":"2026-07-27",
+						"shipper_name":"TOKO EMISELL",
+						"receiver_name":"BUDI",
 						"origin":"Jakarta",
 						"destination":"Bandung",
 						"status":"IN TRANSIT"
 					},
 					"details":{
+						"waybill_number":"TEST123456789",
 						"waybill_date":"2026-07-27",
 						"waybill_time":"10:00",
 						"weight":1,
 						"origin":"Jakarta",
-						"destination":"Bandung"
+						"destination":"Bandung",
+						"shipper_name":"TOKO EMISELL",
+						"shipper_address1":"Jalan Asal 1",
+						"shipper_address2":"",
+						"shipper_address3":"",
+						"shipper_city":"Jakarta",
+						"receiver_name":"BUDI",
+						"receiver_address1":"Jalan Tujuan 1",
+						"receiver_address2":"",
+						"receiver_address3":"",
+						"receiver_city":"Bandung"
 					},
-					"delivery_status":{"status":"","pod_date":"","pod_time":""},
+					"delivery_status":{
+						"status":"",
+						"pod_receiver":"BUDI",
+						"pod_date":"",
+						"pod_time":""
+					},
 					"manifest":[{
 						"manifest_code":"TRANSIT",
 						"manifest_description":"In transit at gateway",
@@ -293,8 +361,12 @@ func TestTrackWaybillDoesNotRequirePhoneContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Summary.Status != "IN TRANSIT" ||
+		result.Summary.WaybillNumber != "TEST123456789" ||
+		result.Summary.ShipperName != "TOKO EMISELL" ||
 		len(result.Manifest) != 1 ||
-		result.Details.Weight != "1" {
+		result.Details.Weight != "1" ||
+		result.Details.ReceiverAddress1 != "Jalan Tujuan 1" ||
+		result.Delivery.PODReceiver != "BUDI" {
 		t.Fatalf("unexpected tracking result: %#v", result)
 	}
 }

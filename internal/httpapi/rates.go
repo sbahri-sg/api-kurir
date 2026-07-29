@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/labstack/echo/v5"
 )
@@ -24,6 +26,7 @@ type calculateRequest struct {
 	Destination string              `json:"destination"`
 	Weight      int64               `json:"weight"`
 	Courier     string              `json:"courier"`
+	Price       string              `json:"price,omitempty"`
 	Dimensions  *calculateDimension `json:"dimensions,omitempty"`
 	ItemValue   int64               `json:"item_value,omitempty"`
 	Options     calculateOptions    `json:"options,omitempty"`
@@ -173,6 +176,237 @@ func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
 	}
 }
 
+func calculatePublicRateHandler(
+	service *rates.Service,
+	locationRepository locations.Repository,
+	granularity string,
+) echo.HandlerFunc {
+	legacyHandler := calculateRateHandler(service)
+	return func(c *echo.Context) error {
+		if !rajaOngkirV2Compatibility(c) {
+			return legacyHandler(c)
+		}
+		return calculateRajaOngkirV2Rate(
+			c,
+			service,
+			locationRepository,
+			granularity,
+		)
+	}
+}
+
+func calculateRajaOngkirV2Rate(
+	c *echo.Context,
+	service *rates.Service,
+	locationRepository locations.Repository,
+	granularity string,
+) error {
+	c.Request().Body = http.MaxBytesReader(
+		c.Response(),
+		c.Request().Body,
+		maxCalculateBodyBytes,
+	)
+	if err := c.Request().ParseForm(); err != nil {
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"Payload form tidak valid.",
+			nil,
+		)
+	}
+
+	weight, err := strconv.ParseInt(
+		strings.TrimSpace(c.Request().FormValue("weight")),
+		10,
+		64,
+	)
+	if err != nil {
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"weight wajib berupa integer gram.",
+			nil,
+		)
+	}
+	priceFilter := strings.ToLower(strings.TrimSpace(c.Request().FormValue("price")))
+	if priceFilter != "" && priceFilter != "lowest" && priceFilter != "highest" {
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"price harus lowest atau highest.",
+			nil,
+		)
+	}
+	courierValue := strings.TrimSpace(c.Request().FormValue("courier"))
+	if courierValue == "" {
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"courier wajib diisi.",
+			nil,
+		)
+	}
+	if _, err := normalizeCourierCodes(courierValue); err != nil {
+		return writeError(
+			c,
+			http.StatusUnprocessableEntity,
+			"INVALID_COURIER",
+			"Courier tidak valid.",
+			nil,
+		)
+	}
+
+	origin, err := locationRepository.ResolvePublicID(
+		c.Request().Context(),
+		c.Request().FormValue("origin"),
+		granularity,
+	)
+	if err != nil {
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"origin tidak valid.",
+			nil,
+		)
+	}
+	destination, err := locationRepository.ResolvePublicID(
+		c.Request().Context(),
+		c.Request().FormValue("destination"),
+		granularity,
+	)
+	if err != nil {
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"destination tidak valid.",
+			nil,
+		)
+	}
+
+	request, err := normalizeCalculateRequest(calculateRequest{
+		Origin:      origin,
+		Destination: destination,
+		Weight:      weight,
+		Courier:     courierValue,
+		Price:       priceFilter,
+	})
+	if err != nil {
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			err.Error(),
+			nil,
+		)
+	}
+	request.Granularity = granularity
+	request.PriceFilter = priceFilter
+
+	results, err := service.Calculate(c.Request().Context(), request)
+	if err != nil {
+		return writeRajaOngkirRateError(c, request, err)
+	}
+
+	data := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		data = append(data, map[string]any{
+			"name":        result.Card.CourierName,
+			"code":        result.Card.CourierCode,
+			"service":     result.Card.ServiceCode,
+			"description": result.Card.ServiceName,
+			"cost":        result.Cost.Total,
+			"etd":         rajaOngkirETD(result),
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"meta": map[string]any{
+			"message": "Success Calculate Domestic Shipping cost",
+			"code":    http.StatusOK,
+			"status":  "success",
+		},
+		"data": data,
+	})
+}
+
+func writeRajaOngkirRateError(
+	c *echo.Context,
+	request rates.Request,
+	err error,
+) error {
+	switch {
+	case errors.Is(err, rates.ErrRateNotAvailable):
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"RATE_NOT_AVAILABLE",
+			"Calculate Domestic Shipping Cost not found.",
+			map[string]any{"courier": request.Couriers},
+		)
+	case errors.Is(err, rates.ErrProviderLocationMapping):
+		return writeError(
+			c,
+			http.StatusBadRequest,
+			"INVALID_LOCATION",
+			"Origin atau destination tidak valid.",
+			nil,
+		)
+	case errors.Is(err, rates.ErrProviderQuotaExhausted):
+		return writeError(
+			c,
+			http.StatusServiceUnavailable,
+			"PROVIDER_QUOTA_EXHAUSTED",
+			"Kuota provider untuk hari ini telah habis.",
+			nil,
+		)
+	case errors.Is(err, rates.ErrProviderUnauthorized):
+		return writeError(
+			c,
+			http.StatusBadGateway,
+			"PROVIDER_AUTHENTICATION_FAILED",
+			"Autentikasi ke provider gagal.",
+			nil,
+		)
+	case errors.Is(err, rates.ErrProviderUnavailable):
+		return writeError(
+			c,
+			http.StatusBadGateway,
+			"PROVIDER_ERROR",
+			"Provider belum dapat memberikan tarif.",
+			nil,
+		)
+	case errors.Is(err, rates.ErrInvalidShipment):
+		return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), nil)
+	default:
+		return err
+	}
+}
+
+func rajaOngkirETD(result rates.Result) string {
+	switch {
+	case result.Card.ETDMinDays != nil && result.Card.ETDMaxDays != nil:
+		if *result.Card.ETDMinDays == *result.Card.ETDMaxDays {
+			return strconv.Itoa(*result.Card.ETDMinDays)
+		}
+		return fmt.Sprintf(
+			"%d-%d",
+			*result.Card.ETDMinDays,
+			*result.Card.ETDMaxDays,
+		)
+	case result.Card.ETDMinDays != nil:
+		return strconv.Itoa(*result.Card.ETDMinDays)
+	case result.Card.ETDMaxDays != nil:
+		return strconv.Itoa(*result.Card.ETDMaxDays)
+	default:
+		return ""
+	}
+}
+
 func normalizeCalculateRequest(input calculateRequest) (rates.Request, error) {
 	input.Origin = strings.TrimSpace(input.Origin)
 	input.Destination = strings.TrimSpace(input.Destination)
@@ -187,6 +421,10 @@ func normalizeCalculateRequest(input calculateRequest) (rates.Request, error) {
 	}
 	if input.ItemValue < 0 {
 		return rates.Request{}, errors.New("item_value tidak boleh negatif")
+	}
+	input.Price = strings.ToLower(strings.TrimSpace(input.Price))
+	if input.Price != "" && input.Price != "lowest" && input.Price != "highest" {
+		return rates.Request{}, errors.New("price harus lowest atau highest")
 	}
 
 	couriers, err := normalizeCourierCodes(input.Courier)
@@ -217,6 +455,8 @@ func normalizeCalculateRequest(input calculateRequest) (rates.Request, error) {
 	return rates.Request{
 		Origin:            input.Origin,
 		Destination:       input.Destination,
+		Granularity:       "subdistrict",
+		PriceFilter:       input.Price,
 		ActualWeightGrams: input.Weight,
 		Couriers:          couriers,
 		Dimensions:        dimensions,

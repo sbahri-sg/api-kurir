@@ -69,6 +69,32 @@ func TestCustomerAPIKeyMiddlewareRejectsInvalidKey(t *testing.T) {
 	}
 }
 
+func TestCustomerAPIKeyMiddlewareAcceptsRajaOngkirKeyHeader(t *testing.T) {
+	t.Parallel()
+
+	e := echo.New()
+	e.Use(customerAPIKeyMiddleware([]string{"static-key"}, nil))
+	e.GET("/protected", func(c *echo.Context) error {
+		if !rajaOngkirV2Compatibility(c) {
+			t.Fatal("RajaOngkir compatibility mode was not enabled")
+		}
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("key", "static-key")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf(
+			"status: got %d want %d, body=%s",
+			response.Code,
+			http.StatusNoContent,
+			response.Body.String(),
+		)
+	}
+}
+
 func TestCustomerAPIKeyMiddlewarePropagatesRepositoryFailure(t *testing.T) {
 	authenticator := &stubCustomerKeyAuthenticator{err: errors.New("database unavailable")}
 	e := echo.New()

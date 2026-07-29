@@ -97,12 +97,19 @@ func (p *Provider) Quote(ctx context.Context, request rates.Request) ([]rates.Pr
 		return nil, err
 	}
 
-	quotes, err := p.client.CalculateDomestic(ctx, DomesticCostRequest{
+	costRequest := DomesticCostRequest{
 		Origin:      originID,
 		Destination: destinationID,
 		WeightGrams: request.ActualWeightGrams,
 		Couriers:    request.Couriers,
-	})
+		PriceFilter: request.PriceFilter,
+	}
+	var quotes []DomesticQuote
+	if request.Granularity == "district" {
+		quotes, err = p.client.CalculateDistrictDomestic(ctx, costRequest)
+	} else {
+		quotes, err = p.client.CalculateDomestic(ctx, costRequest)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -182,15 +189,38 @@ func (p *Provider) ensureMapping(
 		if p.quota == nil {
 			return "", rates.ErrProviderLocationMapping
 		}
-		if quotaErr := p.quota.ConsumeProviderHit(
-			ctx,
-			p.Code(),
-			p.credentialAlias,
-			p.dailyLimit,
-		); quotaErr != nil {
-			return "", quotaErr
+		providerID, providerName, sourceEndpoint, findErr :=
+			p.findProviderLocation(ctx, location)
+		if findErr != nil {
+			return "", findErr
 		}
+		if saveErr := p.mappings.SaveProviderMapping(
+			ctx,
+			locationPublicID,
+			p.Code(),
+			providerID,
+			providerName,
+			sourceEndpoint,
+		); saveErr != nil {
+			return "", saveErr
+		}
+		return providerID, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.(string), nil
+}
 
+func (p *Provider) findProviderLocation(
+	ctx context.Context,
+	location locations.Location,
+) (string, string, string, error) {
+	if err := p.consumeMappingHit(ctx); err != nil {
+		return "", "", "", err
+	}
+
+	if location.Level == "subdistrict" {
 		search := location.PostalCode
 		if search == "" {
 			search = strings.Join([]string{
@@ -199,35 +229,180 @@ func (p *Provider) ensureMapping(
 				location.City,
 			}, " ")
 		}
-		candidates, searchErr := p.client.SearchDestinations(
+		candidates, err := p.client.SearchDestinations(ctx, search, 1000, 0)
+		if err != nil {
+			return "", "", "", err
+		}
+		candidate, err := selectExactDestination(location, candidates)
+		if err == nil {
+			return candidate.ID, candidate.Label, "destination/domestic-destination", nil
+		}
+
+		if location.ParentPublicID == "" {
+			return "", "", "", err
+		}
+		parentProviderID, parentErr := p.ensureMapping(
 			ctx,
-			search,
-			1000,
-			0,
+			location.ParentPublicID,
 		)
-		if searchErr != nil {
-			return "", searchErr
+		if parentErr != nil {
+			return "", "", "", parentErr
 		}
-		candidate, selectErr := selectExactDestination(location, candidates)
-		if selectErr != nil {
-			return "", selectErr
+		if quotaErr := p.consumeMappingHit(ctx); quotaErr != nil {
+			return "", "", "", quotaErr
 		}
-		if saveErr := p.mappings.SaveProviderMapping(
+		hierarchyCandidates, listErr := p.client.ListSubdistricts(
 			ctx,
-			locationPublicID,
-			p.Code(),
-			candidate.ID,
-			candidate.Label,
-			"destination/domestic-destination",
-		); saveErr != nil {
-			return "", saveErr
+			parentProviderID,
+		)
+		if listErr != nil {
+			return "", "", "", listErr
 		}
-		return candidate.ID, nil
-	})
-	if err != nil {
-		return "", err
+		hierarchyCandidate, selectErr := selectExactHierarchyLocation(
+			location.Subdistrict,
+			hierarchyCandidates,
+		)
+		if selectErr != nil {
+			return "", "", "", selectErr
+		}
+		return hierarchyCandidate.ID,
+			hierarchyCandidate.Name,
+			"destination/sub-district",
+			nil
 	}
-	return result.(string), nil
+
+	parentProviderID := ""
+	if location.Level != "province" {
+		if location.ParentPublicID == "" {
+			return "", "", "", rates.ErrProviderLocationMapping
+		}
+		var err error
+		parentProviderID, err = p.ensureMapping(ctx, location.ParentPublicID)
+		if err != nil {
+			return "", "", "", err
+		}
+	}
+
+	var (
+		candidates []HierarchyLocation
+		endpoint   string
+		err        error
+	)
+	switch location.Level {
+	case "province":
+		endpoint = "destination/province"
+		candidates, err = p.client.ListProvinces(ctx)
+	case "city":
+		endpoint = "destination/city"
+		candidates, err = p.client.ListCities(ctx, parentProviderID)
+	case "district":
+		endpoint = "destination/district"
+		candidates, err = p.client.ListDistricts(ctx, parentProviderID)
+	default:
+		return "", "", "", rates.ErrProviderLocationMapping
+	}
+	if err != nil {
+		return "", "", "", err
+	}
+
+	localName := location.Province
+	if location.Level == "city" {
+		localName = location.City
+	} else if location.Level == "district" {
+		localName = location.District
+	}
+	candidate, err := selectExactHierarchyLocation(localName, candidates)
+	if err != nil {
+		return "", "", "", err
+	}
+	return candidate.ID, candidate.Name, endpoint, nil
+}
+
+func (p *Provider) consumeMappingHit(ctx context.Context) error {
+	if p.quota == nil {
+		return rates.ErrProviderLocationMapping
+	}
+	return p.quota.ConsumeProviderHit(
+		ctx,
+		p.Code(),
+		p.credentialAlias,
+		p.dailyLimit,
+	)
+}
+
+func selectExactHierarchyLocation(
+	localName string,
+	candidates []HierarchyLocation,
+) (HierarchyLocation, error) {
+	for _, candidate := range candidates {
+		if strings.EqualFold(
+			strings.TrimSpace(candidate.Name),
+			strings.TrimSpace(localName),
+		) {
+			return candidate, nil
+		}
+	}
+
+	matches := make([]HierarchyLocation, 0, 1)
+	for _, candidate := range candidates {
+		if normalizeAdministrativeName(candidate.Name) ==
+			normalizeAdministrativeName(localName) {
+			matches = append(matches, candidate)
+		}
+	}
+	if len(matches) != 1 {
+		localNormalized := normalizeAdministrativeName(localName)
+		bestDistance := len([]rune(localNormalized)) + 1
+		var best HierarchyLocation
+		tied := false
+		for _, candidate := range candidates {
+			distance := levenshteinDistance(
+				localNormalized,
+				normalizeAdministrativeName(candidate.Name),
+			)
+			switch {
+			case distance < bestDistance:
+				bestDistance = distance
+				best = candidate
+				tied = false
+			case distance == bestDistance:
+				tied = true
+			}
+		}
+		if len([]rune(localNormalized)) >= 8 &&
+			bestDistance <= 2 &&
+			!tied {
+			return best, nil
+		}
+		return HierarchyLocation{}, rates.ErrProviderLocationMapping
+	}
+	return matches[0], nil
+}
+
+func levenshteinDistance(left, right string) int {
+	leftRunes := []rune(left)
+	rightRunes := []rune(right)
+	previous := make([]int, len(rightRunes)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+
+	for leftIndex, leftRune := range leftRunes {
+		current := make([]int, len(rightRunes)+1)
+		current[0] = leftIndex + 1
+		for rightIndex, rightRune := range rightRunes {
+			cost := 0
+			if leftRune != rightRune {
+				cost = 1
+			}
+			deletion := previous[rightIndex+1] + 1
+			insertion := current[rightIndex] + 1
+			substitution := previous[rightIndex] + cost
+			current[rightIndex+1] = min(deletion, insertion, substitution)
+		}
+		previous = current
+	}
+	return previous[len(rightRunes)]
 }
 
 func selectExactDestination(

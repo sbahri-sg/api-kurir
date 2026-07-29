@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 var validWaybill = regexp.MustCompile(`^[A-Z0-9-]{6,40}$`)
@@ -16,6 +19,8 @@ type Service struct {
 	repository        Repository
 	cipher            *Cipher
 	supportedCouriers map[string]struct{}
+	now               func() time.Time
+	immediateGroup    singleflight.Group
 }
 
 func NewService(
@@ -34,6 +39,7 @@ func NewService(
 		repository:        repository,
 		cipher:            cipher,
 		supportedCouriers: supported,
+		now:               time.Now,
 	}
 }
 
@@ -41,38 +47,35 @@ func (s *Service) Register(
 	ctx context.Context,
 	courierCode, waybill, lastPhoneDigits string,
 ) (Shipment, error) {
-	courierCode = strings.ToLower(strings.TrimSpace(courierCode))
-	waybill = strings.ToUpper(strings.TrimSpace(waybill))
-	lastPhoneDigits = strings.TrimSpace(lastPhoneDigits)
-	if courierCode == "" || !validWaybill.MatchString(waybill) {
-		return Shipment{}, ErrInvalidWaybill
-	}
-	if len(s.supportedCouriers) > 0 {
-		if _, supported := s.supportedCouriers[courierCode]; !supported {
-			return Shipment{}, ErrUnsupportedCourier
-		}
-	}
-	if lastPhoneDigits != "" && !validPhoneSuffix.MatchString(lastPhoneDigits) {
-		return Shipment{}, ErrInvalidPhoneSuffix
+	request, err := s.normalizeRequest(Request{
+		CourierCode:     courierCode,
+		Waybill:         waybill,
+		LastPhoneDigits: lastPhoneDigits,
+	})
+	if err != nil {
+		return Shipment{}, err
 	}
 
-	hash := sha256.Sum256([]byte(courierCode + ":" + waybill))
+	hash := sha256.Sum256([]byte(request.CourierCode + ":" + request.Waybill))
 	waybillHash := hex.EncodeToString(hash[:])
-	ciphertext, err := s.cipher.Encrypt([]byte(waybill), []byte(courierCode))
+	ciphertext, err := s.cipher.Encrypt(
+		[]byte(request.Waybill),
+		[]byte(request.CourierCode),
+	)
 	if err != nil {
 		return Shipment{}, err
 	}
 	var providerContextCiphertext []byte
-	if lastPhoneDigits != "" {
+	if request.LastPhoneDigits != "" {
 		contextJSON, err := json.Marshal(map[string]string{
-			"last_phone_number": lastPhoneDigits,
+			"last_phone_number": request.LastPhoneDigits,
 		})
 		if err != nil {
 			return Shipment{}, err
 		}
 		providerContextCiphertext, err = s.cipher.Encrypt(
 			contextJSON,
-			[]byte(courierCode+":provider-context"),
+			[]byte(request.CourierCode+":provider-context"),
 		)
 		if err != nil {
 			return Shipment{}, err
@@ -80,12 +83,140 @@ func (s *Service) Register(
 	}
 	return s.repository.Register(
 		ctx,
-		courierCode,
+		request.CourierCode,
 		waybillHash,
-		maskWaybill(waybill),
+		maskWaybill(request.Waybill),
 		ciphertext,
 		providerContextCiphertext,
 	)
+}
+
+func (s *Service) TrackNow(
+	ctx context.Context,
+	adapter Adapter,
+	courierCode, waybill, lastPhoneDigits string,
+) (Result, error) {
+	if adapter == nil {
+		return Result{}, ErrAdapterUnavailable
+	}
+	request, err := s.normalizeRequest(Request{
+		CourierCode:     courierCode,
+		Waybill:         waybill,
+		LastPhoneDigits: lastPhoneDigits,
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	hash := sha256.Sum256([]byte(request.CourierCode + ":" + request.Waybill))
+	waybillHash := hex.EncodeToString(hash[:])
+
+	value, err, _ := s.immediateGroup.Do(waybillHash, func() (any, error) {
+		return s.trackNow(ctx, adapter, request, waybillHash)
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	return value.(Result), nil
+}
+
+func (s *Service) trackNow(
+	ctx context.Context,
+	adapter Adapter,
+	request Request,
+	waybillHash string,
+) (Result, error) {
+	ciphertext, err := s.cipher.Encrypt(
+		[]byte(request.Waybill),
+		[]byte(request.CourierCode),
+	)
+	if err != nil {
+		return Result{}, err
+	}
+	var providerContextCiphertext []byte
+	if request.LastPhoneDigits != "" {
+		contextJSON, err := json.Marshal(map[string]string{
+			"last_phone_number": request.LastPhoneDigits,
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		providerContextCiphertext, err = s.cipher.Encrypt(
+			contextJSON,
+			[]byte(request.CourierCode+":provider-context"),
+		)
+		if err != nil {
+			return Result{}, err
+		}
+	}
+
+	shipment, err := s.repository.RegisterImmediate(
+		ctx,
+		request.CourierCode,
+		waybillHash,
+		maskWaybill(request.Waybill),
+		ciphertext,
+		providerContextCiphertext,
+	)
+	if err != nil {
+		return Result{}, err
+	}
+	if shipment.ProviderFetchedAt != nil &&
+		(shipment.IsFinal ||
+			(shipment.NextRefreshAt != nil &&
+				s.now().UTC().Before(*shipment.NextRefreshAt))) {
+		return resultFromShipment(shipment), nil
+	}
+
+	result, err := adapter.Track(ctx, request)
+	if err != nil {
+		return Result{}, err
+	}
+	if result.FetchedAt.IsZero() {
+		result.FetchedAt = s.now().UTC()
+	}
+	if err := s.repository.CompleteImmediate(ctx, shipment.ID, result); err != nil {
+		return Result{}, err
+	}
+	return result, nil
+}
+
+func (s *Service) normalizeRequest(request Request) (Request, error) {
+	request.CourierCode = strings.ToLower(strings.TrimSpace(request.CourierCode))
+	request.Waybill = strings.ToUpper(strings.TrimSpace(request.Waybill))
+	request.LastPhoneDigits = strings.TrimSpace(request.LastPhoneDigits)
+	if request.CourierCode == "" || !validWaybill.MatchString(request.Waybill) {
+		return Request{}, ErrInvalidWaybill
+	}
+	if len(s.supportedCouriers) > 0 {
+		if _, supported := s.supportedCouriers[request.CourierCode]; !supported {
+			return Request{}, ErrUnsupportedCourier
+		}
+	}
+	if request.LastPhoneDigits != "" &&
+		!validPhoneSuffix.MatchString(request.LastPhoneDigits) {
+		return Request{}, ErrInvalidPhoneSuffix
+	}
+	return request, nil
+}
+
+func resultFromShipment(shipment Shipment) Result {
+	return Result{
+		NormalizedStatus: shipment.NormalizedStatus,
+		StatusLabel:      shipment.StatusLabel,
+		Summary:          shipment.Summary,
+		Events:           shipment.Events,
+		ProviderCode:     shipment.ProviderCode,
+		FetchedAt:        valueOrZero(shipment.ProviderFetchedAt),
+		NextRefreshAt:    shipment.NextRefreshAt,
+		IsFinal:          shipment.IsFinal,
+	}
+}
+
+func valueOrZero(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 func maskWaybill(waybill string) string {
