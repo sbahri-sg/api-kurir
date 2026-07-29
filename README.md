@@ -137,11 +137,23 @@ Production wajib mempunyai
 
 Master wilayah diimpor dari snapshot Kemendagri 2025 yang dipin ke commit dan
 checksum tertentu. Dataset berisi provinsi sampai desa/kelurahan serta mapping
-kode pos:
+kode pos. Untuk development dengan Go lokal:
 
 ```bash
 make region-import
 ```
+
+Untuk deployment Docker atau server baru, jalankan bootstrap satu kali setelah
+stack database tersedia:
+
+```bash
+make region-import-docker
+```
+
+Target Docker tersebut membangun app `region-import`, menunggu migrasi selesai,
+mengimpor dataset ke volume PostgreSQL yang aktif, lalu menghapus container
+bootstrap. Import bersifat idempotent dan dapat dijalankan ulang setelah
+deployment.
 
 Import tidak memakai hit RajaOngkir. Pencarian customer selalu membaca
 PostgreSQL lokal. ID lokasi RajaOngkir dibuat otomatis secara lazy ketika

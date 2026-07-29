@@ -29,6 +29,19 @@ services:
         condition: service_healthy
     restart: "no"
 
+  region-import:
+    profiles: ["bootstrap"]
+    build:
+      context: .
+      args:
+        APP: region-import
+    environment:
+      DATABASE_URL: postgres://api_kurir:api_kurir@postgres:5432/api_kurir?sslmode=disable
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   api:
     build:
       context: .
