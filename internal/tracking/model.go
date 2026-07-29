@@ -15,6 +15,7 @@ var (
 	ErrPhoneSuffixRequired  = errors.New("tracking phone suffix is required")
 	ErrUnsupportedCourier   = errors.New("tracking courier is unsupported")
 	ErrProviderUnauthorized = errors.New("tracking provider unauthorized")
+	ErrProviderRateLimited  = errors.New("tracking provider rate limited")
 	ErrProviderQuota        = errors.New("tracking provider quota exhausted")
 	ErrProviderTimeout      = errors.New("tracking provider timeout")
 	ErrProviderUnavailable  = errors.New("tracking provider unavailable")

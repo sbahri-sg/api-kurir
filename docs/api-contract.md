@@ -432,6 +432,7 @@ Kode utama:
 | 422 | `RATE_NOT_AVAILABLE` | Rate card/quote tidak tersedia |
 | 422 | `PROVIDER_LOCATION_NOT_MAPPED` | Mapping lokasi provider belum tersedia |
 | 429 | `TENANT_RATE_LIMITED` | Batas tenant API Kurir |
+| 429 | `PROVIDER_RATE_LIMITED` | Provider membatasi request sementara |
 | 502 | `PROVIDER_AUTHENTICATION_FAILED` | Credential provider ditolak |
 | 502 | `PROVIDER_ERROR` | Provider gagal memberi respons valid |
 | 503 | `PROVIDER_QUOTA_EXHAUSTED` | Quota sumber yang dibutuhkan habis |

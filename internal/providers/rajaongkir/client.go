@@ -596,7 +596,10 @@ func (c *Client) doTrackingJSON(request *http.Request, target any) error {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			mapped = tracking.ErrProviderUnauthorized
 		case http.StatusTooManyRequests:
-			mapped = tracking.ErrProviderQuota
+			// RajaOngkir also uses HTTP 429 for temporary throttling. Daily
+			// quota is enforced separately by the local provider ledger, so a
+			// 429 must stay retryable instead of being delayed until tomorrow.
+			mapped = tracking.ErrProviderRateLimited
 		case http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity:
 			message := strings.ToLower(providerError.Meta.Message)
 			if strings.Contains(message, "phone") ||

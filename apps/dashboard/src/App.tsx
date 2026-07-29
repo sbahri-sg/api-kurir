@@ -79,6 +79,8 @@ function trackingErrorMessage(code?: string) {
       return "Nomor resi belum ditemukan oleh provider. Pastikan ekspedisi sudah benar atau tunggu sampai resi aktif.";
     case "PROVIDER_QUOTA_EXHAUSTED":
       return "Kuota provider sedang habis. Antrean akan dilanjutkan otomatis setelah kuota tersedia.";
+    case "PROVIDER_RATE_LIMITED":
+      return "Provider sedang membatasi request sementara. Sistem akan mencoba kembali otomatis dalam beberapa menit.";
     case "PROVIDER_UNAUTHORIZED":
       return "Kredensial provider perlu diperiksa oleh admin.";
     case "PROVIDER_ERROR":

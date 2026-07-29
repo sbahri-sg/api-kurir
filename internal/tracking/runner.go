@@ -163,6 +163,8 @@ func (r *Runner) failJob(
 		message = "tracking provider request failed"
 	case "PROVIDER_UNAUTHORIZED":
 		message = "tracking provider credential was rejected"
+	case "PROVIDER_RATE_LIMITED":
+		message = "tracking provider temporarily rate limited the request"
 	case "PROVIDER_QUOTA_EXHAUSTED":
 		message = "tracking provider quota is exhausted"
 	case "WAYBILL_NOT_FOUND":
@@ -186,6 +188,8 @@ func trackingFailureCode(err error) string {
 	switch {
 	case errors.Is(err, ErrProviderUnauthorized):
 		return "PROVIDER_UNAUTHORIZED"
+	case errors.Is(err, ErrProviderRateLimited):
+		return "PROVIDER_RATE_LIMITED"
 	case errors.Is(err, ErrProviderQuota):
 		return "PROVIDER_QUOTA_EXHAUSTED"
 	case errors.Is(err, ErrWaybillNotFound):
@@ -199,6 +203,13 @@ func trackingFailureCode(err error) string {
 
 func retryDelay(code string, attempt int, now time.Time) time.Duration {
 	switch code {
+	case "PROVIDER_RATE_LIMITED":
+		exponent := math.Min(float64(attempt), 4)
+		delay := time.Duration(math.Pow(2, exponent)) * 30 * time.Second
+		if delay > 5*time.Minute {
+			return 5 * time.Minute
+		}
+		return delay
 	case "PROVIDER_QUOTA_EXHAUSTED":
 		jakarta := time.FixedZone("Asia/Jakarta", 7*60*60)
 		localNow := now.In(jakarta)

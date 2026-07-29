@@ -129,6 +129,7 @@ Ubah setelah memiliki data produksi tentang latency update dan konsumsi quota.
 | Kondisi | Error job | Kebijakan |
 |---|---|---|
 | Local/upstream quota habis | `PROVIDER_QUOTA_EXHAUSTED` | tunggu reset Jakarta + 5 menit |
+| HTTP 429 / throttle sementara | `PROVIDER_RATE_LIMITED` | exponential 30 detik, maksimum 5 menit |
 | Credential ditolak | `PROVIDER_UNAUTHORIZED` | retry 6 jam; alert operator |
 | Resi belum ditemukan | `WAYBILL_NOT_FOUND` | 15 menit, exponential hingga 8 jam |
 | Validasi telepon kurang | `PHONE_VALIDATION_REQUIRED` | 24 jam; perbaiki input |

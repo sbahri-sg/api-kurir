@@ -302,6 +302,8 @@ func providerCallFailure(err error) (string, string) {
 	switch {
 	case errors.Is(err, tracking.ErrProviderUnauthorized):
 		return "PROVIDER_UNAUTHORIZED", "client_error"
+	case errors.Is(err, tracking.ErrProviderRateLimited):
+		return "PROVIDER_RATE_LIMITED", "provider_error"
 	case errors.Is(err, tracking.ErrProviderQuota):
 		return "PROVIDER_QUOTA_EXHAUSTED", "provider_error"
 	case errors.Is(err, tracking.ErrWaybillNotFound):

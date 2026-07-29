@@ -246,7 +246,8 @@ hanya dicatat sebagai alias, bukan nilai API key.
 |---|---|
 | Mapping lokasi belum ada | `422 PROVIDER_LOCATION_NOT_MAPPED` |
 | Provider tidak memiliki tarif | `422 RATE_NOT_AVAILABLE` |
-| Local quota habis / upstream 429 | `503 PROVIDER_QUOTA_EXHAUSTED` |
+| Local daily quota habis | `503 PROVIDER_QUOTA_EXHAUSTED` |
+| Upstream HTTP 429 | retry sementara dengan exponential backoff |
 | Provider menolak credential | `502 PROVIDER_AUTHENTICATION_FAILED` |
 | Timeout, network, atau upstream 5xx | `502 PROVIDER_ERROR` |
 

@@ -299,7 +299,7 @@ func TestTrackWaybillDoesNotRequirePhoneContext(t *testing.T) {
 	}
 }
 
-func TestTrackWaybillMapsProviderErrors(t *testing.T) {
+func TestTrackWaybillMapsHTTP429ToTransientRateLimit(t *testing.T) {
 	t.Parallel()
 
 	httpClient := &http.Client{
@@ -307,7 +307,7 @@ func TestTrackWaybillMapsProviderErrors(t *testing.T) {
 		Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 			return jsonResponse(
 				http.StatusTooManyRequests,
-				`{"meta":{"message":"quota exhausted","code":429},"data":null}`,
+				`{"meta":{"message":"Too many requests","code":429},"data":null}`,
 			), nil
 		}),
 	}
@@ -318,8 +318,11 @@ func TestTrackWaybillMapsProviderErrors(t *testing.T) {
 	_, err = client.TrackWaybill(context.Background(), WaybillRequest{
 		AWB: "TEST123456789", Courier: "tiki",
 	})
-	if !errors.Is(err, tracking.ErrProviderQuota) {
-		t.Fatalf("expected provider quota error, got %v", err)
+	if !errors.Is(err, tracking.ErrProviderRateLimited) {
+		t.Fatalf("expected transient rate-limit error, got %v", err)
+	}
+	if errors.Is(err, tracking.ErrProviderQuota) {
+		t.Fatalf("HTTP 429 must not be treated as daily quota exhaustion: %v", err)
 	}
 	if providerStatusCode(err) != http.StatusTooManyRequests {
 		t.Fatalf("unexpected status: %d", providerStatusCode(err))
