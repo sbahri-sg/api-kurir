@@ -28,6 +28,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]Courier, error) {
 			coalesce(to_char(c.catalog_verified_at, 'YYYY-MM-DD'), ''),
 			cs.code,
 			cs.name,
+			cs.service_group,
 			cs.service_type,
 			CASE
 				WHEN cs.id IS NULL THEN NULL
@@ -56,7 +57,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]Courier, error) {
 	result := make([]Courier, 0)
 	for rows.Next() {
 		var courier Courier
-		var serviceCode, serviceName, serviceType, calculationMode *string
+		var serviceCode, serviceName, serviceGroup, serviceType, calculationMode *string
 		if err := rows.Scan(
 			&courier.Code,
 			&courier.Name,
@@ -68,6 +69,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]Courier, error) {
 			&courier.CatalogVerifiedAt,
 			&serviceCode,
 			&serviceName,
+			&serviceGroup,
 			&serviceType,
 			&calculationMode,
 		); err != nil {
@@ -94,6 +96,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]Courier, error) {
 			result[index].Services = append(result[index].Services, Service{
 				Code:            *serviceCode,
 				Name:            *serviceName,
+				Group:           *serviceGroup,
 				ServiceType:     *serviceType,
 				CalculationMode: *calculationMode,
 			})

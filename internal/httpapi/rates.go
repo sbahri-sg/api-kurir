@@ -142,6 +142,16 @@ func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
 					),
 				)
 			}
+			if result.Card.ServiceGroup == "unknown" {
+				warnings = append(
+					warnings,
+					fmt.Sprintf(
+						"%s %s belum dikenali katalog canonical; kode mentah tetap dikembalikan",
+						result.Card.CourierCode,
+						result.Card.ServiceCode,
+					),
+				)
+			}
 			data = append(data, rateResponse(result, calculatedAt))
 		}
 		if hasProviderQuote && request.Dimensions != nil {
@@ -243,6 +253,14 @@ func rateResponse(result rates.Result, calculatedAt time.Time) map[string]any {
 		etdText = fmt.Sprintf("%d-%d hari", *result.Card.ETDMinDays, *result.Card.ETDMaxDays)
 	}
 	isStale := result.Card.ExpiresAt != nil && !calculatedAt.Before(*result.Card.ExpiresAt)
+	canonicalServiceCode := result.Card.CanonicalServiceCode
+	if canonicalServiceCode == "" {
+		canonicalServiceCode = result.Card.ServiceCode
+	}
+	serviceGroup := result.Card.ServiceGroup
+	if serviceGroup == "" {
+		serviceGroup = "unknown"
+	}
 
 	return map[string]any{
 		"courier": map[string]any{
@@ -250,9 +268,12 @@ func rateResponse(result rates.Result, calculatedAt time.Time) map[string]any {
 			"name": result.Card.CourierName,
 		},
 		"service": map[string]any{
-			"code": result.Card.ServiceCode,
-			"name": result.Card.ServiceName,
-			"type": result.Card.ServiceType,
+			"code":           result.Card.ServiceCode,
+			"name":           result.Card.ServiceName,
+			"canonical_code": canonicalServiceCode,
+			"group":          serviceGroup,
+			"type":           result.Card.ServiceType,
+			"variant_code":   result.Card.ServiceVariantCode,
 		},
 		"cost": result.Cost.Total,
 		"etd": map[string]any{

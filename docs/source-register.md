@@ -1,6 +1,6 @@
 # Register Sumber dan Verifikasi
 
-Tanggal peninjauan: **28 Juli 2026**.
+Tanggal peninjauan: **29 Juli 2026**.
 
 Dokumen ini mencatat sumber publik yang dipakai untuk membangun katalog awal.
 Harga rute produksi tetap harus berasal dari API/rate sheet/kontrak yang masih
@@ -53,21 +53,21 @@ label “latest” di deployment produksi.
 
 | Carrier | Sumber resmi | Data yang diverifikasi | Keterbatasan |
 |---|---|---|---|
-| JNE | [JNE Trucking](https://www.jne.co.id/jtr-indonesia) | Min 10 kg, divisor 5.000, pembulatan, surcharge berat besar | Harga dan coverage per rute dari rate sheet |
-| TIKI | [Produk TIKI](https://www.tiki.id/id/produk) | SDS, ONS, REG, ECO, TRC, INT; TRC min 10 kg | Divisor/rounding belum lengkap |
+| JNE | [Produk dan layanan](https://www.jne.co.id/produk-dan-layanan), [JNE Trucking](https://www.jne.co.id/jtr-id) | REG, YES, SPS, JTR dan produk khusus; JTR min 10 kg, divisor 5.000, pembulatan, surcharge berat besar | Kode varian, harga, dan coverage per rute tetap dari quote/rate sheet |
+| TIKI | [Produk TIKI](https://www.tiki.id/id/produk), [T15/T25](https://www.tiki.id/id/blog/1512/nggak-mau-ribet-kirim-motor-coba-t15-dan-t25-dari-tiki) | SDS, ONS, REG, ECO, TRC, INT; TRC min 10 kg; T15/T25 varian motor | T60 teramati dari API provider; divisor/rounding belum lengkap |
 | SiCepat | [GOKIL](https://ekspres.sicepat.com/services/GOKIL), [ringkasan resmi](https://sahabatsicepat.com/sicepat-ekspres-layanan-ke-semua-segmen/) | Produk dan minimum GOKIL 10 kg | Formula rinci perlu kontrak |
 | J&T Express | [Ketentuan layanan](https://jet.co.id/information/terms/jtsuper) | Produk, divisor 6.000, DOC, SUPER, packing | Ada redaksi dimensi ambigu; konfirmasi merchant |
-| ID Express | [Situs utama](https://idexpress.com/), [syarat](https://idexpress.com/bantuan/syarat-dan-ketentuan) | Lite/Regular/Cargo dan pembulatan | Divisor belum terverifikasi |
+| ID Express | [Situs utama](https://idexpress.com/), [syarat](https://idexpress.com/bantuan/syarat-dan-ketentuan) | Lite/Regular/Cargo, kode `Idtruck` dari quote provider, dan pembulatan | Divisor belum terverifikasi |
 | Ninja Xpress | [Standard terms](https://www.ninjaxpress.co/id-id/standard-delivery-terms), [perhitungan ongkir](https://www.ninjaxpress.co/id-id/support/shipper-support/pricing-and-coverage/how-to-calculate-and-check-shipping-rates) | Maks 30 kg, divisor 6.000, pembulatan, Ninja Care | Scope aturan per produk perlu diuji |
 | Lion Parcel | [Produk](https://lionparcel.com/product/) | Kategori produk, estimasi, Light 300 g, large mulai 10 kg | Kode/formula akun perlu sinkronisasi |
 | AnterAja | [Layanan](https://anteraja.id/id/services) | Produk, estimasi, Mini Cargo >4 kg | Divisor dan minimum charge perlu kontrak |
-| Pos Indonesia | [Pos Reguler](https://www.posindonesia.co.id/id/pages/pos-reguler) | H+2–H+4, maks 50 kg, tracking/asuransi | Formula volume belum lengkap |
+| Pos Indonesia | [Pos Reguler](https://www.posindonesia.co.id/id/pages/pos-reguler), [syarat domestik](https://www.posindonesia.co.id/id/pages/syarat-dan-ketentuan-kiriman-domestik) | H+2–H+4, maks 50 kg, tracking/asuransi, dangerous/valuable goods | Kode aktual dikonfirmasi melalui quote provider |
 | Wahana | [Syarat](https://wahana.com/syarat-ketentuan), [Ekonomis](https://wahana.com/layanan/ekonomis) | Divisor 6.000/5.000, cargo min 10 kg | Pembulatan dan batas detail perlu kontrak |
 | RPX | [HWP](https://www.rpx.co.id/service/domestic-express-en/heavy-weight-package-hwp-en-en), [Big Helow](https://www.rpx.co.id/service/bighelow) | HWP min 20 kg, Big Helow divisor 4.000 | Rate sheet publik lama tidak boleh jadi harga produksi |
 | Sentral Cargo | [Syarat dan ketentuan](https://sentralcargo.co.id/syarat-dan-ketentuan) | Divisor darat/laut 4.000, udara 6.000, minimum/surcharge | Scope mengikuti cabang/rute |
-| SAP Express | [Laporan tahunan resmi](https://www.sap-express.id/assets/files/AR%20SAP%202020%20%28FINAL%29.pdf) | SDS, ODS, kargo, dedicated | Dokumen lama; perlu katalog merchant terkini |
+| SAP Express | [Situs resmi SAPX](https://www.sapx.id/id), [laporan tahunan resmi](https://www.sap-express.id/assets/files/AR%20SAP%202020%20%28FINAL%29.pdf) | Regular, SDS, ODS, kargo, internasional, dedicated; alias `UDRREG`, `UDRONS`, `DRGREG` dari quote | Formula tetap perlu katalog merchant |
 | STAR Cargo | [Tentang perusahaan](https://starcargo.co.id/pages/index/tentang-kami) | Moda udara, darat, laut | Formula belum tersedia |
-| REX | Belum memadai | — | Minta dokumentasi merchant |
+| REX | [Layanan resmi](https://rex.co.id/en/services), [brosur resmi](https://www.rex.co.id/public/files/file/Brosur_REX.pdf) | REX-0, REX-1, express, regular, international, other; `REX-10` dari quote provider | REX-10 dipisahkan sebagai cargo; formula dan coverage tetap provider quote |
 | NCS | Belum memadai | — | Pastikan legal entity/domain carrier |
 | DSE | Belum memadai | — | Minta dokumentasi merchant |
 

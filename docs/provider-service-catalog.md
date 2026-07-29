@@ -34,10 +34,48 @@ rute, channel, serta periode. Tabel bukan pengganti kontrak komersial.
 | RPX | SameDay, NextDay, Regular, HWP, Big Helow | HWP min 20 kg; parcel divisor 6.000; Big Helow divisor 4.000 | Parsial |
 | Sentral Cargo | Darat, Laut, Udara | Darat/laut divisor 4.000; udara 6.000; minimum tertentu 10 kg | Siap/parsial |
 | SAP Express | SDS, ODS, kargo laut/udara, dedicated | Formula publik terbaru belum cukup | Provider quote |
-| REX | Perlu katalog merchant terbaru | Belum terverifikasi | Tahan aturan lokal |
+| REX | REX-0, REX-1, Express, Regular, International, Other | Formula publik belum cukup | Provider quote |
 | NCS | Identitas carrier harus dikunci | Belum terverifikasi | Tahan aktivasi |
 | STAR Cargo | Udara, darat, laut | Formula publik belum cukup | Provider quote |
 | DSE | Perlu katalog merchant terbaru | Belum terverifikasi | Tahan aktivasi |
+
+### Pengelompokan otomatis pada API
+
+Versi saat ini mengaktifkan katalog canonical untuk 12 kode kurir
+RajaOngkir: `jne`, `tiki`, `sicepat`, `jnt`, `ide`, `ninja`, `lion`, `pos`,
+`wahana`, `sentral`, `sap`, dan `rex`. Katalog memisahkan dua konsep:
+
+- `service_type`: bentuk operasional (`parcel`, `cargo`, `same_day`,
+  `instant`, atau `international`);
+- `service_group`: kelompok bisnis lintas provider (`economy`, `regular`,
+  `next_day`, `express`, `same_day`, `instant`, `cargo`, `international`,
+  `special`, atau `unknown`).
+
+Pemetaan tidak mengubah kode yang dikirim provider. Contoh:
+
+| Kurir | Kode provider | Canonical | Group |
+|---|---|---|---|
+| JNE | `REG23` | `REG` | `regular` |
+| JNE | `CTCYES` | `YES` | `next_day` |
+| JNE | `CTCSPS` | `SPS` | `express` |
+| JNE | `JTR`, `JTR<130`, `JTR>130`, `JTR>200` | `JTR` | `cargo` |
+| TIKI | `T15`, `T25`, `T60` | `TRC` | `cargo` |
+| SiCepat | `REG` | `REGULER` | `regular` |
+| J&T | `HEBOH` | `HBO` | `cargo` |
+| IDExpress | `STD` | `REG` | `regular` |
+| IDExpress | `Idtruck` | `CARGO` | `cargo` |
+| Pos | `Pos Reguler` | `REGULER` | `regular` |
+| Pos | `PAKETPOS DANGEROUS GOODS` | `DANGEROUS_GOODS` | `special` |
+| Pos | `PAKETPOS VALUABLE GOODS` | `VALUABLE_GOODS` | `special` |
+| SAPX | `UDRREG`, `UDRONS`, `DRGREG` | `REG`, `ODS`, `CARGO` | sesuai canonical |
+| Wahana | `Normal` | `EXPRESS` | `regular` |
+| REX | `REX-0` | `REX0` | `same_day` |
+| REX | `REX-10` | `REX10` | `cargo` |
+
+Alias baru dicatat otomatis dari quote provider beserta waktu pertama dan
+terakhir terlihat. Jika kode belum dikenal, API mengembalikan `unknown` dan
+mempertahankan kode mentah agar perubahan katalog provider tidak salah
+diklasifikasikan. Tidak ada input mapping manual pada alur normal.
 
 ## 3. JNE
 
@@ -90,6 +128,9 @@ Produk resmi:
 - `REG`: reguler, estimasi yang ditampilkan sekitar tiga hari;
 - `ECO`: ekonomis;
 - `TRC`: trucking, minimum charge 10 kg;
+- `T15` dan `T25`: varian TRC untuk pengiriman motor menurut kapasitas;
+  kode `T60` juga teramati langsung dari quote provider dan diperlakukan
+  sebagai varian TRC dengan kode mentah tetap disimpan;
 - `INT`: internasional;
 - layanan khusus meliputi `FROOZY`, `SRP`, `DAT`, dan `TRX`.
 
@@ -104,7 +145,10 @@ Karena itu TIKI diberi `calculation_mode=provider_quote` sampai rate sheet
 merchant mengisi field tersebut. Minimum 10 kg TRC boleh disimpan sebagai
 aturan publik, tetapi belum cukup untuk menghitung total harga.
 
-Sumber: [Produk TIKI](https://www.tiki.id/id/produk).
+Sumber:
+
+- [Produk TIKI](https://www.tiki.id/id/produk)
+- [T15 dan T25 untuk pengiriman motor](https://www.tiki.id/id/blog/1512/nggak-mau-ribet-kirim-motor-coba-t15-dan-t25-dari-tiki)
 
 ## 5. SiCepat
 
@@ -173,7 +217,8 @@ Produk:
 
 - `Lite`: paket ringan di bawah 0,51 kg;
 - `Regular`: estimasi publik 2–10 hari, tergantung tujuan;
-- `Cargo`: paket di atas 10 kg.
+- `Cargo`: paket di atas 10 kg; kode aktual `Idtruck` yang teramati dari
+  provider dinormalisasi ke canonical `CARGO`.
 
 Pembulatan resmi:
 
@@ -273,15 +318,23 @@ Sumber: [Layanan AnterAja](https://anteraja.id/id/services).
 
 ## 11. Pos Indonesia
 
-Kelompok layanan mencakup same day, next day, Pos Reguler, ekonomi, dan kargo.
-Pos Reguler dipublikasikan dengan estimasi H+2 sampai H+4, maksimum 50 kg,
-tracking, dan opsi jaminan/asuransi sesuai ketentuan.
+Kelompok layanan mencakup same day, next day, Pos Reguler, ekonomi, kargo,
+Paketpos Dangerous Goods, dan Paketpos Valuable Goods. Pos Reguler
+dipublikasikan dengan estimasi H+2 sampai H+4, maksimum 50 kg, tracking, dan
+opsi jaminan/asuransi sesuai ketentuan.
+
+Quote provider pada rute uji mengembalikan `Pos Reguler`,
+`PAKETPOS DANGEROUS GOODS`, dan `PAKETPOS VALUABLE GOODS`. Ketiganya disimpan
+sebagai kode mentah; dua produk dengan penanganan khusus masuk grup `special`.
 
 Pos menyatakan harga dapat bergantung pada berat atau volume, tetapi faktor
 volumetrik dan pembulatan tidak lengkap pada sumber publik yang ditinjau.
 Gunakan `provider_quote` sampai rate sheet resmi memberikan formula.
 
-Sumber: [Pos Reguler](https://www.posindonesia.co.id/id/pages/pos-reguler).
+Sumber:
+
+- [Pos Reguler](https://www.posindonesia.co.id/id/pages/pos-reguler)
+- [Syarat kiriman domestik Pos Indonesia](https://www.posindonesia.co.id/id/pages/syarat-dan-ketentuan-kiriman-domestik)
 
 ## 12. Wahana
 
@@ -357,22 +410,41 @@ Sumber: [Syarat dan ketentuan Sentral Cargo](https://sentralcargo.co.id/syarat-d
 
 ## 15. SAP Express
 
-Sumber resmi perusahaan mencantumkan same day (`SDS`), one day (`ODS`),
-kargo laut/udara, dan dedicated courier. Dokumen yang ditemukan bukan katalog
-tarif merchant terkini, sehingga belum cukup untuk menentukan divisor,
-pembulatan, minimum, serta SLA per rute.
+Sumber resmi perusahaan mencantumkan Regular, same day (`SDS`), one day
+(`ODS`), kargo, internasional, dan dedicated courier. Halaman produk dan
+dokumen publik belum memberikan katalog tarif merchant lengkap, sehingga
+belum cukup untuk menentukan divisor, pembulatan, minimum, serta SLA per rute.
+
+Kode yang teramati langsung pada API provider adalah `UDRREG` untuk Regular,
+`UDRONS` untuk Nextday, dan `DRGREG` untuk Cargo. Kode tersebut menjadi alias
+ke `REG`, `ODS`, dan `CARGO`; raw code tetap disimpan.
 
 Aktifkan adapter hanya dengan provider quote atau kontrak. Jangan menyalin
 formula dari carrier lain.
 
-Sumber: [Laporan tahunan SAP Express](https://www.sap-express.id/assets/files/AR%20SAP%202020%20%28FINAL%29.pdf).
+Sumber:
+
+- [Situs resmi SAPX](https://www.sapx.id/id)
+- [Laporan tahunan SAP Express](https://www.sap-express.id/assets/files/AR%20SAP%202020%20%28FINAL%29.pdf)
 
 ## 16. REX, NCS, STAR Cargo, dan DSE
 
 ### REX
 
-Belum ditemukan sumber publik resmi yang cukup untuk memastikan katalog dan
-formula terkini. Wajib meminta dokumentasi merchant.
+Sumber resmi yang ditinjau memuat `REX-0` untuk same day, `REX-1` untuk
+overnight/next day, Express, Regular, International, dan Other. Informasi ini
+cukup untuk taxonomy dan alias layanan, tetapi belum cukup untuk menghitung
+tarif, minimum, pembulatan, atau coverage secara lokal. Gunakan provider quote
+dan pertahankan kode mentah yang dikembalikan akun merchant.
+
+RajaOngkir juga mengembalikan `REX-10` dengan deskripsi harga ekonomis mulai
+10 kg. Layanan ini dipisahkan sebagai canonical `REX10` dalam grup `cargo`;
+ia tidak boleh terbaca sebagai `REX-1`.
+
+Sumber:
+
+- [Peluang counter resmi REX](https://www.rex.co.id/en/busines-opportunities/2/to-be-our-cash-sales-counter)
+- [Brosur resmi REX](https://www.rex.co.id/public/files/file/Brosur_REX.pdf)
 
 ### NCS
 

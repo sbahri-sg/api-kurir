@@ -50,6 +50,9 @@ Fondasi versi `0.9.0` sudah mencakup:
 - adapter Redis yang baru aktif jika `REDIS_ENABLED=true`;
 - adapter RajaOngkir V2 dengan timeout, quota ledger, dan exact quote snapshot;
 - fallback otomatis saat rate card lokal belum tersedia;
+- katalog canonical dan pengelompokan layanan otomatis untuk 12 kurir aktif;
+- penyimpanan alias kode mentah provider tanpa input mapping manual, termasuk
+  varian JNE seperti `REG23`, `CTCYES`, `CTCSPS`, dan `JTR>130`;
 - import master wilayah lokal Kemendagri sampai kelurahan/desa dan kode pos;
 - kode pos many-to-many dengan provenance dataset, versi/checksum sumber, dan
   validasi lima digit;
@@ -105,10 +108,18 @@ docker compose up -d --build
 `deployments/compose/compose.yaml` tetap tersedia sebagai wrapper kompatibilitas
 untuk perintah lama. Secret tidak disalin ke file Compose atau source code.
 Dashboard tersedia di `http://localhost:5173`.
-Dashboard memakai same-origin API: request `/v1/*` diteruskan oleh Vite ke
-`localhost:8080` saat development dan oleh Nginx ke service `api:8080` saat
-Docker/production. Karena itu deployment cukup memakai satu domain publik dan
-browser tidak lagi bergantung pada alamat `localhost:8080`.
+Dashboard memakai same-origin API: browser selalu meminta `/v1/*` relatif ke
+domain dashboard. Vite meneruskannya ke `127.0.0.1:8080` saat development,
+sedangkan Nginx meneruskannya ke service `api:8080` saat Docker/production.
+Karena itu deployment cukup memakai satu domain publik dan bundle production
+tidak bergantung pada alamat `localhost:8080`.
+
+Port dashboard dan API secara default bind ke seluruh interface. Stack juga
+dapat diuji dari perangkat lain menggunakan
+`http://<IP-SERVER>:5173`. Gunakan `DASHBOARD_BIND_ADDR` atau
+`HTTP_BIND_ADDR` bila port hanya boleh tersedia pada interface tertentu.
+Biarkan `VITE_API_URL` kosong untuk deployment satu domain; isi hanya jika API
+memang berada pada origin yang berbeda.
 
 API berjalan di `http://localhost:8080`. PostgreSQL development menggunakan
 port `55432` agar tidak mudah bentrok dengan instalasi PostgreSQL lain.
@@ -218,7 +229,7 @@ menggunakan nomor resi dan kode ekspedisi.
 
 ## Status dokumen
 
-- Terakhir diverifikasi: 28 Juli 2026.
+- Terakhir diverifikasi: 29 Juli 2026.
 - Cakupan awal: 17 kode kurir domestik yang dicontohkan pada endpoint
   multi-courier RajaOngkir.
 - Biteship tidak digunakan.

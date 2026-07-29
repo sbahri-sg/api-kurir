@@ -557,7 +557,7 @@ func (r *PostgresRepository) Catalog(ctx context.Context) (Catalog, error) {
 		RoundingProfiles: make([]CatalogRoundingProfile, 0),
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT c.code, c.name, cs.code, cs.name, cs.service_type
+		SELECT c.code, c.name, cs.code, cs.name, cs.service_group, cs.service_type
 		FROM couriers c
 		JOIN courier_services cs ON cs.courier_id = c.id
 		WHERE c.active AND cs.active
@@ -571,7 +571,12 @@ func (r *PostgresRepository) Catalog(ctx context.Context) (Catalog, error) {
 		var courierCode, courierName string
 		var service CatalogService
 		if err := rows.Scan(
-			&courierCode, &courierName, &service.Code, &service.Name, &service.ServiceType,
+			&courierCode,
+			&courierName,
+			&service.Code,
+			&service.Name,
+			&service.Group,
+			&service.ServiceType,
 		); err != nil {
 			rows.Close()
 			return Catalog{}, fmt.Errorf("scan admin courier catalog: %w", err)

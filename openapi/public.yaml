@@ -713,12 +713,25 @@ components:
 
     CourierService:
       type: object
-      required: [code, name, service_type, calculation_mode]
+      required: [code, name, group, service_type, calculation_mode]
       properties:
         code:
           type: string
         name:
           type: string
+        group:
+          type: string
+          enum:
+            - economy
+            - regular
+            - next_day
+            - express
+            - same_day
+            - instant
+            - cargo
+            - international
+            - special
+            - unknown
         service_type:
           type: string
           enum: [parcel, cargo, same_day, instant, international]
@@ -867,14 +880,46 @@ components:
               type: string
         service:
           type: object
-          required: [code, name, type]
+          required:
+            - code
+            - name
+            - canonical_code
+            - group
+            - type
+            - variant_code
           properties:
             code:
               type: string
             name:
               type: string
+            canonical_code:
+              type: string
+              description: Kode service stabil milik API Kurir
+            group:
+              type: string
+              enum:
+                - economy
+                - regular
+                - next_day
+                - express
+                - same_day
+                - instant
+                - cargo
+                - international
+                - special
+                - unknown
             type:
               type: string
+              enum:
+                - parcel
+                - cargo
+                - same_day
+                - instant
+                - international
+                - unknown
+            variant_code:
+              type: string
+              description: Kode mentah jika merupakan varian canonical
         cost:
           type: integer
           minimum: 0

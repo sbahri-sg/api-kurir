@@ -24,7 +24,10 @@ type RateCard struct {
 	CourierName            string
 	ServiceCode            string
 	ServiceName            string
+	CanonicalServiceCode   string
+	ServiceGroup           string
 	ServiceType            string
+	ServiceVariantCode     string
 	PricingModel           string
 	Currency               string
 	BaseWeightGrams        int64

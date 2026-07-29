@@ -1,8 +1,12 @@
 const configuredAPIURL = import.meta.env.VITE_API_URL?.trim();
 
-export const API_URL = (
-  configuredAPIURL || window.location.origin
-).replace(/\/+$/, "");
+// An empty base URL keeps every request relative to the dashboard origin.
+// In production Nginx owns /v1/* and forwards it to the API container, so the
+// browser never needs to know the backend hostname, port, or Docker service.
+export const API_URL =
+  configuredAPIURL && configuredAPIURL !== "/"
+    ? configuredAPIURL.replace(/\/+$/, "")
+    : "";
 
 type ApiEnvelope<T> = {
   data: T;
@@ -41,6 +45,7 @@ export type LocationOption = {
 export type CourierService = {
   code: string;
   name: string;
+  group: string;
   service_type: string;
   calculation_mode: string;
 };
@@ -65,7 +70,10 @@ export type RateResult = {
   service: {
     code: string;
     name: string;
+    canonical_code: string;
+    group: string;
     type: string;
+    variant_code: string;
   };
   cost: number;
   etd: {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/emisell/api-kurir/internal/servicecatalog"
 )
 
 var (
@@ -15,18 +17,24 @@ var (
 )
 
 type ProviderQuote struct {
-	ProviderCode       string
-	CourierCode        string
-	CourierName        string
-	ServiceCode        string
-	ServiceName        string
-	Description        string
-	Cost               int64
-	ETDMinDays         *int
-	ETDMaxDays         *int
-	VerificationStatus string
-	FetchedAt          time.Time
-	ExpiresAt          time.Time
+	ProviderCode            string
+	CourierCode             string
+	CourierName             string
+	ServiceCode             string
+	ServiceName             string
+	Description             string
+	CanonicalServiceCode    string
+	ServiceGroup            string
+	ServiceType             string
+	ServiceVariantCode      string
+	ClassificationSource    string
+	ClassificationReference string
+	Cost                    int64
+	ETDMinDays              *int
+	ETDMaxDays              *int
+	VerificationStatus      string
+	FetchedAt               time.Time
+	ExpiresAt               time.Time
 }
 
 type QuoteProvider interface {
@@ -57,23 +65,27 @@ type QuotaRepository interface {
 }
 
 func resultFromProviderQuote(request Request, quote ProviderQuote) Result {
+	quote = classifyProviderQuote(quote)
 	minimum := int64(0)
 	return Result{
 		Card: RateCard{
-			CourierCode:        quote.CourierCode,
-			CourierName:        quote.CourierName,
-			ServiceCode:        quote.ServiceCode,
-			ServiceName:        quote.ServiceName,
-			ServiceType:        "unknown",
-			PricingModel:       "provider_quote",
-			Currency:           "IDR",
-			ETDMinDays:         quote.ETDMinDays,
-			ETDMaxDays:         quote.ETDMaxDays,
-			VerificationStatus: quote.VerificationStatus,
-			SourceProvider:     quote.ProviderCode,
-			EffectiveFrom:      quote.FetchedAt,
-			FetchedAt:          quote.FetchedAt,
-			ExpiresAt:          &quote.ExpiresAt,
+			CourierCode:          quote.CourierCode,
+			CourierName:          quote.CourierName,
+			ServiceCode:          quote.ServiceCode,
+			ServiceName:          quote.ServiceName,
+			CanonicalServiceCode: quote.CanonicalServiceCode,
+			ServiceGroup:         quote.ServiceGroup,
+			ServiceType:          quote.ServiceType,
+			ServiceVariantCode:   quote.ServiceVariantCode,
+			PricingModel:         "provider_quote",
+			Currency:             "IDR",
+			ETDMinDays:           quote.ETDMinDays,
+			ETDMaxDays:           quote.ETDMaxDays,
+			VerificationStatus:   quote.VerificationStatus,
+			SourceProvider:       quote.ProviderCode,
+			EffectiveFrom:        quote.FetchedAt,
+			FetchedAt:            quote.FetchedAt,
+			ExpiresAt:            &quote.ExpiresAt,
 		},
 		Weight: WeightBreakdown{
 			ActualGrams:     request.ActualWeightGrams,
@@ -89,4 +101,34 @@ func resultFromProviderQuote(request Request, quote ProviderQuote) Result {
 		},
 		SourceType: "provider_quote",
 	}
+}
+
+func classifyProviderQuote(quote ProviderQuote) ProviderQuote {
+	classification := servicecatalog.Classify(
+		quote.CourierCode,
+		quote.ServiceCode,
+		quote.ServiceName+" "+quote.Description,
+	)
+	if classification.Matched {
+		quote.CanonicalServiceCode = classification.CanonicalCode
+		quote.ServiceGroup = classification.ServiceGroup
+		quote.ServiceType = classification.ServiceType
+		quote.ServiceVariantCode = classification.VariantCode
+		quote.ClassificationSource = classification.ClassificationSource
+		quote.ClassificationReference = classification.SourceReference
+		return quote
+	}
+	if quote.ServiceGroup == "" {
+		quote.ServiceGroup = servicecatalog.GroupUnknown
+	}
+	if quote.ServiceType == "" {
+		quote.ServiceType = servicecatalog.TypeUnknown
+	}
+	if quote.ServiceVariantCode == "" {
+		quote.ServiceVariantCode = quote.ServiceCode
+	}
+	if quote.ClassificationSource == "" {
+		quote.ClassificationSource = "provider_observed"
+	}
+	return quote
 }

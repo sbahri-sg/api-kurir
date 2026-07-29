@@ -71,8 +71,25 @@ courier_services
 - courier_id
 - code
 - name
+- service_group
 - service_type
 - transport_mode
+- classification_source
+- source_reference
+- catalog_verified_at
+- active
+
+courier_service_aliases
+- id
+- provider_code
+- courier_id
+- raw_service_code
+- raw_service_name
+- canonical_service_id
+- classification_source
+- source_reference
+- first_seen_at
+- last_seen_at
 - active
 
 rate_cards
@@ -122,6 +139,10 @@ rate_snapshots
 - destination_location_id
 - courier_code
 - service_code
+- canonical_service_code
+- service_group
+- service_type
+- service_variant_code
 - requested_weight_grams
 - requested_dimensions_json
 - returned_cost
@@ -132,6 +153,13 @@ rate_snapshots
 - fetched_at
 - expires_at
 ```
+
+`courier_services` adalah katalog canonical yang bersumber dari website atau
+kontrak resmi. `courier_service_aliases` diisi otomatis ketika provider
+mengembalikan quote. Contoh: kode mentah `JTR>130` tetap tersimpan pada
+snapshot, tetapi terhubung ke canonical service `JTR` dan grup `cargo`.
+Layanan yang belum cocok tidak dipaksakan ke layanan terdekat; grupnya
+`unknown` sampai rule atau sumber resmi ditambahkan.
 
 `verification_status`:
 

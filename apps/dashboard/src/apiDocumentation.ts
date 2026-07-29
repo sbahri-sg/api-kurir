@@ -93,6 +93,7 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
         {
           "code": "REG",
           "name": "Reguler",
+          "group": "regular",
           "service_type": "parcel",
           "calculation_mode": "provider_quote"
         }
@@ -145,9 +146,12 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
         "name": "Jalur Nugraha Ekakurir (JNE)"
       },
       "service": {
-        "code": "REG",
-        "name": "Reguler",
-        "type": "unknown"
+        "code": "REG23",
+        "name": "JNE Regular",
+        "canonical_code": "REG",
+        "group": "regular",
+        "type": "parcel",
+        "variant_code": "REG23"
       },
       "cost": 12000,
       "etd": {
@@ -250,6 +254,7 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
         {
           "code": "REG",
           "name": "Reguler",
+          "group": "regular",
           "service_type": "parcel",
           "calculation_mode": "provider_quote"
         }
@@ -281,7 +286,14 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
   "data": [
     {
       "courier": {"code": "jne", "name": "JNE"},
-      "service": {"code": "REG", "name": "Reguler", "type": "unknown"},
+      "service": {
+        "code": "JTR>130",
+        "name": "JNE Trucking",
+        "canonical_code": "JTR",
+        "group": "cargo",
+        "type": "cargo",
+        "variant_code": "JTR>130"
+      },
       "cost": 12000,
       "etd": {"min_days": 1, "max_days": 2, "text": "1-2 hari"},
       "source": {

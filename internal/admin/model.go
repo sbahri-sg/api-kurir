@@ -150,6 +150,7 @@ type CatalogCourier struct {
 type CatalogService struct {
 	Code        string `json:"code"`
 	Name        string `json:"name"`
+	Group       string `json:"group"`
 	ServiceType string `json:"service_type"`
 }
 

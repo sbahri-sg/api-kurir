@@ -27,6 +27,10 @@ func (r *PostgresRepository) FindFreshProviderQuotes(
 			service_code,
 			coalesce(service_name, service_code),
 			coalesce(description, ''),
+			canonical_service_code,
+			service_group,
+			service_type,
+			service_variant_code,
 			returned_cost,
 			etd_min_days,
 			etd_max_days,
@@ -55,6 +59,10 @@ func (r *PostgresRepository) FindFreshProviderQuotes(
 			&quote.ServiceCode,
 			&quote.ServiceName,
 			&quote.Description,
+			&quote.CanonicalServiceCode,
+			&quote.ServiceGroup,
+			&quote.ServiceType,
+			&quote.ServiceVariantCode,
 			&quote.Cost,
 			&quote.ETDMinDays,
 			&quote.ETDMaxDays,
@@ -93,6 +101,7 @@ func (r *PostgresRepository) SaveProviderQuotes(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	for _, quote := range quotes {
+		quote = classifyProviderQuote(quote)
 		responseHash := providerQuoteHash(quote)
 		commandTag, err := tx.Exec(ctx, `
 			INSERT INTO rate_snapshots (
@@ -103,6 +112,10 @@ func (r *PostgresRepository) SaveProviderQuotes(
 				service_code,
 				service_name,
 				description,
+				canonical_service_code,
+				service_group,
+				service_type,
+				service_variant_code,
 				requested_weight_grams,
 				requested_dimensions_json,
 				request_fingerprint,
@@ -125,7 +138,7 @@ func (r *PostgresRepository) SaveProviderQuotes(
 				$7,
 				$8,
 				$9,
-				$10::jsonb,
+				$10,
 				$11,
 				$12,
 				$13,
@@ -133,9 +146,13 @@ func (r *PostgresRepository) SaveProviderQuotes(
 				$15,
 				$16,
 				$17,
-				'provider_quote',
 				$18,
-				$19
+				$19,
+				$20,
+				$21,
+				'provider_quote',
+				$22,
+				$23
 			FROM locations origin
 			CROSS JOIN locations destination
 			WHERE origin.public_id = $1
@@ -150,6 +167,10 @@ func (r *PostgresRepository) SaveProviderQuotes(
 			quote.ServiceCode,
 			quote.ServiceName,
 			quote.Description,
+			quote.CanonicalServiceCode,
+			quote.ServiceGroup,
+			quote.ServiceType,
+			quote.ServiceVariantCode,
 			request.ActualWeightGrams,
 			string(dimensionsJSON),
 			fingerprint,
@@ -167,6 +188,74 @@ func (r *PostgresRepository) SaveProviderQuotes(
 		}
 		if commandTag.RowsAffected() != 1 {
 			return ErrProviderLocationMapping
+		}
+
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO courier_service_aliases (
+				provider_code,
+				courier_id,
+				raw_service_code,
+				raw_service_name,
+				canonical_service_id,
+				classification_source,
+				source_reference,
+				first_seen_at,
+				last_seen_at
+			)
+			SELECT
+				$1,
+				c.id,
+				$3,
+				$4,
+				cs.id,
+				$6,
+				nullif($7, ''),
+				$8,
+				$8
+			FROM couriers c
+			LEFT JOIN courier_services cs
+			  ON cs.courier_id = c.id
+			 AND cs.code = $5
+			WHERE c.code = $2
+			ON CONFLICT (provider_code, courier_id, raw_service_code) DO UPDATE
+			SET raw_service_name = CASE
+			        WHEN EXCLUDED.raw_service_name <> ''
+			        THEN EXCLUDED.raw_service_name
+			        ELSE courier_service_aliases.raw_service_name
+			    END,
+			    canonical_service_id = coalesce(
+			        EXCLUDED.canonical_service_id,
+			        courier_service_aliases.canonical_service_id
+			    ),
+			    classification_source = CASE
+			        WHEN courier_service_aliases.classification_source
+			             IN ('official_public', 'official_contract')
+			        THEN courier_service_aliases.classification_source
+			        WHEN EXCLUDED.canonical_service_id IS NOT NULL
+			        THEN EXCLUDED.classification_source
+			        ELSE courier_service_aliases.classification_source
+			    END,
+			    source_reference = coalesce(
+			        courier_service_aliases.source_reference,
+			        EXCLUDED.source_reference
+			    ),
+			    last_seen_at = greatest(
+			        courier_service_aliases.last_seen_at,
+			        EXCLUDED.last_seen_at
+			    ),
+			    active = true,
+			    updated_at = now()
+		`,
+			quote.ProviderCode,
+			quote.CourierCode,
+			quote.ServiceCode,
+			quote.ServiceName,
+			quote.CanonicalServiceCode,
+			quote.ClassificationSource,
+			quote.ClassificationReference,
+			quote.FetchedAt,
+		); err != nil {
+			return fmt.Errorf("upsert provider service alias: %w", err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

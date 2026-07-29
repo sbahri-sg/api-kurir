@@ -111,12 +111,14 @@ kalkulasinya.
         {
           "code": "REG",
           "name": "Reguler",
+          "group": "regular",
           "service_type": "parcel",
           "calculation_mode": "local_rate_card"
         },
         {
           "code": "JTR",
           "name": "JNE Trucking",
+          "group": "cargo",
           "service_type": "cargo",
           "calculation_mode": "local_rate_card"
         }
@@ -180,9 +182,12 @@ Respons:
         "name": "JNE"
       },
       "service": {
-        "code": "JTR",
+        "code": "JTR>130",
         "name": "JNE Trucking",
-        "type": "cargo"
+        "canonical_code": "JTR",
+        "group": "cargo",
+        "type": "cargo",
+        "variant_code": "JTR>130"
       },
       "cost": 45000,
       "etd": {
@@ -224,6 +229,13 @@ Catatan:
 
 - `provider` adalah sumber rate card terakhir; kurir tetap berada pada
   `courier.code`.
+- `service.code` selalu mempertahankan kode mentah dari provider. Gunakan
+  `canonical_code` untuk pengelompokan bisnis, `group` untuk kelas layanan,
+  dan `variant_code` untuk varian provider seperti `REG23`, `CTCYES`, atau
+  `JTR>130`.
+- Jika layanan baru belum dikenali, API tidak menebak: `group` dan `type`
+  bernilai `unknown`, kode mentah tetap dikembalikan, dan alias observasi
+  disimpan untuk ditinjau.
 - Jika dimensi tidak dikirim, kalkulasi hanya dapat dianggap final untuk
   layanan yang tidak memakai berat volumetrik atau bila Emisell sudah
   memastikan berat input adalah chargeable weight.

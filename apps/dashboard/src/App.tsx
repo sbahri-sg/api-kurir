@@ -948,6 +948,7 @@ function CourierCatalog({
         ...courier.services.flatMap((service) => [
           service.code,
           service.name,
+          service.group,
           service.service_type,
         ]),
       ]
@@ -1071,6 +1072,7 @@ function CourierCatalog({
                           {service.name}
                         </span>
                         <small>
+                          {service.group.replaceAll("_", " ")} ·{" "}
                           {service.service_type.replaceAll("_", " ")} ·{" "}
                           {service.calculation_mode === "local_rate_card"
                             ? "tarif lokal"
@@ -1340,6 +1342,14 @@ function ShippingCostTool({
                   </div>
                 </div>
                 <div className="rate-result-footer">
+                  <span className="badge">
+                    {result.service.group.replaceAll("_", " ")}
+                  </span>
+                  {result.service.canonical_code !== result.service.code && (
+                    <span className="badge">
+                      canonical {result.service.canonical_code}
+                    </span>
+                  )}
                   <span className="badge">{result.source.type}</span>
                   <span
                     className={`badge ${

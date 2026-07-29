@@ -167,6 +167,33 @@ func TestServiceCachesExactProviderQuote(t *testing.T) {
 	}
 }
 
+func TestProviderQuoteUsesCanonicalServiceWithoutReplacingRawCode(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.July, 29, 10, 0, 0, 0, time.UTC)
+	result := resultFromProviderQuote(Request{
+		ActualWeightGrams: 10_000,
+	}, ProviderQuote{
+		ProviderCode:       "rajaongkir",
+		CourierCode:        "jne",
+		CourierName:        "JNE",
+		ServiceCode:        "JTR>130",
+		ServiceName:        "JNE Trucking",
+		Cost:               75_000,
+		VerificationStatus: "observed",
+		FetchedAt:          now,
+		ExpiresAt:          now.Add(time.Hour),
+	})
+
+	if result.Card.ServiceCode != "JTR>130" ||
+		result.Card.CanonicalServiceCode != "JTR" ||
+		result.Card.ServiceGroup != "cargo" ||
+		result.Card.ServiceType != "cargo" ||
+		result.Card.ServiceVariantCode != "JTR>130" {
+		t.Fatalf("unexpected classified provider quote: %#v", result.Card)
+	}
+}
+
 type staticRepository struct {
 	cards []RateCard
 }

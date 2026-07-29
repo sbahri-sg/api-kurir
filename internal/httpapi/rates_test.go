@@ -56,3 +56,35 @@ func TestNormalizeCalculateRequestSortsAndDeduplicatesCouriers(t *testing.T) {
 		t.Fatalf("unexpected courier normalization: %#v", request.Couriers)
 	}
 }
+
+func TestRateResponseIncludesCanonicalServiceGrouping(t *testing.T) {
+	t.Parallel()
+
+	calculatedAt := time.Date(2026, time.July, 29, 10, 0, 0, 0, time.UTC)
+	response := rateResponse(rates.Result{
+		Card: rates.RateCard{
+			CourierCode:          "jne",
+			CourierName:          "JNE",
+			ServiceCode:          "JTR>130",
+			ServiceName:          "JNE Trucking",
+			CanonicalServiceCode: "JTR",
+			ServiceGroup:         "cargo",
+			ServiceType:          "cargo",
+			ServiceVariantCode:   "JTR>130",
+			EffectiveFrom:        calculatedAt,
+			FetchedAt:            calculatedAt,
+		},
+	}, calculatedAt)
+
+	service, ok := response["service"].(map[string]any)
+	if !ok {
+		t.Fatalf("service response has unexpected type: %#v", response["service"])
+	}
+	if service["code"] != "JTR>130" ||
+		service["canonical_code"] != "JTR" ||
+		service["group"] != "cargo" ||
+		service["type"] != "cargo" ||
+		service["variant_code"] != "JTR>130" {
+		t.Fatalf("unexpected canonical service response: %#v", service)
+	}
+}
