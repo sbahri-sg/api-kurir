@@ -21,6 +21,34 @@ Milestone ini menyediakan:
 Tidak ada scraping website carrier. Worker hanya memanggil endpoint provider
 yang dikonfigurasi dan telah disetujui.
 
+### 1.1 Struktur navigasi admin
+
+Sidebar memakai kelompok yang dapat dibuka dan ditutup agar fungsi
+observability tidak memenuhi navigasi utama:
+
+```text
+Dashboard
+Operasional
+  - Cek Ongkir
+  - Cek Resi
+Master Data
+  - Ekspedisi & Service
+Integrasi Provider
+  - Credential & Kuota
+  - Legacy RajaOngkir
+      - Snapshot Tarif
+      - Mapping Lokasi
+Developer
+  - Dokumentasi API
+  - API Key
+```
+
+Hanya satu kelompok terbuka pada satu waktu dan pilihan kelompok disimpan
+selama session browser. `Snapshot Tarif` serta `Mapping Lokasi` tetap
+read-only dan diletakkan di bawah `Legacy RajaOngkir`; keduanya bukan input
+master untuk partner baru. Pada layar mobile, kelompok tetap berupa accordion
+vertikal agar tidak menghasilkan horizontal overflow.
+
 ## 2. Autentikasi admin
 
 Endpoint customer memakai:
@@ -56,7 +84,7 @@ Nilainya dicatat sebagai alias. Nilai API key tidak pernah dicatat.
 | GET | `/v1/admin/overview` | Ringkasan rate, mapping, snapshot, quota, dan tracking |
 | GET | `/v1/admin/catalog` | Kurir, service, dan rounding profile aktif (read-only) |
 | GET | `/v1/admin/locations` | Search master lokasi lokal (read-only) |
-| GET | `/v1/admin/couriers` | Katalog kemampuan kurir dan layanan untuk menu Daftar Ekspedisi |
+| GET | `/v1/admin/couriers` | Katalog kemampuan kurir dan layanan untuk menu Ekspedisi & Service |
 | POST | `/v1/admin/calculate/domestic-cost` | Cek ongkir dari dashboard |
 | POST | `/v1/admin/track/waybill` | Cek resi dari dashboard |
 | GET | `/v1/admin/rate-snapshots` | Membaca hasil tarif yang tersimpan otomatis |
@@ -77,7 +105,7 @@ dibuat, diedit, dipromosikan, atau dinonaktifkan oleh operator dashboard.
 Mutasi dashboard hanya tersedia untuk lifecycle credential customer dan
 provider; bukan untuk tarif atau mapping.
 
-Menu `Daftar Ekspedisi` membaca katalog ini secara read-only. Kemampuan cek
+Menu `Ekspedisi & Service` membaca katalog ini secara read-only. Kemampuan cek
 ongkir, internasional, dan tracking berasal dari katalog provider yang
 diverifikasi. Service lokal hanya ditampilkan bila sudah terdaftar; service
 lain tetap mengikuti respons provider pada rute yang benar-benar dicek.

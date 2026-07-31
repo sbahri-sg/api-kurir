@@ -62,7 +62,7 @@ Fondasi versi `0.9.0` sudah mencakup:
   hasil harga/ETD/berat tagihan/sumber tarif;
 - menu Cek Resi dengan pilihan ekspedisi, status
   antrean refresh, ringkasan, dan timeline perjalanan;
-- menu Daftar Ekspedisi dengan pencarian, filter kemampuan, katalog domestik,
+- menu Ekspedisi & Service dengan pencarian, filter kemampuan, katalog domestik,
   internasional, tracking, serta layanan lokal yang sudah terdaftar;
 - tambah, validasi, masking, enkripsi, rotasi, dan nonaktifkan key RajaOngkir
   dari dashboard tanpa restart API atau memasukkan provider key ke environment;
@@ -168,7 +168,8 @@ make redis-up
 ### Mengaktifkan RajaOngkir
 
 Provider key tidak perlu dimasukkan ke `.env`. Buka dashboard, pilih
-`Kuota provider`, tekan `Tambah key`, lalu tempel key RajaOngkir. Sistem akan:
+`Integrasi Provider > Credential & Kuota`, tekan `Tambah key`, lalu tempel key
+RajaOngkir. Sistem akan:
 
 1. memvalidasi key langsung ke endpoint resmi RajaOngkir;
 2. mencatat satu hit validasi pada ledger hari berjalan;

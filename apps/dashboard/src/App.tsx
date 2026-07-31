@@ -37,6 +37,72 @@ type Tab =
   | "api-keys"
   | "documentation";
 
+type NavGroupId = "operations" | "master-data" | "provider" | "developer";
+
+type NavItem = {
+  value: Tab;
+  label: string;
+  section?: string;
+};
+
+type NavGroup = {
+  id: NavGroupId;
+  label: string;
+  description: string;
+  items: NavItem[];
+};
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: "operations",
+    label: "Operasional",
+    description: "Tarif dan resi",
+    items: [
+      { value: "check-rate", label: "Cek Ongkir" },
+      { value: "tracking", label: "Cek Resi" },
+    ],
+  },
+  {
+    id: "master-data",
+    label: "Master Data",
+    description: "Ekspedisi dan layanan",
+    items: [{ value: "couriers", label: "Ekspedisi & Service" }],
+  },
+  {
+    id: "provider",
+    label: "Integrasi Provider",
+    description: "Koneksi dan legacy",
+    items: [
+      { value: "quota", label: "Credential & Kuota" },
+      {
+        value: "rates",
+        label: "Snapshot Tarif",
+        section: "Legacy RajaOngkir",
+      },
+      {
+        value: "mappings",
+        label: "Mapping Lokasi",
+        section: "Legacy RajaOngkir",
+      },
+    ],
+  },
+  {
+    id: "developer",
+    label: "Developer",
+    description: "Akses dan dokumentasi",
+    items: [
+      { value: "documentation", label: "Dokumentasi API" },
+      { value: "api-keys", label: "API Key" },
+    ],
+  },
+];
+
+const TAB_NAV_GROUP: Partial<Record<Tab, NavGroupId>> = Object.fromEntries(
+  NAV_GROUPS.flatMap((group) =>
+    group.items.map((item) => [item.value, group.id]),
+  ),
+);
+
 const EMPTY_OVERVIEW: Overview = {
   active_rate_cards: 0,
   official_locations: 0,
@@ -129,6 +195,13 @@ export function App() {
   );
   const [authenticated, setAuthenticated] = useState(Boolean(adminKey));
   const [tab, setTab] = useState<Tab>("overview");
+  const [expandedNavGroup, setExpandedNavGroup] =
+    useState<NavGroupId | null>(() => {
+      const stored = sessionStorage.getItem("api-kurir-nav-group");
+      return NAV_GROUPS.some((group) => group.id === stored)
+        ? (stored as NavGroupId)
+        : null;
+    });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [overview, setOverview] = useState(EMPTY_OVERVIEW);
@@ -212,6 +285,19 @@ export function App() {
     void loadDashboard(controller.signal);
     return () => controller.abort();
   }, [adminKey, authenticated, loadDashboard]);
+
+  useEffect(() => {
+    const groupId = TAB_NAV_GROUP[tab];
+    if (groupId) setExpandedNavGroup(groupId);
+  }, [tab]);
+
+  useEffect(() => {
+    if (expandedNavGroup) {
+      sessionStorage.setItem("api-kurir-nav-group", expandedNavGroup);
+      return;
+    }
+    sessionStorage.removeItem("api-kurir-nav-group");
+  }, [expandedNavGroup]);
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -383,14 +469,14 @@ export function App() {
       : 0;
 
   const titles: Record<Tab, string> = {
-    overview: "Ringkasan",
+    overview: "Dashboard",
     "check-rate": "Cek Ongkir",
     tracking: "Cek Resi",
-    couriers: "Daftar Ekspedisi",
-    rates: "Tarif otomatis",
-    mappings: "Mapping otomatis",
-    quota: "Kuota provider",
-    "api-keys": "API Keys",
+    couriers: "Ekspedisi & Service",
+    rates: "Snapshot Tarif",
+    mappings: "Mapping Lokasi Provider",
+    quota: "Credential & Kuota",
+    "api-keys": "API Key",
     documentation: "Dokumentasi API",
   };
 
@@ -404,29 +490,83 @@ export function App() {
             <small>Emisell Operations</small>
           </span>
         </a>
-        <nav>
-          {(
-            [
-              ["overview", "Ringkasan"],
-              ["check-rate", "Cek Ongkir"],
-              ["tracking", "Cek Resi"],
-              ["couriers", "Daftar Ekspedisi"],
-              ["rates", "Tarif otomatis"],
-              ["mappings", "Mapping otomatis"],
-              ["quota", "Kuota provider"],
-              ["api-keys", "API Keys"],
-              ["documentation", "Dokumentasi API"],
-            ] as [Tab, string][]
-          ).map(([value, label]) => (
-            <button
-              className={tab === value ? "nav-active" : ""}
-              key={value}
-              onClick={() => setTab(value)}
-            >
-              <span className="nav-dot" />
-              {label}
-            </button>
-          ))}
+        <nav aria-label="Navigasi utama">
+          <button
+            className={`nav-dashboard ${tab === "overview" ? "nav-active" : ""}`}
+            onClick={() => setTab("overview")}
+            aria-current={tab === "overview" ? "page" : undefined}
+          >
+            <span className="nav-dot" />
+            <span>Dashboard</span>
+          </button>
+
+          {NAV_GROUPS.map((group) => {
+            const expanded = expandedNavGroup === group.id;
+            const active = group.items.some((item) => item.value === tab);
+
+            return (
+              <div
+                className={`nav-group ${expanded ? "nav-group-open" : ""}`}
+                key={group.id}
+              >
+                <button
+                  className={`nav-group-trigger ${
+                    active ? "nav-group-trigger-active" : ""
+                  }`}
+                  onClick={() =>
+                    setExpandedNavGroup((current) =>
+                      current === group.id ? null : group.id,
+                    )
+                  }
+                  aria-expanded={expanded}
+                  aria-controls={`nav-group-${group.id}`}
+                >
+                  <span className="nav-dot" />
+                  <span className="nav-group-copy">
+                    <strong>{group.label}</strong>
+                    <small>{group.description}</small>
+                  </span>
+                  <span className="nav-chevron" aria-hidden="true" />
+                </button>
+
+                {expanded && (
+                  <div
+                    className="nav-submenu"
+                    id={`nav-group-${group.id}`}
+                  >
+                    {group.items.map((item, index) => {
+                      const previousSection = group.items[index - 1]?.section;
+                      const showSection =
+                        item.section && item.section !== previousSection;
+
+                      return (
+                        <div className="nav-entry" key={item.value}>
+                          {showSection && (
+                            <div className="nav-subsection">
+                              <span>{item.section}</span>
+                              <small>Internal</small>
+                            </div>
+                          )}
+                          <button
+                            className={
+                              tab === item.value ? "nav-active" : ""
+                            }
+                            onClick={() => setTab(item.value)}
+                            aria-current={
+                              tab === item.value ? "page" : undefined
+                            }
+                          >
+                            <span className="nav-dot" />
+                            {item.label}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
         <div className="sidebar-footer">
           <span>Operator</span>
@@ -472,9 +612,9 @@ export function App() {
                 hint="Data resmi hingga kelurahan"
               />
               <Metric
-                label="Mapping otomatis"
+                label="Mapping provider legacy"
                 value={formatNumber(overview.location_mappings)}
-                hint="Terbentuk saat rute pertama dicari"
+                hint="Dibentuk otomatis untuk RajaOngkir"
               />
               <Metric
                 label="Snapshot tarif aktif"
