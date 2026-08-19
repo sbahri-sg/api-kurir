@@ -305,7 +305,7 @@ func listLegacyHierarchy(
 			"id":   legacyExternalID(location.ID),
 			"name": location.Name,
 		}
-		if level != "province" {
+		if level != "province" && strings.TrimSpace(location.PostalCode) != "" {
 			item["zip_code"] = location.PostalCode
 		}
 		data = append(data, item)

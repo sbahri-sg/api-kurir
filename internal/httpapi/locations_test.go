@@ -286,6 +286,50 @@ func TestRajaOngkirV2OfficialBasePathAlias(t *testing.T) {
 	}
 }
 
+func TestRajaOngkirV2CityOmitsEmptyZipCode(t *testing.T) {
+	t.Parallel()
+
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.GET(
+		"/api/v1/destination/city/:province_id",
+		locationHierarchyHandler(
+			legacyHTTPRepositoryStub{},
+			"city",
+			"province_id",
+			"Success Get City By Province ID",
+		),
+	)
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/destination/city/18",
+		nil,
+	)
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf(
+			"status: got %d want %d, body=%s",
+			response.Code,
+			http.StatusOK,
+			response.Body.String(),
+		)
+	}
+	var payload struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data) != 1 || payload.Data[0]["id"] != float64(256) {
+		t.Fatalf("unexpected city response: %#v", payload.Data)
+	}
+	if _, exists := payload.Data[0]["zip_code"]; exists {
+		t.Fatalf("empty zip_code must be omitted: %#v", payload.Data[0])
+	}
+}
+
 func TestCustomerLocationContractUsesPathNotAuthenticationHeader(t *testing.T) {
 	t.Parallel()
 

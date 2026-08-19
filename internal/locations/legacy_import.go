@@ -128,6 +128,32 @@ func (r *PostgresRepository) ImportLegacyProviderLocations(
 				missingParents,
 			)
 		}
+
+		// A provider mapping may have been moved from a generated legacy
+		// location to an official canonical location by a later sync. Existing
+		// child mappings must follow that move as well; otherwise hierarchy
+		// lookups can only see children whose location happened to use the new
+		// parent already. Re-importing the dump is intentionally self-healing.
+		if _, err := tx.Exec(ctx, `
+			UPDATE locations location
+			SET parent_id = parent_mapping.location_id,
+			    updated_at = now()
+			FROM legacy_region_stage stage
+			JOIN provider_location_mappings existing
+			  ON existing.provider_code = $1
+			 AND existing.granularity = $2
+			 AND existing.provider_location_id = stage.provider_location_id
+			 AND existing.active
+			JOIN provider_location_mappings parent_mapping
+			  ON parent_mapping.provider_code = $1
+			 AND parent_mapping.granularity = $3
+			 AND parent_mapping.provider_location_id = stage.parent_provider_location_id
+			 AND parent_mapping.active
+			WHERE location.id = existing.location_id
+			  AND location.parent_id IS DISTINCT FROM parent_mapping.location_id
+		`, providerCode, level, parentLocationLevel(level)); err != nil {
+			return 0, fmt.Errorf("repair legacy %s parent hierarchy: %w", level, err)
+		}
 	}
 
 	if _, err := tx.Exec(ctx, `

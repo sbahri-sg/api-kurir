@@ -59,6 +59,18 @@ func (legacyHTTPRepositoryStub) ListLegacyHierarchy(
 			ProvinceID:        "32",
 			ProvinceName:      "MALUKU UTARA",
 		}}, nil
+	case "city":
+		if parentID == "18" {
+			return []locations.LegacyRegion{{
+				ID:                "256",
+				CanonicalPublicID: "loc_legacy_rajaongkir_city_256",
+				Name:              "JEMBER",
+				ProvinceID:        "18",
+				ProvinceName:      "JAWA TIMUR",
+				CityID:            "256",
+				CityName:          "JEMBER",
+			}}, nil
+		}
 	case "subdistrict":
 		if parentID == "7126" {
 			return []locations.LegacyRegion{{

@@ -340,8 +340,17 @@ func (r *PostgresRepository) ListLegacyHierarchy(
 			OR
 			($2 <> 'province' AND parent_mapping.provider_location_id = $3)
 		  )
-		ORDER BY lower(coalesce(mapping.provider_location_name, '')),
-		         mapping.provider_location_id
+		ORDER BY
+			CASE
+				WHEN mapping.provider_location_id ~ '^[0-9]+$' THEN 0
+				ELSE 1
+			END,
+			CASE
+				WHEN mapping.provider_location_id ~ '^[0-9]+$'
+				THEN mapping.provider_location_id::numeric
+			END,
+			lower(coalesce(mapping.provider_location_name, '')),
+			mapping.provider_location_id
 	`, providerCode, level, parentProviderLocationID)
 	if err != nil {
 		return nil, fmt.Errorf("list legacy %s locations: %w", level, err)

@@ -26,6 +26,7 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 	suffix := time.Now().UTC().Format("150405000000000")
 	provider := "legacy-integration-" + suffix
 	postalCode := "65432"
+	replacementProvincePublicID := "loc_test_legacy_parent_" + suffix
 	repository := NewPostgresRepository(pool)
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
@@ -43,6 +44,11 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 			cleanupCtx,
 			"DELETE FROM locations WHERE public_id LIKE $1",
 			"loc_legacy_"+provider+"_%",
+		)
+		_, _ = pool.Exec(
+			cleanupCtx,
+			"DELETE FROM locations WHERE public_id = $1",
+			replacementProvincePublicID,
 		)
 		_, _ = pool.Exec(cleanupCtx, `
 			DELETE FROM postal_codes
@@ -63,6 +69,13 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 			SourceEndpoint:     "legacy/provinces",
 		}},
 		{{
+			ProviderLocationID:       "10",
+			ProviderLabel:            "ZZZ CITY",
+			Province:                 "MALUKU UTARA",
+			City:                     "ZZZ CITY",
+			ParentProviderLocationID: "32",
+			SourceEndpoint:           "legacy/cities",
+		}, {
 			ProviderLocationID:       "32",
 			ProviderLabel:            "TERNATE",
 			Province:                 "MALUKU UTARA",
@@ -96,9 +109,58 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if count != 1 {
-			t.Fatalf("imported count: got %d want 1", count)
+		if count != len(items) {
+			t.Fatalf("imported count: got %d want %d", count, len(items))
 		}
+	}
+
+	var replacementProvinceID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO locations (public_id, level, province, active)
+		VALUES ($1, 'province', 'MALUKU UTARA', true)
+		RETURNING id
+	`, replacementProvincePublicID).Scan(&replacementProvinceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE provider_location_mappings
+		SET location_id = $1,
+		    updated_at = now()
+		WHERE provider_code = $2
+		  AND granularity = 'province'
+		  AND provider_location_id = '32'
+	`, replacementProvinceID, provider); err != nil {
+		t.Fatal(err)
+	}
+
+	orphanedCities, err := repository.ListLegacyHierarchy(
+		ctx,
+		provider,
+		"city",
+		"32",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orphanedCities) != 0 {
+		t.Fatalf("expected moved parent to orphan existing city, got %#v", orphanedCities)
+	}
+	if _, err := repository.ImportLegacyProviderLocations(ctx, provider, levels[1]); err != nil {
+		t.Fatal(err)
+	}
+	repairedCities, err := repository.ListLegacyHierarchy(
+		ctx,
+		provider,
+		"city",
+		"32",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repairedCities) != 2 ||
+		repairedCities[0].ID != "10" ||
+		repairedCities[1].ID != "32" {
+		t.Fatalf("expected re-import to repair city parent, got %#v", repairedCities)
 	}
 
 	provinces, err := repository.ListLegacyHierarchy(ctx, provider, "province", "")
