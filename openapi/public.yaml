@@ -39,7 +39,7 @@ tags:
   - name: Canonical - Tracking
     description: Snapshot dan antrean tracking untuk client internal
   - name: Emisell Gateway
-    description: Credential provider BYOK yang terisolasi per merchant Emisell
+    description: Credential BYOK dan pilihan layanan checkout yang terisolasi per merchant Emisell
   - name: Admin
     description: Operasional dashboard dengan admin API key terpisah
 
@@ -922,6 +922,79 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/integrations/shipping-services:
+    get:
+      tags: [Emisell Gateway]
+      operationId: getTenantShippingServices
+      summary: Membaca katalog dan pilihan layanan checkout merchant
+      description: >
+        Mengembalikan katalog canonical beserta selected dan selection_state
+        untuk membangun checkbox kurir bertingkat. Tenant lama tanpa preference
+        tersimpan tetap menggunakan perilaku allow-all.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      responses:
+        "200":
+          description: Katalog dan preference merchant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantShippingCatalogResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope shipping:read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags: [Emisell Gateway]
+      operationId: replaceTenantShippingServices
+      summary: Mengganti pilihan layanan checkout merchant
+      description: >
+        Update atomik. Mode custom menyimpan pasangan courier_code dan canonical
+        service_code; mode groups memilih kategori; mode all mengaktifkan semua
+        layanan canonical yang sudah dikenali. Merchant selalu berasal dari
+        claim sub dan tidak diterima dari body.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantShippingPreferenceUpdateRequest"
+      responses:
+        "200":
+          description: Preference sudah disimpan dan dinormalisasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantShippingPreferenceResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope shipping:write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Layanan tidak tersedia pada katalog canonical aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/overview:
     get:
       tags: [Admin]
@@ -1775,6 +1848,185 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Courier"
+
+    TenantShippingServiceSelection:
+      type: object
+      additionalProperties: false
+      required: [courier_code, service_code]
+      properties:
+        courier_code:
+          type: string
+          pattern: "^[a-z0-9_-]{2,32}$"
+          examples: [jne]
+        service_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          examples: [REG]
+
+    TenantShippingPreference:
+      type: object
+      required:
+        - configured
+        - mode
+        - enabled_groups
+        - services
+        - version
+        - updated_at
+      properties:
+        configured:
+          type: boolean
+          description: False hanya bila merchant belum pernah menyimpan preference.
+        mode:
+          type: string
+          enum: [all, groups, custom]
+        enabled_groups:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - economy
+              - regular
+              - next_day
+              - express
+              - same_day
+              - instant
+              - cargo
+              - international
+              - special
+        services:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/TenantShippingServiceSelection"
+        version:
+          type: integer
+          minimum: 0
+        updated_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+
+    TenantShippingPreferenceUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [mode, enabled_groups, services]
+      properties:
+        mode:
+          type: string
+          enum: [all, groups, custom]
+        enabled_groups:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - economy
+              - regular
+              - next_day
+              - express
+              - same_day
+              - instant
+              - cargo
+              - international
+              - special
+        services:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/TenantShippingServiceSelection"
+
+    TenantShippingGroup:
+      type: object
+      required: [code, name]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+
+    TenantShippingCatalogService:
+      allOf:
+        - $ref: "#/components/schemas/CourierService"
+        - type: object
+          required: [selected]
+          properties:
+            selected:
+              type: boolean
+
+    TenantShippingCatalogCourier:
+      type: object
+      required:
+        - code
+        - name
+        - provider_code
+        - supports_domestic_cost
+        - supports_international_cost
+        - supports_tracking
+        - selection_state
+        - selected_service_count
+        - total_service_count
+        - services
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        provider_code:
+          type: string
+        supports_domestic_cost:
+          type: boolean
+        supports_international_cost:
+          type: boolean
+        supports_tracking:
+          type: boolean
+        selection_state:
+          type: string
+          enum: [none, partial, all]
+        selected_service_count:
+          type: integer
+          minimum: 0
+        total_service_count:
+          type: integer
+          minimum: 0
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantShippingCatalogService"
+
+    TenantShippingCatalogResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          type: object
+          required: [preference, groups, couriers]
+          properties:
+            preference:
+              $ref: "#/components/schemas/TenantShippingPreference"
+            groups:
+              type: array
+              items:
+                $ref: "#/components/schemas/TenantShippingGroup"
+            couriers:
+              type: array
+              items:
+                $ref: "#/components/schemas/TenantShippingCatalogCourier"
+
+    TenantShippingPreferenceResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TenantShippingPreference"
 
     CalculateCostRequest:
       type: object

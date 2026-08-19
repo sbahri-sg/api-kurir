@@ -16,6 +16,7 @@ import (
 	"github.com/emisell/api-kurir/internal/apikeys"
 	"github.com/emisell/api-kurir/internal/couriers"
 	"github.com/emisell/api-kurir/internal/locations"
+	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tenancy"
@@ -43,6 +44,7 @@ func New(
 	immediateTrackingAdapter tracking.Adapter,
 	customerAPIKeyService *apikeys.Service,
 	providerCredentialService *providercredentials.Service,
+	merchantShippingService *merchantshipping.Service,
 	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
 	adminAPIKeys []string,
@@ -133,6 +135,16 @@ func New(
 		"/provider-credentials/:id/disable",
 		tenantProviderCredentialDisableHandler(providerCredentialService),
 		tenantScopeMiddleware("provider-credentials:write"),
+	)
+	integrationGroup.GET(
+		"/shipping-services",
+		tenantShippingServiceCatalogHandler(merchantShippingService),
+		tenantScopeMiddleware("shipping:read"),
+	)
+	integrationGroup.PUT(
+		"/shipping-services",
+		tenantShippingServiceUpdateHandler(merchantShippingService),
+		tenantScopeMiddleware("shipping:write"),
 	)
 	if legacyRepository, ok := locationRepository.(legacyRegionStore); ok {
 		registerLegacyRegionRoutes(

@@ -17,6 +17,7 @@ tenant, dan tanggung jawab operasional tidak tercampur.
 | RajaOngkir V2 compatible | Emisell atau SDK RajaOngkir | API Kurir | `/api/v1`, `openapi/public.yaml` |
 | Emisell Legacy | Modul region-service lama | API Kurir | `/regions`, `/shipping`, `openapi/public.yaml` |
 | Canonical/Internal | Dashboard atau service internal | API Kurir | `/v1`, `openapi/public.yaml` |
+| Merchant Shipping Services | Backend Extension Kurir Emisell | API Kurir | `/v1/integrations/shipping-services`, `openapi/public.yaml` |
 | Admin | Operator API Kurir | API Kurir | `/v1/admin`, `openapi/public.yaml` |
 | Provider Account API | Seller/admin Emisell | API Kurir | `openapi/provider-account-v1.yaml` |
 | Partner Connector API | API Kurir | Sistem partner | `openapi/partner-v1.yaml` |
@@ -50,6 +51,12 @@ partner_b / instant / live
 ```
 
 Keduanya adalah koneksi berbeda meskipun berada di bawah seller yang sama.
+
+Pilihan layanan yang tampil di checkout tidak disimpan pada provider account.
+Konfigurasi tersebut memakai pasangan canonical `courier_code:service_code`
+melalui [Merchant Shipping Services](merchant-shipping-services.md), sehingga
+JNE REG tetap satu pilihan logis walaupun tersedia dari lebih dari satu akun
+provider.
 
 ### 2.3 Partner Connector API
 

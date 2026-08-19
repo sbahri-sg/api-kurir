@@ -1,5 +1,5 @@
 export type ApiDocumentationScope = "customer" | "admin";
-export type ApiDocumentationMethod = "GET" | "POST";
+export type ApiDocumentationMethod = "GET" | "POST" | "PUT";
 export type ApiDocumentationContract =
   | "rajaongkir-v2"
   | "emisell-legacy"
@@ -1311,6 +1311,117 @@ Content-Type: application/json
 key: {{api_key}}
 X-Emisell-Tenant-Token: {{tenant_token}}`,
     response: `HTTP 204 No Content`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "GET",
+    path: "/v1/integrations/shipping-services",
+    title: "Katalog dan pilihan layanan checkout",
+    description:
+      "Mengembalikan kurir canonical, grup layanan, capability yang tersedia, serta status none/partial/all berdasarkan preferensi merchant. Merchant lama yang belum menyimpan preferensi tetap memakai perilaku allow-all.",
+    authentication:
+      "Customer API key + tenant token dengan scope shipping:read",
+    request: `GET {{base_url}}/v1/integrations/shipping-services
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}`,
+    response: `{
+  "data": {
+    "preference": {
+      "configured": true,
+      "mode": "custom",
+      "enabled_groups": [],
+      "services": [
+        { "courier_code": "jne", "service_code": "REG" },
+        { "courier_code": "jne", "service_code": "YES" }
+      ],
+      "version": 2,
+      "updated_at": "2026-08-19T10:00:00Z"
+    },
+    "groups": [
+      { "code": "regular", "name": "Regular" },
+      { "code": "next_day", "name": "Next Day" },
+      { "code": "express", "name": "Express" }
+    ],
+    "couriers": [
+      {
+        "code": "jne",
+        "name": "JNE",
+        "selection_state": "partial",
+        "selected_service_count": 2,
+        "total_service_count": 9,
+        "supports_domestic_cost": true,
+        "supports_international_cost": true,
+        "supports_tracking": true,
+        "services": [
+          {
+            "code": "REG",
+            "name": "JNE Regular",
+            "group": "regular",
+            "service_type": "parcel",
+            "calculation_mode": "provider_quote",
+            "selected": true
+          },
+          {
+            "code": "SPS",
+            "name": "JNE Super Speed",
+            "group": "express",
+            "service_type": "parcel",
+            "calculation_mode": "provider_quote",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "PUT",
+    path: "/v1/integrations/shipping-services",
+    title: "Simpan layanan yang tampil di checkout",
+    description:
+      "Mengganti preferensi merchant secara atomik. Gunakan custom untuk checkbox per layanan seperti Tokopedia, groups untuk aktivasi otomatis berdasarkan kategori, atau all untuk seluruh layanan canonical yang sudah dikenali.",
+    authentication:
+      "Customer API key + tenant token dengan scope shipping:write",
+    parameters: [
+      "mode — all, groups, atau custom",
+      "enabled_groups — wajib hanya pada mode groups",
+      "services — pasangan courier_code + canonical service_code, dipakai hanya pada mode custom",
+      "merchant_id tidak boleh dikirim; tenant selalu diambil dari claim sub",
+    ],
+    request: `PUT {{base_url}}/v1/integrations/shipping-services
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}
+Content-Type: application/json
+
+{
+  "mode": "custom",
+  "enabled_groups": [],
+  "services": [
+    { "courier_code": "jne", "service_code": "REG" },
+    { "courier_code": "jne", "service_code": "YES" },
+    { "courier_code": "jnt", "service_code": "EZ" }
+  ]
+}`,
+    response: `{
+  "data": {
+    "configured": true,
+    "mode": "custom",
+    "enabled_groups": [],
+    "services": [
+      { "courier_code": "jne", "service_code": "REG" },
+      { "courier_code": "jne", "service_code": "YES" },
+      { "courier_code": "jnt", "service_code": "EZ" }
+    ],
+    "version": 1,
+    "updated_at": "2026-08-19T10:00:00Z"
+  },
+  "meta": { "request_id": "req_example" }
+}`,
   },
   {
     contract: "gateway",

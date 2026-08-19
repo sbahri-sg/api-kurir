@@ -895,6 +895,71 @@
             "description": "Credential tenant lain diperlakukan sebagai tidak ditemukan."
           },
           "response": []
+        },
+        {
+          "name": "Get Merchant Checkout Services",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/integrations/shipping-services",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "integrations", "shipping-services"]
+            },
+            "description": "Memerlukan scope shipping:read. Mengembalikan katalog canonical, grup, capability, dan status checkbox none/partial/all milik merchant."
+          },
+          "response": []
+        },
+        {
+          "name": "Replace Merchant Checkout Services",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Preference layanan tersimpan', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "pm.expect(payload.data.mode).to.eql('custom');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"custom\",\n  \"enabled_groups\": [],\n  \"services\": [\n    { \"courier_code\": \"jne\", \"service_code\": \"REG\" },\n    { \"courier_code\": \"jne\", \"service_code\": \"YES\" },\n    { \"courier_code\": \"jnt\", \"service_code\": \"EZ\" }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/integrations/shipping-services",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "integrations", "shipping-services"]
+            },
+            "description": "Memerlukan scope shipping:write. PUT mengganti seluruh pilihan merchant secara atomik; merchant_id selalu berasal dari claim sub."
+          },
+          "response": []
         }
       ]
     },

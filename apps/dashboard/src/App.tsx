@@ -2271,6 +2271,7 @@ function GatewayTenantDocumentation() {
   "domain_id": "domain_abc",
   "scope": [
     "shipping:read",
+    "shipping:write",
     "tracking:read",
     "provider-credentials:read",
     "provider-credentials:write"

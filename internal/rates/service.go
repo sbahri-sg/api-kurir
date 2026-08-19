@@ -22,6 +22,15 @@ type Service struct {
 	snapshots    SnapshotRepository
 	locker       cache.Locker
 	lockTTL      time.Duration
+	resultPolicy ResultPolicy
+}
+
+type ResultPolicy interface {
+	Filter(
+		ctx context.Context,
+		tenantID string,
+		results []Result,
+	) ([]Result, error)
 }
 
 type Option func(*Service)
@@ -39,6 +48,12 @@ func WithProviderFallback(
 		if lockTTL > 0 {
 			service.lockTTL = lockTTL
 		}
+	}
+}
+
+func WithResultPolicy(policy ResultPolicy) Option {
+	return func(service *Service) {
+		service.resultPolicy = policy
 	}
 }
 
@@ -72,7 +87,18 @@ func (s *Service) Calculate(ctx context.Context, request Request) ([]Result, err
 		if result.Err != nil {
 			return nil, result.Err
 		}
-		return result.Val.([]Result), nil
+		results := result.Val.([]Result)
+		if request.TenantID != "" && s.resultPolicy != nil {
+			filtered, err := s.resultPolicy.Filter(ctx, request.TenantID, results)
+			if err != nil {
+				return nil, err
+			}
+			if len(filtered) == 0 {
+				return nil, ErrRateNotAvailable
+			}
+			results = filtered
+		}
+		return results, nil
 	}
 }
 

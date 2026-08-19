@@ -101,7 +101,11 @@ terjadi hit provider.
 | `provider-credentials:read` | Membaca metadata key milik merchant |
 | `provider-credentials:write` | Menambah atau menonaktifkan key merchant |
 | `shipping:read` | Mengambil tarif dengan credential merchant |
+| `shipping:write` | Mengatur kurir dan layanan yang boleh tampil di checkout |
 | `tracking:read` | Melacak AWB dengan credential merchant |
+
+Kontrak pilihan kurir/layanan dan pola UI bertingkat dijelaskan lengkap pada
+[`merchant-shipping-services.md`](merchant-shipping-services.md).
 
 ## Error penting
 

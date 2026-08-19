@@ -20,6 +20,7 @@ Base path dan klasifikasi:
 | RajaOngkir V2 compatible | `/api/v1` | Emisell/SDK RajaOngkir | Integer snapshot RajaOngkir | Public, stable |
 | Emisell Legacy | `/regions`, `/shipping` | Modul region-service lama | Integer dump region-service | Legacy compatibility |
 | Canonical/Internal | `/v1` | Dashboard dan service internal | `loc_idn_*` | Internal, stable |
+| Emisell Gateway | `/v1/integrations` | Backend Emisell bertenant | Merchant ID dari signed token | Internal, stable |
 | Admin | `/v1/admin` | Operator API Kurir | Canonical ID/UUID | Restricted |
 
 Partner Connector tidak berada pada base path di atas. Vendor menyediakan
@@ -424,6 +425,18 @@ quote provider.
 
 Status `202` hanya digunakan jika provider lambat dan caller memilih mode
 asynchronous. Default tetap mencoba memberi hasil sinkron dalam batas timeout.
+
+### Filter layanan checkout per merchant
+
+Request bertenant dapat mengatur layanan yang boleh muncul melalui
+`GET/PUT /v1/integrations/shipping-services`. Rate engine menormalisasi kode
+mentah provider ke canonical service terlebih dahulu, lalu menerapkan pilihan
+merchant tanpa mengubah envelope RajaOngkir V2. Merchant lama yang belum
+menyimpan preference tetap memakai perilaku lama agar rollout kompatibel.
+
+Kontrak request, mode `all`/`groups`/`custom`, scope, error, dan pola checkbox
+kurir bertingkat tersedia pada
+[`merchant-shipping-services.md`](merchant-shipping-services.md).
 
 ## 5. Membaca snapshot tarif otomatis
 

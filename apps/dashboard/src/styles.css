@@ -1908,6 +1908,11 @@ label {
   background: #e4eff8;
 }
 
+.method-put {
+  color: #8a5a16;
+  background: #fff1d6;
+}
+
 .endpoint-title {
   color: #56615b;
   font-size: 12px;

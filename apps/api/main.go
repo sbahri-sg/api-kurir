@@ -15,6 +15,7 @@ import (
 	"github.com/emisell/api-kurir/internal/database"
 	"github.com/emisell/api-kurir/internal/httpapi"
 	"github.com/emisell/api-kurir/internal/locations"
+	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/platform/cache"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
@@ -78,6 +79,11 @@ func run(logger *slog.Logger) error {
 	_ = runtimeCache
 	locationRepository := locations.NewPostgresRepository(pool)
 	rateRepository := rates.NewPostgresRepository(pool)
+	courierRepository := couriers.NewPostgresRepository(pool)
+	merchantShippingService := merchantshipping.NewService(
+		merchantshipping.NewPostgresRepository(pool),
+		courierRepository,
+	)
 	providerCredentialCipher, err := providercredentials.NewCipher(
 		cfg.ProviderCredentials.EncryptionKey,
 	)
@@ -133,11 +139,10 @@ func run(logger *slog.Logger) error {
 		rateRepository,
 		runtimeLocker,
 		cfg.RajaOngkir.Timeout+2*time.Second,
-	)}
+	), rates.WithResultPolicy(merchantShippingService)}
 	operationTimeout := cfg.RajaOngkir.Timeout + 2*time.Second
 	logger.Info("runtime RajaOngkir credential resolver enabled")
 	rateService := rates.NewService(rateRepository, operationTimeout, rateOptions...)
-	courierRepository := couriers.NewPostgresRepository(pool)
 	adminRepository := admin.NewPostgresRepository(pool)
 	customerAPIKeyService := apikeys.NewService(apikeys.NewPostgresRepository(pool))
 	var trackingService *tracking.Service
@@ -174,6 +179,7 @@ func run(logger *slog.Logger) error {
 		immediateTrackingAdapter,
 		customerAPIKeyService,
 		providerCredentialService,
+		merchantShippingService,
 		tenantVerifier,
 		cfg.APIKeys,
 		cfg.AdminAPIKeys,
