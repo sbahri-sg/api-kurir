@@ -53,10 +53,10 @@ func (r *PostgresRepository) ImportLegacyProviderLocations(
 		rows = append(rows, []any{
 			item.ProviderLocationID,
 			strings.TrimSpace(item.ProviderLabel),
-			strings.TrimSpace(item.Province),
-			strings.TrimSpace(item.City),
-			strings.TrimSpace(item.District),
-			strings.TrimSpace(item.Subdistrict),
+			normalizeRegionDisplayName(item.Province),
+			normalizeRegionDisplayName(item.City),
+			normalizeRegionDisplayName(item.District),
+			normalizeRegionDisplayName(item.Subdistrict),
 			normalizePostalCode(item.PostalCode),
 			strings.TrimSpace(item.ParentProviderLocationID),
 			strings.TrimSpace(item.SourceEndpoint),
@@ -154,6 +154,33 @@ func (r *PostgresRepository) ImportLegacyProviderLocations(
 		`, providerCode, level, parentLocationLevel(level)); err != nil {
 			return 0, fmt.Errorf("repair legacy %s parent hierarchy: %w", level, err)
 		}
+	}
+
+	// Keep the canonical source of truth readable even when the provider dump
+	// supplies all-uppercase names. Provider IDs and raw provider labels remain
+	// untouched for auditability and adapter compatibility.
+	if _, err := tx.Exec(ctx, `
+		UPDATE locations location
+		SET province = coalesce(nullif(stage.province, ''), location.province),
+		    city = coalesce(nullif(stage.city, ''), location.city),
+		    district = coalesce(nullif(stage.district, ''), location.district),
+		    subdistrict = coalesce(nullif(stage.subdistrict, ''), location.subdistrict),
+		    updated_at = now()
+		FROM legacy_region_stage stage
+		JOIN provider_location_mappings existing
+		  ON existing.provider_code = $1
+		 AND existing.granularity = $2
+		 AND existing.provider_location_id = stage.provider_location_id
+		 AND existing.active
+		WHERE location.id = existing.location_id
+		  AND (
+			location.province IS DISTINCT FROM coalesce(nullif(stage.province, ''), location.province)
+			OR location.city IS DISTINCT FROM coalesce(nullif(stage.city, ''), location.city)
+			OR location.district IS DISTINCT FROM coalesce(nullif(stage.district, ''), location.district)
+			OR location.subdistrict IS DISTINCT FROM coalesce(nullif(stage.subdistrict, ''), location.subdistrict)
+		  )
+	`, providerCode, level); err != nil {
+		return 0, fmt.Errorf("normalize legacy %s location names: %w", level, err)
 	}
 
 	if _, err := tx.Exec(ctx, `

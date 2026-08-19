@@ -231,11 +231,11 @@ const legacyRegionSelect = `
 		mapping.provider_location_id,
 		location.public_id,
 		coalesce(
-			nullif(mapping.provider_location_name, ''),
 			nullif(location.subdistrict, ''),
 			nullif(location.district, ''),
 			nullif(location.city, ''),
 			nullif(location.province, ''),
+			nullif(mapping.provider_location_name, ''),
 			''
 		),
 		coalesce(
@@ -248,6 +248,7 @@ const legacyRegionSelect = `
 			''
 		),
 		coalesce(
+			location.province,
 			CASE mapping.granularity
 				WHEN 'province' THEN mapping.provider_location_id
 				WHEN 'city' THEN parent_mapping.provider_location_id
@@ -263,10 +264,10 @@ const legacyRegionSelect = `
 				WHEN 'district' THEN grandparent_mapping.provider_location_name
 				WHEN 'subdistrict' THEN great_grandparent_mapping.provider_location_name
 			END,
-			location.province,
 			''
 		),
 		coalesce(
+			location.city,
 			CASE mapping.granularity
 				WHEN 'city' THEN mapping.provider_location_id
 				WHEN 'district' THEN parent_mapping.provider_location_id
@@ -280,10 +281,10 @@ const legacyRegionSelect = `
 				WHEN 'district' THEN parent_mapping.provider_location_name
 				WHEN 'subdistrict' THEN grandparent_mapping.provider_location_name
 			END,
-			location.city,
 			''
 		),
 		coalesce(
+			location.district,
 			CASE mapping.granularity
 				WHEN 'district' THEN mapping.provider_location_id
 				WHEN 'subdistrict' THEN parent_mapping.provider_location_id
@@ -295,7 +296,6 @@ const legacyRegionSelect = `
 				WHEN 'district' THEN mapping.provider_location_name
 				WHEN 'subdistrict' THEN parent_mapping.provider_location_name
 			END,
-			location.district,
 			''
 		)
 	FROM provider_location_mappings mapping

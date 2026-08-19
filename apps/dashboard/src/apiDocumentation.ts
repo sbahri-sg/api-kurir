@@ -293,11 +293,11 @@ key: {{api_key}}`,
   "data": [
     {
       "id": 4911,
-      "label": "HUSEN SASTRANEGARA, CICENDO, BANDUNG, JAWA BARAT, 40174",
+      "label": "Husen Sastranegara, Cicendo, Bandung, Jawa Barat, 40174",
       "province_name": "Jawa Barat",
-      "city_name": "BANDUNG",
-      "district_name": "CICENDO",
-      "subdistrict_name": "HUSEN SASTRANEGARA",
+      "city_name": "Bandung",
+      "district_name": "Cicendo",
+      "subdistrict_name": "Husen Sastranegara",
       "zip_code": "40174"
     }
   ]
@@ -321,7 +321,7 @@ key: {{api_key}}`,
   "data": [
     {
       "id": 32,
-      "name": "MALUKU UTARA"
+      "name": "Maluku Utara"
     }
   ]
 }`,
@@ -347,7 +347,7 @@ key: {{api_key}}`,
   "data": [
     {
       "id": 55,
-      "name": "BANDUNG",
+      "name": "Bandung",
       "zip_code": ""
     }
   ]
@@ -372,7 +372,7 @@ key: {{api_key}}`,
   "data": [
     {
       "id": 442,
-      "name": "CICENDO",
+      "name": "Cicendo",
       "zip_code": ""
     }
   ]
@@ -397,7 +397,7 @@ key: {{api_key}}`,
   "data": [
     {
       "id": 4911,
-      "name": "HUSEN SASTRANEGARA",
+      "name": "Husen Sastranegara",
       "zip_code": "40174"
     }
   ]
@@ -415,7 +415,7 @@ key: {{api_key}}`,
 key: {{api_key}}`,
     response: `{
   "data": [
-    { "id": 5, "name": "JAWA BARAT" }
+    { "id": 5, "name": "Jawa Barat" }
   ]
 }`,
   },
@@ -430,7 +430,7 @@ key: {{api_key}}`,
     request: `GET {{base_url}}/regions/provinces/5
 key: {{api_key}}`,
     response: `{
-  "data": { "id": 5, "name": "JAWA BARAT" }
+  "data": { "id": 5, "name": "Jawa Barat" }
 }`,
   },
   {
@@ -445,7 +445,7 @@ key: {{api_key}}`,
 key: {{api_key}}`,
     response: `{
   "data": [
-    { "id": 55, "name": "BANDUNG" }
+    { "id": 55, "name": "Bandung" }
   ]
 }`,
   },
@@ -460,7 +460,7 @@ key: {{api_key}}`,
     request: `GET {{base_url}}/regions/cities/55
 key: {{api_key}}`,
     response: `{
-  "data": { "id": 55, "name": "BANDUNG" }
+  "data": { "id": 55, "name": "Bandung" }
 }`,
   },
   {
@@ -475,7 +475,7 @@ key: {{api_key}}`,
 key: {{api_key}}`,
     response: `{
   "data": [
-    { "id": 442, "name": "CICENDO", "zipCode": "" }
+    { "id": 442, "name": "Cicendo", "zipCode": "" }
   ]
 }`,
   },
@@ -492,11 +492,11 @@ key: {{api_key}}`,
     response: `{
   "data": {
     "id": 442,
-    "name": "CICENDO",
+    "name": "Cicendo",
     "cityId": 55,
-    "cityName": "BANDUNG",
+    "cityName": "Bandung",
     "provinceId": 5,
-    "provinceName": "JAWA BARAT"
+    "provinceName": "Jawa Barat"
   }
 }`,
   },
@@ -514,7 +514,7 @@ key: {{api_key}}`,
   "data": [
     {
       "id": 4911,
-      "name": "HUSEN SASTRANEGARA",
+      "name": "Husen Sastranegara",
       "zipCode": "40174",
       "districtId": 442,
       "cityId": 55,

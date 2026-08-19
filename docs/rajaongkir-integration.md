@@ -309,6 +309,11 @@ Emisell dan diimpor melalui `make legacy-region-import`. Full sync API
 RajaOngkir tidak berjalan secara default; tool tersebut tetap tersedia melalui
 profile `legacy-provider-full-sync` untuk pembaruan atau diagnosis.
 
+Nama dari dump dinormalisasi ke display case saat masuk ke master canonical,
+contohnya `JAWA TIMUR` menjadi `Jawa Timur`. ID provider, raw label, hierarki,
+dan kode pos tetap disimpan tanpa perubahan sehingga proses adapter dan audit
+tidak kehilangan data sumber.
+
 ## 9. Quota ledger
 
 Sebelum upstream call, service melakukan increment atomik:

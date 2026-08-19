@@ -117,7 +117,7 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 	var replacementProvinceID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO locations (public_id, level, province, active)
-		VALUES ($1, 'province', 'MALUKU UTARA', true)
+		VALUES ($1, 'province', 'Maluku Utara', true)
 		RETURNING id
 	`, replacementProvincePublicID).Scan(&replacementProvinceID); err != nil {
 		t.Fatal(err)
@@ -167,7 +167,7 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(provinces) != 1 || provinces[0].ID != "32" || provinces[0].Name != "MALUKU UTARA" {
+	if len(provinces) != 1 || provinces[0].ID != "32" || provinces[0].Name != "Maluku Utara" {
 		t.Fatalf("unexpected provinces: %#v", provinces)
 	}
 	subdistricts, err := repository.ListLegacyHierarchy(ctx, provider, "subdistrict", "32")
@@ -188,7 +188,7 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 	}
 	if len(searchResult) != 1 ||
 		searchResult[0].ID != "32" ||
-		searchResult[0].Name != "SASA" ||
+		searchResult[0].Name != "Sasa" ||
 		searchResult[0].PostalCode != postalCode {
 		t.Fatalf("unexpected legacy search result: %#v", searchResult)
 	}
@@ -243,7 +243,7 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if found.CanonicalPublicID != publicID || found.Name != "TERNATE SELATAN" {
+	if found.CanonicalPublicID != publicID || found.Name != "Ternate Selatan" {
 		t.Fatalf("unexpected district: %#v", found)
 	}
 }

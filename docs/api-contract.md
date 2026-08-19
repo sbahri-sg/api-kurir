@@ -123,6 +123,13 @@ Pencarian customer hanya menerbitkan lokasi level kelurahan/desa
 hierarki, tetapi tidak dipakai sebagai destination ID pada metode direct
 search RajaOngkir.
 
+Nama wilayah canonical disimpan dalam format tampilan yang wajar, misalnya
+`Jawa Timur`, `Bandung`, dan `Husen Sastranegara`. Singkatan resmi seperti
+`DKI`, `DI`, `NTB`, `NTT`, `NAD`, serta angka Romawi tetap dipertahankan.
+Normalisasi ini hanya mengubah kapitalisasi nama; ID, hierarki, kode pos, dan
+mapping provider tidak berubah. Label mentah provider tetap disimpan pada
+`provider_location_mappings` untuk audit.
+
 ### Endpoint hierarki RajaOngkir V2
 
 Untuk SDK atau form cascading, API juga menyediakan pola endpoint bertingkat:
@@ -146,7 +153,7 @@ Contoh:
   "data": [
     {
       "id": 55,
-      "name": "BANDUNG",
+      "name": "Bandung",
       "zip_code": ""
     }
   ]
@@ -170,7 +177,7 @@ untuk header `key` maupun Bearer:
   "data": [
     {
       "id": 442,
-      "name": "CICENDO",
+      "name": "Cicendo",
       "zip_code": ""
     }
   ]
