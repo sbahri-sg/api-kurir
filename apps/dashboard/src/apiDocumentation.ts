@@ -660,19 +660,20 @@ key: {{api_key}}`,
     path: "/api/v1/calculate/domestic-cost",
     title: "Cek ongkir SDK V2 · kelurahan",
     description:
-      "Endpoint form-urlencoded atau multipart RajaOngkir V2 untuk origin dan destination hasil direct search atau endpoint sub-district. JSON tidak diterima pada kontrak ini.",
+      "Endpoint form-urlencoded atau multipart RajaOngkir V2 untuk origin dan destination hasil direct search atau endpoint sub-district. JSON tidak diterima pada kontrak ini. Tambahkan include_group=true bila Emisell membutuhkan pengelompokan layanan.",
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint sub-district atau domestic-destination",
       "weight — berat gram",
       "courier — kode kurir dipisahkan titik dua",
       "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
+      "include_group — true menambahkan canonical_service, service_group, dan service_type; default false agar tetap 1:1 RajaOngkir V2",
     ],
     request: `POST {{base_url}}/api/v1/calculate/domestic-cost
 Content-Type: application/x-www-form-urlencoded
 key: {{api_key}}
 
-origin=4911&destination=25976&weight=1000&courier=jne&price=lowest`,
+origin=4911&destination=25976&weight=1000&courier=jne&price=lowest&include_group=true`,
     response: `{
   "meta": {
     "message": "Success Calculate Domestic Shipping cost",
@@ -684,6 +685,9 @@ origin=4911&destination=25976&weight=1000&courier=jne&price=lowest`,
       "name": "Jalur Nugraha Ekakurir (JNE)",
       "code": "jne",
       "service": "REG",
+      "canonical_service": "REG",
+      "service_group": "regular",
+      "service_type": "parcel",
       "description": "Layanan Reguler",
       "cost": 20000,
       "etd": "3"
@@ -697,19 +701,20 @@ origin=4911&destination=25976&weight=1000&courier=jne&price=lowest`,
     path: "/api/v1/calculate/district/domestic-cost",
     title: "Cek ongkir SDK V2 · kecamatan",
     description:
-      "Drop-in endpoint form-urlencoded atau multipart untuk SDK RajaOngkir V2. Gunakan /api/v1/calculate/domestic-cost dengan bentuk request yang sama untuk ID subdistrict. JSON tidak diterima.",
+      "Drop-in endpoint form-urlencoded atau multipart untuk SDK RajaOngkir V2. Gunakan /api/v1/calculate/domestic-cost dengan bentuk request yang sama untuk ID subdistrict. JSON tidak diterima. Tambahkan include_group=true bila Emisell membutuhkan pengelompokan layanan.",
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint district",
       "weight — berat gram",
       "courier — kode kurir dipisahkan titik dua",
       "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
+      "include_group — true menambahkan canonical_service, service_group, dan service_type; default false agar tetap 1:1 RajaOngkir V2",
     ],
     request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
 Content-Type: application/x-www-form-urlencoded
 key: {{api_key}}
 
-origin=442&destination=2165&weight=1000&courier=jne&price=lowest`,
+origin=442&destination=2165&weight=1000&courier=jne&price=lowest&include_group=true`,
     response: `{
   "meta": {
     "message": "Success Calculate Domestic Shipping cost",
@@ -721,6 +726,9 @@ origin=442&destination=2165&weight=1000&courier=jne&price=lowest`,
       "name": "Jalur Nugraha Ekakurir (JNE)",
       "code": "jne",
       "service": "REG",
+      "canonical_service": "REG",
+      "service_group": "regular",
+      "service_type": "parcel",
       "description": "Layanan Reguler",
       "cost": 20000,
       "etd": "3"

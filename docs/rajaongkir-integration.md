@@ -238,11 +238,19 @@ destination
 weight
 courier
 price (opsional)
+include_group (opsional, extension API Kurir)
 ```
 
 `price=lowest` mengurutkan seluruh opsi termurah ke termahal, sedangkan
 `price=highest` mengurutkan seluruh opsi termahal ke termurah. Parameter ini
 tidak menghapus opsi layanan lain dari respons.
+
+`include_group=true` menambahkan `canonical_service`, `service_group`, dan
+`service_type` pada setiap hasil tarif. Nilai default adalah `false`, sehingga
+integrasi yang tidak meminta enrichment tetap menerima kontrak 1:1 RajaOngkir
+V2. Kode provider asli tetap berada pada `service`; contoh `JTR>130` tetap
+ditampilkan apa adanya dan dinormalisasi menjadi `JTR` pada
+`canonical_service`.
 
 Dimensi tidak tercantum sebagai field resmi pada form tersebut. Adapter hanya
 mengirim `weight` ke RajaOngkir. Jika request API Kurir menyertakan dimensi:

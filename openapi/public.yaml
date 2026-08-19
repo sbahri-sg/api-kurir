@@ -1829,6 +1829,13 @@ components:
             Mengurutkan seluruh opsi layanan. lowest mengurutkan biaya naik dan
             highest mengurutkan biaya turun; parameter ini tidak membatasi hasil
             menjadi satu layanan.
+        include_group:
+          type: boolean
+          default: false
+          description: >
+            Extension API Kurir. Jika true, setiap hasil juga memuat
+            canonical_service, service_group, dan service_type. Jika false atau
+            tidak dikirim, respons tetap 1:1 dengan RajaOngkir V2.
 
     Dimensions:
       type: object
@@ -1905,6 +1912,16 @@ components:
                 type: string
               service:
                 type: string
+                description: Kode layanan mentah dari provider
+              canonical_service:
+                type: string
+                description: Kode layanan yang dinormalisasi untuk pengelompokan
+              service_group:
+                type: string
+                description: Grup layanan seperti regular, cargo, next_day, instant, atau same_day
+              service_type:
+                type: string
+                description: Tipe operasional layanan seperti parcel atau cargo
               description:
                 type: string
               cost:

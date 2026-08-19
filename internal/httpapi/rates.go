@@ -264,6 +264,20 @@ func calculateRajaOngkirV2Rate(
 			nil,
 		)
 	}
+	includeGroup := false
+	includeGroupValue := strings.TrimSpace(c.Request().FormValue("include_group"))
+	if includeGroupValue != "" {
+		includeGroup, err = strconv.ParseBool(includeGroupValue)
+		if err != nil {
+			return writeError(
+				c,
+				http.StatusBadRequest,
+				"INVALID_REQUEST",
+				"include_group harus berupa boolean true atau false.",
+				nil,
+			)
+		}
+	}
 	courierValue := strings.TrimSpace(c.Request().FormValue("courier"))
 	if courierValue == "" {
 		return writeError(
@@ -342,14 +356,32 @@ func calculateRajaOngkirV2Rate(
 
 	data := make([]map[string]any, 0, len(results))
 	for _, result := range results {
-		data = append(data, map[string]any{
+		item := map[string]any{
 			"name":        result.Card.CourierName,
 			"code":        result.Card.CourierCode,
 			"service":     result.Card.ServiceCode,
 			"description": result.Card.ServiceName,
 			"cost":        result.Cost.Total,
 			"etd":         rajaOngkirETD(result),
-		})
+		}
+		if includeGroup {
+			canonicalService := result.Card.CanonicalServiceCode
+			if canonicalService == "" {
+				canonicalService = result.Card.ServiceCode
+			}
+			serviceGroup := result.Card.ServiceGroup
+			if serviceGroup == "" {
+				serviceGroup = "unknown"
+			}
+			serviceType := result.Card.ServiceType
+			if serviceType == "" {
+				serviceType = "unknown"
+			}
+			item["canonical_service"] = canonicalService
+			item["service_group"] = serviceGroup
+			item["service_type"] = serviceType
+		}
+		data = append(data, item)
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"meta": map[string]any{

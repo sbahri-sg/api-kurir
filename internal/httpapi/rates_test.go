@@ -147,12 +147,15 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 	var payload struct {
 		Meta map[string]any `json:"meta"`
 		Data []struct {
-			Name        string `json:"name"`
-			Code        string `json:"code"`
-			Service     string `json:"service"`
-			Description string `json:"description"`
-			Cost        int64  `json:"cost"`
-			ETD         string `json:"etd"`
+			Name             string  `json:"name"`
+			Code             string  `json:"code"`
+			Service          string  `json:"service"`
+			Description      string  `json:"description"`
+			Cost             int64   `json:"cost"`
+			ETD              string  `json:"etd"`
+			CanonicalService *string `json:"canonical_service"`
+			ServiceGroup     *string `json:"service_group"`
+			ServiceType      *string `json:"service_type"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
@@ -164,8 +167,112 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 		payload.Data[0].Cost != 15000 {
 		t.Fatalf("unexpected response: %#v", payload)
 	}
+	if payload.Data[0].CanonicalService != nil ||
+		payload.Data[0].ServiceGroup != nil ||
+		payload.Data[0].ServiceType != nil {
+		t.Fatalf("default contract must remain RajaOngkir-compatible: %#v", payload.Data[0])
+	}
 	if _, exists := payload.Meta["request_id"]; exists {
 		t.Fatalf("compatibility meta contains internal extension: %#v", payload.Meta)
+	}
+}
+
+func TestRajaOngkirV2CalculateCanIncludeServiceGrouping(t *testing.T) {
+	t.Parallel()
+
+	service := rates.NewService(staticRateRepository{
+		cards: []rates.RateCard{{
+			CourierCode:            "jne",
+			CourierName:            "JNE",
+			ServiceCode:            "JTR>130",
+			ServiceName:            "JNE Trucking",
+			CanonicalServiceCode:   "JTR",
+			ServiceGroup:           "cargo",
+			ServiceType:            "cargo",
+			ServiceVariantCode:     "JTR>130",
+			PricingModel:           "flat",
+			BasePrice:              75_000,
+			WeightIncrementGrams:   1_000,
+			RoundingMode:           "ceil",
+			RoundingIncrementGrams: 1_000,
+		}},
+	}, time.Second)
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.POST(
+		"/api/v1/calculate/domestic-cost",
+		calculatePublicRateHandler(service, legacyHTTPRepositoryStub{}, "subdistrict"),
+	)
+
+	form := url.Values{
+		"origin":        {"3273061001"},
+		"destination":   {"3212122001"},
+		"weight":        {"10000"},
+		"courier":       {"jne"},
+		"include_group": {"true"},
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/calculate/domestic-cost",
+		bytes.NewBufferString(form.Encode()),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body)
+	}
+
+	var payload struct {
+		Data []struct {
+			Service          string `json:"service"`
+			CanonicalService string `json:"canonical_service"`
+			ServiceGroup     string `json:"service_group"`
+			ServiceType      string `json:"service_type"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data) != 1 ||
+		payload.Data[0].Service != "JTR>130" ||
+		payload.Data[0].CanonicalService != "JTR" ||
+		payload.Data[0].ServiceGroup != "cargo" ||
+		payload.Data[0].ServiceType != "cargo" {
+		t.Fatalf("unexpected enriched response: %#v", payload.Data)
+	}
+}
+
+func TestRajaOngkirV2CalculateRejectsInvalidIncludeGroup(t *testing.T) {
+	t.Parallel()
+
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.POST(
+		"/api/v1/calculate/domestic-cost",
+		calculatePublicRateHandler(
+			rates.NewService(staticRateRepository{}, time.Second),
+			legacyHTTPRepositoryStub{},
+			"subdistrict",
+		),
+	)
+	form := url.Values{
+		"origin":        {"3273061001"},
+		"destination":   {"3212122001"},
+		"weight":        {"1000"},
+		"courier":       {"jne"},
+		"include_group": {"yes-please"},
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/calculate/domestic-cost",
+		bytes.NewBufferString(form.Encode()),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body)
 	}
 }
 

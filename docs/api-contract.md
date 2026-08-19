@@ -257,7 +257,7 @@ POST /api/v1/calculate/domestic-cost
 key: <api-key>
 Content-Type: application/x-www-form-urlencoded
 
-origin=4911&destination=25976&weight=1000&courier=jne&price=lowest
+origin=4911&destination=25976&weight=1000&courier=jne&price=lowest&include_group=true
 ```
 
 Form `multipart/form-data` juga diterima dengan field yang sama. Payload JSON
@@ -265,6 +265,12 @@ tidak termasuk kontrak RajaOngkir V2 dan memperoleh HTTP `415`. Parameter
 `price=lowest` mengurutkan seluruh layanan dari termurah ke termahal;
 `price=highest` mengurutkan seluruh layanan dari termahal ke termurah. Parameter
 ini tidak memfilter hasil menjadi satu layanan.
+
+Parameter extension `include_group=true` menambahkan `canonical_service`,
+`service_group`, dan `service_type` pada setiap opsi tarif. Tanpa parameter ini
+respons tetap 1:1 dengan field RajaOngkir V2. Field `service` selalu menyimpan
+kode mentah provider, sedangkan `canonical_service` menormalkan varian seperti
+`JTR>130` menjadi `JTR` agar Emisell mudah melakukan pengelompokan.
 
 Kalkulasi berdasarkan kecamatan tersedia pada:
 
@@ -275,7 +281,8 @@ POST /api/v1/calculate/district/domestic-cost
 Endpoint district memakai ID dari
 `GET /api/v1/destination/district/{city_id}` dan meneruskan quote miss ke endpoint
 district resmi provider. Mode SDK mengembalikan field flat
-`name`, `code`, `service`, `description`, `cost`, dan `etd`.
+`name`, `code`, `service`, `description`, `cost`, dan `etd`, serta tiga field
+pengelompokan opsional saat `include_group=true`.
 
 Request:
 
