@@ -48,6 +48,8 @@ type Event struct {
 type Job struct {
 	ID                        string
 	ShipmentID                string
+	TenantID                  string
+	ProviderCredentialID      string
 	CourierCode               string
 	WaybillCiphertext         []byte
 	ProviderContextCiphertext []byte

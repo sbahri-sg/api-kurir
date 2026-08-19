@@ -140,6 +140,8 @@ export type TrackingShipment = {
 
 export type RateSnapshot = {
   id: string;
+  tenant_id?: string;
+  integration_id?: string;
   origin_public_id: string;
   origin_label: string;
   destination_public_id: string;
@@ -174,6 +176,7 @@ export type LocationMapping = {
 };
 
 export type ProviderQuota = {
+  tenant_id?: string;
   provider_code: string;
   credential_alias: string;
   quota_date: string;
@@ -189,6 +192,7 @@ export type ProviderQuota = {
 
 export type ProviderCredential = {
   id: string;
+  tenant_id?: string;
   provider_code: string;
   credential_alias: string;
   display_key: string;

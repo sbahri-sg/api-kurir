@@ -9,6 +9,8 @@ type Dimensions struct {
 }
 
 type Request struct {
+	TenantID          string
+	IntegrationID     string
 	Origin            string
 	Destination       string
 	Granularity       string

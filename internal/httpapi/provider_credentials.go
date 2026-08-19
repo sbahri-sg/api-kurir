@@ -12,6 +12,7 @@ import (
 type createProviderCredentialRequest struct {
 	ProviderCode string `json:"provider_code"`
 	APIKey       string `json:"api_key"`
+	DailyLimit   int64  `json:"daily_limit,omitempty"`
 }
 
 func adminProviderCredentialListHandler(

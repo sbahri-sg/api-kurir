@@ -15,6 +15,7 @@ import (
 
 	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/rates"
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/labstack/echo/v5"
 )
 
@@ -47,6 +48,9 @@ type calculateOptions struct {
 
 func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
 	return func(c *echo.Context) error {
+		if err := requireTenantScopeIfPresent(c, "shipping:read"); err != nil {
+			return err
+		}
 		var input calculateRequest
 		body := http.MaxBytesReader(c.Response(), c.Request().Body, maxCalculateBodyBytes)
 		decoder := json.NewDecoder(body)
@@ -74,6 +78,7 @@ func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
 		if err != nil {
 			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), nil)
 		}
+		attachTenantRateContext(c.Request().Context(), &request)
 
 		results, err := service.Calculate(c.Request().Context(), request)
 		switch {
@@ -202,6 +207,9 @@ func calculateRajaOngkirV2Rate(
 	locationRepository locations.Repository,
 	granularity string,
 ) error {
+	if err := requireTenantScopeIfPresent(c, "shipping:read"); err != nil {
+		return err
+	}
 	c.Request().Body = http.MaxBytesReader(
 		c.Response(),
 		c.Request().Body,
@@ -308,6 +316,7 @@ func calculateRajaOngkirV2Rate(
 			nil,
 		)
 	}
+	attachTenantRateContext(c.Request().Context(), &request)
 	request.Granularity = granularity
 	request.PriceFilter = priceFilter
 
@@ -487,6 +496,15 @@ func normalizeCalculateRequest(input calculateRequest) (rates.Request, error) {
 		ItemValue:         input.ItemValue,
 		IncludeUnverified: input.Options.IncludeUnverified,
 	}, nil
+}
+
+func attachTenantRateContext(ctx context.Context, request *rates.Request) {
+	identity, ok := tenancy.FromContext(ctx)
+	if !ok {
+		return
+	}
+	request.TenantID = identity.TenantID
+	request.IntegrationID = identity.IntegrationID
 }
 
 func normalizeCourierCodes(value string) ([]string, error) {

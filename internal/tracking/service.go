@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -56,7 +57,8 @@ func (s *Service) Register(
 		return Shipment{}, err
 	}
 
-	hash := sha256.Sum256([]byte(request.CourierCode + ":" + request.Waybill))
+	tenantID := tenancy.TenantID(ctx)
+	hash := sha256.Sum256([]byte(trackingHashMaterial(tenantID, request)))
 	waybillHash := hex.EncodeToString(hash[:])
 	ciphertext, err := s.cipher.Encrypt(
 		[]byte(request.Waybill),
@@ -107,7 +109,8 @@ func (s *Service) TrackNow(
 	if err != nil {
 		return Result{}, err
 	}
-	hash := sha256.Sum256([]byte(request.CourierCode + ":" + request.Waybill))
+	tenantID := tenancy.TenantID(ctx)
+	hash := sha256.Sum256([]byte(trackingHashMaterial(tenantID, request)))
 	waybillHash := hex.EncodeToString(hash[:])
 
 	value, err, _ := s.immediateGroup.Do(waybillHash, func() (any, error) {
@@ -224,4 +227,12 @@ func maskWaybill(waybill string) string {
 		return strings.Repeat("*", len(waybill))
 	}
 	return strings.Repeat("*", len(waybill)-4) + waybill[len(waybill)-4:]
+}
+
+func trackingHashMaterial(tenantID string, request Request) string {
+	value := request.CourierCode + ":" + request.Waybill
+	if tenantID == "" {
+		return value
+	}
+	return tenantID + ":" + value
 }

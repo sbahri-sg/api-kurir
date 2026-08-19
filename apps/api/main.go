@@ -19,6 +19,7 @@ import (
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
 	"github.com/emisell/api-kurir/internal/rates"
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/emisell/api-kurir/internal/tracking"
 	"github.com/labstack/echo/v5"
 	"github.com/redis/go-redis/v9"
@@ -92,6 +93,20 @@ func run(logger *slog.Logger) error {
 			cfg.RajaOngkir.MinRequestInterval,
 		),
 	)
+	tenantVerifier, err := tenancy.NewVerifier(
+		cfg.TenantContext.PublicKey,
+		cfg.TenantContext.Issuer,
+		cfg.TenantContext.Audience,
+		cfg.TenantContext.MaxTTL,
+	)
+	if err != nil {
+		return err
+	}
+	if tenantVerifier == nil {
+		logger.Warn("tenant context verification disabled; merchant credential routes are unavailable")
+	} else {
+		logger.Info("tenant context verification enabled", "issuer", cfg.TenantContext.Issuer)
+	}
 	fallbacks := make(map[string]providercredentials.StaticCredential)
 	if cfg.RajaOngkir.APIKey != "" {
 		fallbacks["rajaongkir"] = providercredentials.StaticCredential{
@@ -159,6 +174,7 @@ func run(logger *slog.Logger) error {
 		immediateTrackingAdapter,
 		customerAPIKeyService,
 		providerCredentialService,
+		tenantVerifier,
 		cfg.APIKeys,
 		cfg.AdminAPIKeys,
 		logger,

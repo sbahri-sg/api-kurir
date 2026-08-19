@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/emisell/api-kurir/internal/tenancy"
 )
 
 const testEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
@@ -23,10 +25,17 @@ func (r *memoryRepository) List(context.Context) ([]Credential, error) {
 	return []Credential{r.item}, nil
 }
 
+func (r *memoryRepository) ListForTenant(_ context.Context, tenantID string) ([]Credential, error) {
+	if r.item.ID == "" || r.item.TenantID != tenantID {
+		return []Credential{}, nil
+	}
+	return []Credential{r.item}, nil
+}
+
 func (r *memoryRepository) Create(_ context.Context, input CreateInput) (Credential, error) {
 	r.input = input
 	r.item = Credential{
-		ID: input.ID, ProviderCode: input.ProviderCode,
+		ID: input.ID, TenantID: input.TenantID, ProviderCode: input.ProviderCode,
 		CredentialAlias: input.CredentialAlias,
 		DisplayKey:      input.KeyPrefix + "••••" + input.KeyLastFour,
 		DailyLimit:      input.DailyLimit, Active: true,
@@ -37,6 +46,20 @@ func (r *memoryRepository) Create(_ context.Context, input CreateInput) (Credent
 }
 
 func (r *memoryRepository) Disable(context.Context, string, string, string) error {
+	r.disabled = true
+	r.item.Active = false
+	return nil
+}
+
+func (r *memoryRepository) DisableForTenant(
+	_ context.Context,
+	tenantID, _ string,
+	_ string,
+	_ string,
+) error {
+	if r.item.TenantID != tenantID {
+		return ErrNotFound
+	}
 	r.disabled = true
 	r.item.Active = false
 	return nil
@@ -130,6 +153,70 @@ func TestAddRejectsCredentialWhenProviderValidationFails(t *testing.T) {
 	}
 }
 
+func TestTenantCredentialIsOwnedAndUsesConfiguredLimit(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryRepository{}
+	service := NewService(repository, cipher, &acceptingValidator{})
+	item, err := service.AddForTenant(
+		context.Background(),
+		"merchant_123",
+		"rajaongkir",
+		"tenant-provider-secret",
+		100_000,
+		"tenant:merchant_123",
+		"req_test",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.TenantID != "merchant_123" || item.DailyLimit != 100_000 {
+		t.Fatalf("unexpected tenant credential: %#v", item)
+	}
+	listed, err := service.ListForTenant(context.Background(), "merchant_123")
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("tenant credential list: items=%#v err=%v", listed, err)
+	}
+}
+
+func TestTenantProviderResolutionRequiresExplicitIntegrationID(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryRepository{}
+	service := NewService(repository, cipher, &acceptingValidator{})
+	_, err = service.AddForTenant(
+		context.Background(),
+		"merchant_123",
+		"rajaongkir",
+		"tenant-provider-secret",
+		50_000,
+		"tenant:merchant_123",
+		"req_test",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant_123"})
+	if _, _, _, err := service.ResolveProviderCredential(ctx, "rajaongkir"); !errors.Is(err, ErrNoActiveCredential) {
+		t.Fatalf("tenant without integration ID must stay on free mode: %v", err)
+	}
+	ctx = tenancy.WithIdentity(context.Background(), tenancy.Identity{
+		TenantID: "merchant_123", IntegrationID: repository.item.ID,
+	})
+	secret, _, _, err := service.ResolveProviderCredential(ctx, "rajaongkir")
+	if err != nil || secret != "tenant-provider-secret" {
+		t.Fatalf("explicit tenant integration was not resolved: secret=%q err=%v", secret, err)
+	}
+}
+
 func TestStaticFallbackResolverPrefersDatabaseCredential(t *testing.T) {
 	t.Parallel()
 
@@ -168,6 +255,24 @@ func TestStaticFallbackResolverDoesNotBypassExhaustedDatabasePool(t *testing.T) 
 	)
 	if !errors.Is(err, ErrAllCredentialsExhausted) {
 		t.Fatalf("exhausted database pool must not fall back to environment: %v", err)
+	}
+}
+
+func TestStaticFallbackResolverDoesNotLendPlatformKeyToTenant(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewStaticFallbackResolver(
+		resolverStub{err: ErrNoActiveCredential},
+		map[string]StaticCredential{
+			"rajaongkir": {
+				Secret: "platform-key", CredentialAlias: "platform", DailyLimit: 50_000,
+			},
+		},
+	)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant_123"})
+	_, _, _, err := resolver.ResolveProviderCredential(ctx, "rajaongkir")
+	if !errors.Is(err, ErrNoActiveCredential) {
+		t.Fatalf("tenant request must not borrow platform key: %v", err)
 	}
 }
 

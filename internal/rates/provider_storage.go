@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -40,10 +41,12 @@ func (r *PostgresRepository) FindFreshProviderQuotes(
 		FROM rate_snapshots
 		WHERE request_fingerprint = $1
 		  AND provider_code = $2
+		  AND tenant_id = $3
+		  AND integration_id = $4
 		  AND source_type = 'provider_quote'
 		  AND expires_at > now()
 		ORDER BY courier_code, service_code, fetched_at DESC
-	`, fingerprint, providerCode)
+	`, fingerprint, providerCode, request.TenantID, request.IntegrationID)
 	if err != nil {
 		return nil, fmt.Errorf("query provider quote snapshots: %w", err)
 	}
@@ -127,7 +130,9 @@ func (r *PostgresRepository) SaveProviderQuotes(
 				verification_status,
 				source_type,
 				fetched_at,
-				expires_at
+				expires_at,
+				tenant_id,
+				integration_id
 			)
 			SELECT
 				origin.id,
@@ -152,7 +157,9 @@ func (r *PostgresRepository) SaveProviderQuotes(
 				$21,
 				'provider_quote',
 				$22,
-				$23
+				$23,
+				$24,
+				$25
 			FROM locations origin
 			CROSS JOIN locations destination
 			WHERE origin.public_id = $1
@@ -182,6 +189,8 @@ func (r *PostgresRepository) SaveProviderQuotes(
 			quote.VerificationStatus,
 			quote.FetchedAt,
 			quote.ExpiresAt,
+			request.TenantID,
+			request.IntegrationID,
 		)
 		if err != nil {
 			return fmt.Errorf("insert provider quote snapshot: %w", err)
@@ -274,10 +283,12 @@ func (r *PostgresRepository) ConsumeProviderHit(
 		return ErrProviderQuotaExhausted
 	}
 	quotaDate, resetAt := providerQuotaWindow()
+	tenantID := tenancy.TenantID(ctx)
 
 	var usedCount int64
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO provider_quota_ledger (
+			tenant_id,
 			provider_code,
 			credential_alias,
 			quota_date,
@@ -285,8 +296,8 @@ func (r *PostgresRepository) ConsumeProviderHit(
 			used_count,
 			reset_at
 		)
-		VALUES ($1, $2, $3::date, $4, 1, $5)
-		ON CONFLICT (provider_code, credential_alias, quota_date) DO UPDATE
+		VALUES ($1, $2, $3, $4::date, $5, 1, $6)
+		ON CONFLICT (tenant_id, provider_code, credential_alias, quota_date) DO UPDATE
 		SET daily_limit = EXCLUDED.daily_limit,
 		    used_count = provider_quota_ledger.used_count + 1,
 		    reset_at = EXCLUDED.reset_at,
@@ -294,7 +305,7 @@ func (r *PostgresRepository) ConsumeProviderHit(
 		WHERE provider_quota_ledger.used_count + provider_quota_ledger.reserved_count
 		      < EXCLUDED.daily_limit
 		RETURNING used_count
-	`, providerCode, credentialAlias, quotaDate, dailyLimit, resetAt).Scan(&usedCount)
+	`, tenantID, providerCode, credentialAlias, quotaDate, dailyLimit, resetAt).Scan(&usedCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrProviderQuotaExhausted
 	}
@@ -314,9 +325,11 @@ func (r *PostgresRepository) MarkProviderQuotaExhausted(
 		return ErrProviderQuotaExhausted
 	}
 	quotaDate, resetAt := providerQuotaWindow()
+	tenantID := tenancy.TenantID(ctx)
 
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO provider_quota_ledger (
+			tenant_id,
 			provider_code,
 			credential_alias,
 			quota_date,
@@ -324,8 +337,8 @@ func (r *PostgresRepository) MarkProviderQuotaExhausted(
 			used_count,
 			reset_at
 		)
-		VALUES ($1, $2, $3::date, $4, $4, $5)
-		ON CONFLICT (provider_code, credential_alias, quota_date) DO UPDATE
+		VALUES ($1, $2, $3, $4::date, $5, $5, $6)
+		ON CONFLICT (tenant_id, provider_code, credential_alias, quota_date) DO UPDATE
 		SET daily_limit = EXCLUDED.daily_limit,
 		    used_count = GREATEST(
 				provider_quota_ledger.used_count,
@@ -334,7 +347,7 @@ func (r *PostgresRepository) MarkProviderQuotaExhausted(
 		    reserved_count = 0,
 		    reset_at = EXCLUDED.reset_at,
 		    updated_at = now()
-	`, providerCode, credentialAlias, quotaDate, dailyLimit, resetAt)
+	`, tenantID, providerCode, credentialAlias, quotaDate, dailyLimit, resetAt)
 	if err != nil {
 		return fmt.Errorf("mark provider quota exhausted: %w", err)
 	}
@@ -367,6 +380,7 @@ func (r *PostgresRepository) RecordProviderAPICall(
 	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO provider_api_calls (
+			tenant_id,
 			provider_code,
 			credential_alias,
 			endpoint,
@@ -377,8 +391,9 @@ func (r *PostgresRepository) RecordProviderAPICall(
 			quota_cost,
 			error_code
 		)
-		VALUES ($1, $2, $3, $4, nullif($5, 0), $6, $7, $8, nullif($9, ''))
+		VALUES ($1, $2, $3, $4, $5, nullif($6, 0), $7, $8, $9, nullif($10, ''))
 	`,
+		tenancy.TenantID(ctx),
 		providerCode,
 		credentialAlias,
 		endpoint,
@@ -399,6 +414,8 @@ func providerRequestFingerprint(request Request) string {
 	couriers := append([]string(nil), request.Couriers...)
 	sort.Strings(couriers)
 	payload := struct {
+		TenantID          string
+		IntegrationID     string
 		Origin            string
 		Destination       string
 		Granularity       string
@@ -408,6 +425,8 @@ func providerRequestFingerprint(request Request) string {
 		Dimensions        *Dimensions
 		ItemValue         int64
 	}{
+		TenantID:          request.TenantID,
+		IntegrationID:     request.IntegrationID,
 		Origin:            request.Origin,
 		Destination:       request.Destination,
 		Granularity:       request.Granularity,

@@ -6,6 +6,7 @@ const DefaultDailyLimit int64 = 50_000
 
 type Credential struct {
 	ID               string     `json:"id"`
+	TenantID         string     `json:"tenant_id,omitempty"`
 	ProviderCode     string     `json:"provider_code"`
 	CredentialAlias  string     `json:"credential_alias"`
 	DisplayKey       string     `json:"display_key"`
@@ -26,6 +27,7 @@ type StoredCredential struct {
 
 type CreateInput struct {
 	ID                string
+	TenantID          string
 	ProviderCode      string
 	CredentialAlias   string
 	KeyPrefix         string

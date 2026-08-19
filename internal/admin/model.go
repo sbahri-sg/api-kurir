@@ -25,6 +25,8 @@ type Overview struct {
 
 type RateSnapshot struct {
 	ID                   string     `json:"id"`
+	TenantID             string     `json:"tenant_id,omitempty"`
+	IntegrationID        string     `json:"integration_id,omitempty"`
 	OriginPublicID       string     `json:"origin_public_id"`
 	OriginLabel          string     `json:"origin_label"`
 	DestinationPublicID  string     `json:"destination_public_id"`
@@ -123,6 +125,7 @@ type LocationMappingInput struct {
 }
 
 type ProviderQuota struct {
+	TenantID        string    `json:"tenant_id,omitempty"`
 	ProviderCode    string    `json:"provider_code"`
 	CredentialAlias string    `json:"credential_alias"`
 	QuotaDate       string    `json:"quota_date"`

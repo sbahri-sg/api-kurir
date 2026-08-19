@@ -232,7 +232,9 @@ func requestKey(request Request) string {
 		)
 	}
 	return fmt.Sprintf(
-		"%s:%s:%s:%s:%d:%s:%s:%d:%t",
+		"%s:%s:%s:%s:%s:%s:%d:%s:%s:%d:%t",
+		request.TenantID,
+		request.IntegrationID,
 		request.Origin,
 		request.Destination,
 		request.Granularity,

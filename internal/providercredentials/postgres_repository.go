@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,9 +21,25 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 }
 
 func (r *PostgresRepository) List(ctx context.Context) ([]Credential, error) {
+	return r.list(ctx, "", false)
+}
+
+func (r *PostgresRepository) ListForTenant(
+	ctx context.Context,
+	tenantID string,
+) ([]Credential, error) {
+	return r.list(ctx, tenantID, true)
+}
+
+func (r *PostgresRepository) list(
+	ctx context.Context,
+	tenantID string,
+	filterTenant bool,
+) ([]Credential, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT
 			id::text,
+			tenant_id,
 			provider_code,
 			credential_alias,
 			key_prefix || '••••' || key_last_four,
@@ -34,8 +51,9 @@ func (r *PostgresRepository) List(ctx context.Context) ([]Credential, error) {
 			created_at,
 			disabled_at
 		FROM provider_credentials
+		WHERE (NOT $2::boolean OR tenant_id = $1)
 		ORDER BY active DESC, created_at DESC
-	`)
+	`, tenantID, filterTenant)
 	if err != nil {
 		return nil, fmt.Errorf("list provider credentials: %w", err)
 	}
@@ -68,6 +86,7 @@ func (r *PostgresRepository) Create(
 	_, err = tx.Exec(ctx, `
 		INSERT INTO provider_credentials (
 			id,
+			tenant_id,
 			provider_code,
 			credential_alias,
 			secret_ciphertext,
@@ -77,9 +96,10 @@ func (r *PostgresRepository) Create(
 			daily_limit,
 			created_by
 		)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`,
 		input.ID,
+		input.TenantID,
 		input.ProviderCode,
 		input.CredentialAlias,
 		input.SecretCiphertext,
@@ -98,6 +118,7 @@ func (r *PostgresRepository) Create(
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO provider_quota_ledger (
+			tenant_id,
 			provider_code,
 			credential_alias,
 			quota_date,
@@ -108,15 +129,16 @@ func (r *PostgresRepository) Create(
 		VALUES (
 			$1,
 			$2,
-			(now() AT TIME ZONE 'Asia/Jakarta')::date,
 			$3,
+			(now() AT TIME ZONE 'Asia/Jakarta')::date,
+			$4,
 			1,
 			(
 				((now() AT TIME ZONE 'Asia/Jakarta')::date + 1)::timestamp
 				AT TIME ZONE 'Asia/Jakarta'
 			)
 		)
-		ON CONFLICT (provider_code, credential_alias, quota_date) DO UPDATE
+		ON CONFLICT (tenant_id, provider_code, credential_alias, quota_date) DO UPDATE
 		SET daily_limit = EXCLUDED.daily_limit,
 		    used_count = LEAST(
 				EXCLUDED.daily_limit,
@@ -125,6 +147,7 @@ func (r *PostgresRepository) Create(
 		    reset_at = EXCLUDED.reset_at,
 		    updated_at = now()
 	`,
+		input.TenantID,
 		input.ProviderCode,
 		input.CredentialAlias,
 		input.DailyLimit,
@@ -140,6 +163,7 @@ func (r *PostgresRepository) Create(
 		input.ID,
 		input.RequestID,
 		map[string]any{
+			"tenant_id":        input.TenantID,
 			"provider_code":    input.ProviderCode,
 			"credential_alias": input.CredentialAlias,
 			"key_prefix":       input.KeyPrefix,
@@ -157,6 +181,21 @@ func (r *PostgresRepository) Disable(
 	ctx context.Context,
 	id, actor, requestID string,
 ) error {
+	return r.disable(ctx, "", id, actor, requestID, false)
+}
+
+func (r *PostgresRepository) DisableForTenant(
+	ctx context.Context,
+	tenantID, id, actor, requestID string,
+) error {
+	return r.disable(ctx, tenantID, id, actor, requestID, true)
+}
+
+func (r *PostgresRepository) disable(
+	ctx context.Context,
+	tenantID, id, actor, requestID string,
+	filterTenant bool,
+) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin provider credential disable: %w", err)
@@ -170,8 +209,9 @@ func (r *PostgresRepository) Disable(
 		    disabled_at = now(),
 		    updated_at = now()
 		WHERE id = $1::uuid
+		  AND (NOT $3::boolean OR tenant_id = $4)
 		  AND active
-	`, id, actor)
+	`, id, actor, filterTenant, tenantID)
 	if err != nil {
 		return fmt.Errorf("disable provider credential: %w", err)
 	}
@@ -199,16 +239,21 @@ func (r *PostgresRepository) ResolveActive(
 	ctx context.Context,
 	providerCode string,
 ) (StoredCredential, error) {
+	tenantID := tenancy.TenantID(ctx)
+	integrationID := tenancy.IntegrationID(ctx)
 	var item StoredCredential
 	err := r.pool.QueryRow(ctx, `
 		WITH candidate AS (
 			SELECT credential.id
 			FROM provider_credentials credential
 			LEFT JOIN provider_quota_ledger quota
-			  ON quota.provider_code = credential.provider_code
+			  ON quota.tenant_id = credential.tenant_id
+			 AND quota.provider_code = credential.provider_code
 			 AND quota.credential_alias = credential.credential_alias
 			 AND quota.quota_date = (now() AT TIME ZONE 'Asia/Jakarta')::date
 			WHERE credential.provider_code = $1
+			  AND credential.tenant_id = $2
+			  AND ($3 = '' OR credential.id::text = $3)
 			  AND credential.active
 			  AND credential.validation_status = 'valid'
 			  AND coalesce(quota.used_count + quota.reserved_count, 0)
@@ -228,6 +273,7 @@ func (r *PostgresRepository) ResolveActive(
 		WHERE credential.id = candidate.id
 		RETURNING
 			credential.id::text,
+			credential.tenant_id,
 			credential.provider_code,
 			credential.credential_alias,
 			credential.key_prefix || '••••' || credential.key_last_four,
@@ -240,8 +286,9 @@ func (r *PostgresRepository) ResolveActive(
 			credential.disabled_at,
 			credential.secret_ciphertext,
 			credential.secret_fingerprint
-	`, providerCode).Scan(
+	`, providerCode, tenantID, integrationID).Scan(
 		&item.ID,
+		&item.TenantID,
 		&item.ProviderCode,
 		&item.CredentialAlias,
 		&item.DisplayKey,
@@ -262,10 +309,12 @@ func (r *PostgresRepository) ResolveActive(
 				SELECT 1
 				FROM provider_credentials
 				WHERE provider_code = $1
+				  AND tenant_id = $2
+				  AND ($3 = '' OR id::text = $3)
 				  AND active
 				  AND validation_status = 'valid'
 			)
-		`, providerCode).Scan(&hasActiveCredential)
+		`, providerCode, tenantID, integrationID).Scan(&hasActiveCredential)
 		if existsErr != nil {
 			return StoredCredential{}, fmt.Errorf(
 				"check active provider credential: %w",
@@ -287,6 +336,7 @@ func (r *PostgresRepository) get(ctx context.Context, id string) (Credential, er
 	item, err := scanCredential(r.pool.QueryRow(ctx, `
 		SELECT
 			id::text,
+			tenant_id,
 			provider_code,
 			credential_alias,
 			key_prefix || '••••' || key_last_four,
@@ -314,6 +364,7 @@ func scanCredential(row rowScanner) (Credential, error) {
 	var item Credential
 	if err := row.Scan(
 		&item.ID,
+		&item.TenantID,
 		&item.ProviderCode,
 		&item.CredentialAlias,
 		&item.DisplayKey,

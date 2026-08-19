@@ -10,6 +10,7 @@ import (
 
 	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/rates"
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/labstack/echo/v5"
 )
 
@@ -56,11 +57,13 @@ func registerLegacyRegionRoutes(
 	rateService *rates.Service,
 	repository legacyRegionStore,
 	customerAPIKeyService customerKeyAuthenticator,
+	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
 ) {
 	group := e.Group("")
 	group.Use(rajaOngkirV2CompatibilityMiddleware())
 	group.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
+	group.Use(tenantContextMiddleware(tenantVerifier, false))
 
 	group.GET(
 		"/regions/provinces",
@@ -208,6 +211,9 @@ func legacyDomesticCostHandler(
 	repository legacyRegionStore,
 ) echo.HandlerFunc {
 	return func(c *echo.Context) error {
+		if err := requireTenantScopeIfPresent(c, "shipping:read"); err != nil {
+			return err
+		}
 		originID := strings.TrimSpace(c.QueryParam("origin"))
 		destinationID := strings.TrimSpace(c.QueryParam("destination"))
 		weight, err := strconv.ParseInt(strings.TrimSpace(c.QueryParam("weight")), 10, 64)
@@ -255,6 +261,7 @@ func legacyDomesticCostHandler(
 			ActualWeightGrams: weight,
 			Couriers:          couriers,
 		}
+		attachTenantRateContext(ctx, &request)
 		if _, err := normalizeCalculateRequest(calculateRequest{
 			Origin:      origin,
 			Destination: destination,

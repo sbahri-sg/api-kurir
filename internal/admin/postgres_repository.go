@@ -65,6 +65,8 @@ func (r *PostgresRepository) ListRateSnapshots(
 	rows, err := r.pool.Query(ctx, `
 		SELECT
 			rs.id::text,
+			rs.tenant_id,
+			rs.integration_id,
 			origin.public_id,
 			concat_ws(', ', origin.subdistrict, origin.district, origin.city, origin.province),
 			destination.public_id,
@@ -94,7 +96,8 @@ func (r *PostgresRepository) ListRateSnapshots(
 				coalesce(rs.courier_name, '') || ' ' || coalesce(rs.service_name, '')) LIKE '%' || lower($1) || '%' OR
 			origin.search_text LIKE '%' || lower($1) || '%' OR
 			destination.search_text LIKE '%' || lower($1) || '%' OR
-			lower(rs.provider_code) LIKE '%' || lower($1) || '%'
+			lower(rs.provider_code) LIKE '%' || lower($1) || '%' OR
+			lower(rs.tenant_id) LIKE '%' || lower($1) || '%'
 		  )
 		ORDER BY rs.fetched_at DESC, rs.courier_code, rs.service_code
 		LIMIT $2 OFFSET $3
@@ -109,6 +112,8 @@ func (r *PostgresRepository) ListRateSnapshots(
 		var item RateSnapshot
 		if err := rows.Scan(
 			&item.ID,
+			&item.TenantID,
+			&item.IntegrationID,
 			&item.OriginPublicID,
 			&item.OriginLabel,
 			&item.DestinationPublicID,
@@ -502,6 +507,7 @@ func (r *PostgresRepository) ListProviderQuotas(
 ) ([]ProviderQuota, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT
+			tenant_id,
 			provider_code,
 			credential_alias,
 			quota_date::text,
@@ -529,6 +535,7 @@ func (r *PostgresRepository) ListProviderQuotas(
 	for rows.Next() {
 		var item ProviderQuota
 		if err := rows.Scan(
+			&item.TenantID,
 			&item.ProviderCode,
 			&item.CredentialAlias,
 			&item.QuotaDate,

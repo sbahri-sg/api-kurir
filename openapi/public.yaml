@@ -38,6 +38,8 @@ tags:
     description: Kalkulasi ongkir JSON menggunakan ID canonical
   - name: Canonical - Tracking
     description: Snapshot dan antrean tracking untuk client internal
+  - name: Emisell Gateway
+    description: Credential provider BYOK yang terisolasi per merchant Emisell
   - name: Admin
     description: Operasional dashboard dengan admin API key terpisah
 
@@ -232,6 +234,8 @@ paths:
       security:
         - bearerAuth: []
         - rajaOngkirKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantContextToken"
       requestBody:
         required: true
         content:
@@ -280,6 +284,8 @@ paths:
       security:
         - bearerAuth: []
         - rajaOngkirKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantContextToken"
       requestBody:
         required: true
         content:
@@ -334,6 +340,7 @@ paths:
         key maupun Bearer. Hasil sinkron memakai snapshot PostgreSQL yang masih
         fresh agar tidak selalu memakai hit provider.
       parameters:
+        - $ref: "#/components/parameters/TenantContextToken"
         - name: awb
           in: query
           description: Wajib pada mode RajaOngkir V2
@@ -798,6 +805,113 @@ paths:
         "503":
           $ref: "#/components/responses/ProviderError"
 
+  /v1/integrations/provider-credentials:
+    get:
+      tags: [Emisell Gateway]
+      operationId: listTenantProviderCredentials
+      summary: Membaca credential provider milik merchant terautentikasi
+      description: Secret asli tidak pernah dikembalikan.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      responses:
+        "200":
+          description: Daftar credential yang tenant_id-nya sama dengan claim sub
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderCredentialListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope provider-credentials:read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags: [Emisell Gateway]
+      operationId: addTenantProviderCredential
+      summary: Memvalidasi dan menyimpan key provider milik seller
+      description: >
+        Merchant ditentukan hanya dari claim sub tenant token. Validasi key
+        memakai satu hit provider lalu secret dienkripsi AES-256-GCM.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProviderCredentialRequest"
+      responses:
+        "201":
+          description: Credential seller valid dan aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderCredentialResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope provider-credentials:write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Credential sudah tersimpan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Key ditolak provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/integrations/provider-credentials/{id}/disable:
+    post:
+      tags: [Emisell Gateway]
+      operationId: disableTenantProviderCredential
+      summary: Menonaktifkan credential provider milik seller
+      description: UUID milik tenant lain selalu diperlakukan sebagai tidak ditemukan.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "204":
+          description: Credential dinonaktifkan
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Scope tenant tidak memadai
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credential tidak ditemukan atau bukan milik merchant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/overview:
     get:
       tags: [Admin]
@@ -1190,12 +1304,29 @@ components:
       in: header
       name: key
       description: Alternatif pengiriman customer API key; tidak mengubah kontrak path
+    tenantContextAuth:
+      type: apiKey
+      in: header
+      name: X-Emisell-Tenant-Token
+      description: >
+        JWT EdDSA maksimal lima menit. Claim sub adalah merchant_id Emisell;
+        integration_id opsional mengunci request ke satu credential provider.
     adminBearerAuth:
       type: http
       scheme: bearer
       bearerFormat: Admin API key
 
   parameters:
+    TenantContextToken:
+      name: X-Emisell-Tenant-Token
+      in: header
+      required: false
+      description: >
+        Wajib untuk BYOK seller. JWT EdDSA berisi sub merchant_id, optional
+        domain_id, integration_id wajib untuk provider berbayar, serta scope
+        sesuai operasi. Tanpa integration_id request tetap pada mode gratis.
+      schema:
+        type: string
     Search:
       name: search
       in: query
@@ -2366,6 +2497,9 @@ components:
         id:
           type: string
           format: uuid
+        tenant_id:
+          type: string
+          description: Kosong untuk credential platform; terisi untuk BYOK seller.
         provider_code:
           type: string
           enum: [rajaongkir]
@@ -2407,6 +2541,12 @@ components:
           minLength: 8
           maxLength: 512
           writeOnly: true
+        daily_limit:
+          type: integer
+          minimum: 1
+          maximum: 100000000
+          default: 50000
+          description: Batas paket provider seller untuk ledger lokal.
 
     ProviderCredentialResponse:
       type: object

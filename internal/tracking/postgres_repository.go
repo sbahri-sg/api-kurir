@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -71,20 +72,28 @@ func (r *PostgresRepository) register(
 		return Shipment{}, fmt.Errorf("begin register tracking shipment: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	identity, _ := tenancy.FromContext(ctx)
 
 	var shipmentID string
 	err = tx.QueryRow(ctx, `
 		INSERT INTO tracking_shipments (
+			tenant_id,
+			provider_credential_id,
 			courier_code,
 			waybill_hash,
 			waybill_masked,
 			waybill_ciphertext,
 			provider_context_ciphertext
 		)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (courier_code, waybill_hash) DO UPDATE
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (tenant_id, courier_code, waybill_hash) DO UPDATE
 		SET waybill_masked = EXCLUDED.waybill_masked,
 		    waybill_ciphertext = EXCLUDED.waybill_ciphertext,
+		    provider_credential_id = CASE
+		        WHEN EXCLUDED.provider_credential_id <> ''
+		        THEN EXCLUDED.provider_credential_id
+		        ELSE tracking_shipments.provider_credential_id
+		    END,
 		    provider_context_ciphertext = coalesce(
 		        EXCLUDED.provider_context_ciphertext,
 		        tracking_shipments.provider_context_ciphertext
@@ -92,6 +101,8 @@ func (r *PostgresRepository) register(
 		    updated_at = now()
 		RETURNING id::text
 	`,
+		identity.TenantID,
+		identity.IntegrationID,
 		courierCode,
 		waybillHash,
 		waybillMasked,
@@ -161,6 +172,8 @@ func (r *PostgresRepository) Claim(
 		RETURNING
 			job.id::text,
 			job.shipment_id::text,
+			shipment.tenant_id,
+			shipment.provider_credential_id,
 			shipment.courier_code,
 			shipment.waybill_ciphertext,
 			shipment.provider_context_ciphertext,
@@ -169,6 +182,8 @@ func (r *PostgresRepository) Claim(
 	`, workerID, courierCodes).Scan(
 		&job.ID,
 		&job.ShipmentID,
+		&job.TenantID,
+		&job.ProviderCredentialID,
 		&job.CourierCode,
 		&job.WaybillCiphertext,
 		&job.ProviderContextCiphertext,

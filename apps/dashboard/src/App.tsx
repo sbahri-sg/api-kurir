@@ -802,18 +802,18 @@ export function App() {
             <section className="provider-key-hero">
               <div>
                 <p className="eyebrow">CREDENTIAL PROVIDER</p>
-                <h2>Key aktif dari database</h2>
+                <h2>Key platform dan seller</h2>
                 <p>
-                  Tambahkan key RajaOngkir sekali. Sistem memvalidasi,
-                  mengenkripsi, lalu otomatis memilih key dengan kuota
-                  terbanyak saat tarif atau tracking membutuhkan provider.
+                  Key platform ditambahkan operator di sini. Key milik seller
+                  masuk melalui Emisell Gateway dan hanya dapat dipilih oleh
+                  request merchant pemiliknya.
                 </p>
               </div>
               <button
                 className="button button-primary"
                 onClick={() => setShowProviderKeyModal(true)}
               >
-                Tambah key
+                Tambah key platform
               </button>
             </section>
 
@@ -832,6 +832,7 @@ export function App() {
                   <thead>
                     <tr>
                       <th>Provider / key</th>
+                      <th>Pemilik</th>
                       <th>Kuota harian</th>
                       <th>Validasi</th>
                       <th>Ditambahkan</th>
@@ -848,6 +849,16 @@ export function App() {
                             {credential.display_key} ·{" "}
                             {credential.credential_alias}
                           </small>
+                        </td>
+                        <td>
+                          {credential.tenant_id ? (
+                            <>
+                              <strong>Merchant</strong>
+                              <small>{credential.tenant_id}</small>
+                            </>
+                          ) : (
+                            <span className="badge">Platform</span>
+                          )}
                         </td>
                         <td>{formatNumber(credential.daily_limit)} hit</td>
                         <td>
@@ -893,7 +904,7 @@ export function App() {
                     ))}
                     {!providerCredentials.length && (
                       <tr>
-                        <td colSpan={6} className="empty-state">
+                        <td colSpan={7} className="empty-state">
                           Belum ada key database. Tambahkan key RajaOngkir untuk
                           mengaktifkan sinkronisasi otomatis.
                         </td>
@@ -918,6 +929,7 @@ export function App() {
                     <tr>
                       <th>Tanggal</th>
                       <th>Provider / alias</th>
+                      <th>Pemilik</th>
                       <th>Terpakai</th>
                       <th>Sisa</th>
                       <th>Penggunaan</th>
@@ -927,13 +939,14 @@ export function App() {
                   <tbody>
                     {quotas.map((quota) => (
                       <tr
-                        key={`${quota.provider_code}-${quota.credential_alias}-${quota.quota_date}`}
+                        key={`${quota.tenant_id || "platform"}-${quota.provider_code}-${quota.credential_alias}-${quota.quota_date}`}
                       >
                         <td>{quota.quota_date}</td>
                         <td>
                           <strong>{quota.provider_code}</strong>
                           <small>{quota.credential_alias}</small>
                         </td>
+                        <td>{quota.tenant_id || "Platform"}</td>
                         <td>
                           {formatNumber(quota.used_count)} /{" "}
                           {formatNumber(quota.daily_limit)}
@@ -958,7 +971,7 @@ export function App() {
                     ))}
                     {!quotas.length && (
                       <tr>
-                        <td colSpan={6} className="empty-state">
+                        <td colSpan={7} className="empty-state">
                           Belum ada hit provider yang tercatat.
                         </td>
                       </tr>
@@ -973,8 +986,8 @@ export function App() {
                 <section className="modal provider-key-modal">
                   <div className="modal-heading">
                     <div>
-                      <p className="eyebrow">TAMBAH CREDENTIAL</p>
-                      <h2>Key RajaOngkir</h2>
+                      <p className="eyebrow">TAMBAH CREDENTIAL PLATFORM</p>
+                      <h2>Key RajaOngkir internal</h2>
                     </div>
                     <button
                       onClick={() => {
@@ -1007,9 +1020,9 @@ export function App() {
                       />
                     </label>
                     <div className="provider-key-note">
-                      Key akan diuji langsung ke RajaOngkir. Jika valid, secret
-                      dienkripsi AES-256-GCM dan langsung tersedia untuk sync
-                      tarif secara lazy tanpa restart API.
+                      Key platform akan diuji langsung ke RajaOngkir. Key seller
+                      tidak dimasukkan di sini; seller menghubungkannya melalui
+                      extension shipping Emisell Gateway.
                     </div>
                     <div className="form-actions">
                       <button
@@ -2080,6 +2093,7 @@ function ApiDocumentation({
           (endpoint) => getApiDocumentationContract(endpoint) === view,
         );
   const isPartner = view === "partner";
+  const isGateway = view === "gateway";
 
   return (
     <div className="documentation-page">
@@ -2179,6 +2193,7 @@ function ApiDocumentation({
         <PartnerDocumentation />
       ) : (
         <>
+          {isGateway && <GatewayTenantDocumentation />}
           <section className="panel docs-guide">
             <div>
               <p className="eyebrow">ALUR INTEGRASI</p>
@@ -2232,6 +2247,62 @@ function ApiDocumentation({
         </p>
       </section>
     </div>
+  );
+}
+
+function GatewayTenantDocumentation() {
+  return (
+    <section className="panel docs-guide">
+      <div>
+        <p className="eyebrow">TENANT AUTHENTICATION</p>
+        <h2>Satu merchant, banyak domain, satu pemilik credential</h2>
+        <p>
+          API service Emisell menentukan merchant dari sesi seller atau domain
+          checkout, lalu menandatangani JWT Ed25519 berumur maksimal lima menit.
+          Merchant ID dari body dan query tidak pernah dipercaya.
+        </p>
+      </div>
+      <pre>
+        <code>{`{
+  "iss": "emisell-api",
+  "aud": "api-kurir",
+  "sub": "merchant_123",
+  "integration_id": "<credential-uuid>",
+  "domain_id": "domain_abc",
+  "scope": [
+    "shipping:read",
+    "tracking:read",
+    "provider-credentials:read",
+    "provider-credentials:write"
+  ],
+  "iat": 1787112000,
+  "exp": 1787112060,
+  "jti": "request_unique_id"
+}`}</code>
+      </pre>
+      <ol>
+        <li>
+          Semua domain milik merchant yang sama memakai claim <code>sub</code>
+          yang sama.
+        </li>
+        <li>
+          <code>domain_id</code> hanya metadata untuk pemilihan gudang atau
+          konfigurasi domain; bukan pemilik key.
+        </li>
+        <li>
+          <code>integration_id</code> wajib untuk RajaOngkir BYOK. Tanpa claim
+          tersebut request tetap pada mode Emisell Kurir gratis.
+        </li>
+        <li>
+          API Kurir memverifikasi signature dengan public key dari
+          <code>TENANT_CONTEXT_PUBLIC_KEY</code>.
+        </li>
+        <li>
+          Request tenant tidak pernah fallback ke credential platform atau
+          seller lain.
+        </li>
+      </ol>
+    </section>
   );
 }
 
@@ -2466,6 +2537,11 @@ function RateSnapshotTable({ items }: { items: RateSnapshot[] }) {
                 </span>
                 <small>
                   {snapshot.provider_code} · {snapshot.verification_status}
+                </small>
+                <small>
+                  {snapshot.tenant_id
+                    ? `Merchant ${snapshot.tenant_id}`
+                    : "Platform"}
                 </small>
               </td>
             </tr>

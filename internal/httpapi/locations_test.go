@@ -250,6 +250,7 @@ func TestRajaOngkirV2OfficialBasePathAlias(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		[]string{"sdk-key"},
 	)
 	request := httptest.NewRequest(
@@ -343,6 +344,7 @@ func TestCustomerLocationContractUsesPathNotAuthenticationHeader(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		[]string{"sdk-key"},
 	)
 	rajaOngkirGroup := e.Group("/api/v1")
@@ -351,6 +353,7 @@ func TestCustomerLocationContractUsesPathNotAuthenticationHeader(t *testing.T) {
 		rajaOngkirGroup,
 		nil,
 		legacyHTTPRepositoryStub{},
+		nil,
 		nil,
 		nil,
 		nil,

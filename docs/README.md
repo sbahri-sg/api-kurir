@@ -11,6 +11,7 @@ provider yang sedang aktif atau jenis header autentikasi.
 | RajaOngkir V2 compatible | Emisell/SDK RajaOngkir | `/api/v1` | Integer snapshot RajaOngkir lokal | Stable | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Emisell Legacy | Modul region-service lama | `/regions`, `/shipping` | Integer dump region-service | Compatibility | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Canonical/Internal | Dashboard dan service internal | `/v1` | `loc_idn_*` | Internal | [Kontrak API publik](api-contract.md) |
+| Emisell Merchant Gateway | Backend Emisell | `/v1/integrations`, `/api/v1` | `merchant_id` + UUID credential | Internal | [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) |
 | Admin | Operator API Kurir | `/v1/admin` | Canonical ID dan UUID | Restricted | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Partner Connector | API Kurir ke sistem vendor | `/partner/v1` pada host partner | String canonical partner | Draft | [`openapi/partner-v1.yaml`](../openapi/partner-v1.yaml) |
 
@@ -29,6 +30,8 @@ Mulai dari dokumen berikut:
    layanan, dan kelompok canonical.
 4. [Model tarif dan aturan berat](rate-and-weight-engine.md) serta
    [matriks pembulatan berat](weight-rounding-matrix.md).
+5. [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) untuk
+   tenant authentication, credential seller, kuota, dan multi-domain.
 
 Postman Collection pada dashboard memakai placeholder. Isi nilai secret hanya
 pada Postman Environment lokal, bukan pada Collection atau repository.

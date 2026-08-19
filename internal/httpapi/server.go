@@ -18,6 +18,7 @@ import (
 	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/rates"
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/emisell/api-kurir/internal/tracking"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
@@ -42,6 +43,7 @@ func New(
 	immediateTrackingAdapter tracking.Adapter,
 	customerAPIKeyService *apikeys.Service,
 	providerCredentialService *providercredentials.Service,
+	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
 	adminAPIKeys []string,
 	logger *slog.Logger,
@@ -98,6 +100,7 @@ func New(
 		trackingService,
 		immediateTrackingAdapter,
 		customerAPIKeyService,
+		tenantVerifier,
 		apiKeys,
 	)
 	rajaOngkirGroup := e.Group("/api/v1")
@@ -110,7 +113,26 @@ func New(
 		trackingService,
 		immediateTrackingAdapter,
 		customerAPIKeyService,
+		tenantVerifier,
 		apiKeys,
+	)
+	integrationGroup := e.Group("/v1/integrations")
+	integrationGroup.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
+	integrationGroup.Use(tenantContextMiddleware(tenantVerifier, true))
+	integrationGroup.GET(
+		"/provider-credentials",
+		tenantProviderCredentialListHandler(providerCredentialService),
+		tenantScopeMiddleware("provider-credentials:read"),
+	)
+	integrationGroup.POST(
+		"/provider-credentials",
+		tenantProviderCredentialCreateHandler(providerCredentialService),
+		tenantScopeMiddleware("provider-credentials:write"),
+	)
+	integrationGroup.POST(
+		"/provider-credentials/:id/disable",
+		tenantProviderCredentialDisableHandler(providerCredentialService),
+		tenantScopeMiddleware("provider-credentials:write"),
 	)
 	if legacyRepository, ok := locationRepository.(legacyRegionStore); ok {
 		registerLegacyRegionRoutes(
@@ -118,6 +140,7 @@ func New(
 			rateService,
 			legacyRepository,
 			customerAPIKeyService,
+			tenantVerifier,
 			apiKeys,
 		)
 	}
@@ -160,9 +183,11 @@ func registerCustomerRoutes(
 	trackingService *tracking.Service,
 	immediateTrackingAdapter tracking.Adapter,
 	customerAPIKeyService customerKeyAuthenticator,
+	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
 ) {
 	group.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
+	group.Use(tenantContextMiddleware(tenantVerifier, false))
 	group.GET("/destination/domestic-destination", locationSearchHandler(locationRepository))
 	group.GET(
 		"/destination/province",
@@ -259,13 +284,21 @@ func requestLogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 		return func(c *echo.Context) error {
 			startedAt := time.Now()
 			err := next(c)
-			logger.Info(
-				"http request",
+			attributes := []any{
 				"request_id", requestID(c),
 				"method", c.Request().Method,
 				"path", c.Request().URL.Path,
 				"duration_ms", time.Since(startedAt).Milliseconds(),
-			)
+			}
+			if identity, ok := tenancy.FromContext(c.Request().Context()); ok {
+				attributes = append(
+					attributes,
+					"tenant_id", identity.TenantID,
+					"integration_id", identity.IntegrationID,
+					"domain_id", identity.DomainID,
+				)
+			}
+			logger.Info("http request", attributes...)
 			return err
 		}
 	}

@@ -8,11 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/emisell/api-kurir/internal/tenancy"
 )
 
 var (
 	ErrUnsupportedProvider = errors.New("provider is not supported")
 	ErrInvalidSecret       = errors.New("provider API key is invalid")
+	ErrInvalidTenant       = errors.New("tenant ID is invalid")
+	ErrInvalidDailyLimit   = errors.New("provider daily limit is invalid")
 )
 
 type Validator interface {
@@ -40,9 +44,45 @@ func (s *Service) List(ctx context.Context) ([]Credential, error) {
 	return s.repository.List(ctx)
 }
 
+func (s *Service) ListForTenant(ctx context.Context, tenantID string) ([]Credential, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if !validTenantID(tenantID) {
+		return nil, ErrInvalidTenant
+	}
+	return s.repository.ListForTenant(ctx, tenantID)
+}
+
 func (s *Service) Add(
 	ctx context.Context,
 	providerCode, secret, actor, requestID string,
+) (Credential, error) {
+	return s.add(ctx, "", providerCode, secret, DefaultDailyLimit, actor, requestID)
+}
+
+func (s *Service) AddForTenant(
+	ctx context.Context,
+	tenantID, providerCode, secret string,
+	dailyLimit int64,
+	actor, requestID string,
+) (Credential, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if !validTenantID(tenantID) {
+		return Credential{}, ErrInvalidTenant
+	}
+	if dailyLimit == 0 {
+		dailyLimit = DefaultDailyLimit
+	}
+	if dailyLimit < 1 || dailyLimit > 100_000_000 {
+		return Credential{}, ErrInvalidDailyLimit
+	}
+	return s.add(ctx, tenantID, providerCode, secret, dailyLimit, actor, requestID)
+}
+
+func (s *Service) add(
+	ctx context.Context,
+	tenantID, providerCode, secret string,
+	dailyLimit int64,
+	actor, requestID string,
 ) (Credential, error) {
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	secret = strings.TrimSpace(secret)
@@ -80,13 +120,14 @@ func (s *Service) Add(
 	}
 	return s.repository.Create(ctx, CreateInput{
 		ID:                id,
+		TenantID:          tenantID,
 		ProviderCode:      providerCode,
 		CredentialAlias:   alias,
 		KeyPrefix:         secret[:prefixLength],
 		KeyLastFour:       secret[len(secret)-4:],
 		SecretCiphertext:  ciphertext,
 		SecretFingerprint: fingerprint[:],
-		DailyLimit:        DefaultDailyLimit,
+		DailyLimit:        dailyLimit,
 		CreatedBy:         actor,
 		RequestID:         requestID,
 	})
@@ -96,11 +137,28 @@ func (s *Service) Disable(ctx context.Context, id, actor, requestID string) erro
 	return s.repository.Disable(ctx, id, actor, requestID)
 }
 
+func (s *Service) DisableForTenant(
+	ctx context.Context,
+	tenantID, id, actor, requestID string,
+) error {
+	tenantID = strings.TrimSpace(tenantID)
+	if !validTenantID(tenantID) {
+		return ErrInvalidTenant
+	}
+	return s.repository.DisableForTenant(ctx, tenantID, id, actor, requestID)
+}
+
 func (s *Service) ResolveProviderCredential(
 	ctx context.Context,
 	providerCode string,
 ) (string, string, int64, error) {
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
+	if _, tenantRequest := tenancy.FromContext(ctx); tenantRequest &&
+		tenancy.IntegrationID(ctx) == "" {
+		// No integration ID means the merchant selected Emisell Kurir/free mode.
+		// Never consume a paid seller credential implicitly.
+		return "", "", 0, ErrNoActiveCredential
+	}
 	stored, err := s.repository.ResolveActive(ctx, providerCode)
 	if err != nil {
 		return "", "", 0, err
@@ -133,6 +191,22 @@ func newUUID() (string, error) {
 	), nil
 }
 
+func validTenantID(value string) bool {
+	if len(value) < 1 || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			strings.ContainsRune("._:-", character) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 type StaticFallbackResolver struct {
 	primary   Resolver
 	fallbacks map[string]StaticCredential
@@ -161,6 +235,10 @@ func (r *StaticFallbackResolver) ResolveProviderCredential(
 	}
 	if !errors.Is(err, ErrNoActiveCredential) {
 		return "", "", 0, err
+	}
+	// A tenant request must never borrow a platform or another seller's key.
+	if _, tenantRequest := tenancy.FromContext(ctx); tenantRequest {
+		return "", "", 0, ErrNoActiveCredential
 	}
 	fallback, ok := r.fallbacks[providerCode]
 	if !ok || strings.TrimSpace(fallback.Secret) == "" {

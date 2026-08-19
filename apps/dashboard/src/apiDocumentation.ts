@@ -4,6 +4,7 @@ export type ApiDocumentationContract =
   | "rajaongkir-v2"
   | "emisell-legacy"
   | "canonical"
+  | "gateway"
   | "admin";
 
 export type ApiDocumentationContractDefinition = {
@@ -19,6 +20,7 @@ export type ApiDocumentationContractDefinition = {
 };
 
 export type ApiDocumentationEndpoint = {
+	contract?: ApiDocumentationContract;
   scope: ApiDocumentationScope;
   method: ApiDocumentationMethod;
   path: string;
@@ -68,6 +70,19 @@ export const API_DOCUMENTATION_CONTRACTS: ApiDocumentationContractDefinition[] =
       "Kontrak internal yang tidak terikat ID provider dan menjadi fondasi mapping multi-provider API Kurir.",
   },
   {
+    id: "gateway",
+    label: "Emisell Gateway",
+    classification: "Internal",
+    status: "Stable",
+    audience: "Backend Emisell yang membawa konteks merchant terverifikasi",
+    basePath: "/v1/integrations dan /api/v1",
+    idFormat: "merchant_id Emisell + UUID credential provider",
+    authentication:
+      "Customer API key + X-Emisell-Tenant-Token bertanda tangan Ed25519",
+    description:
+      "Kontrak tenant-aware untuk menyimpan key provider milik seller dan memastikan tarif, tracking, snapshot, serta kuota tidak bercampur antar-merchant.",
+  },
+  {
     id: "admin",
     label: "Admin & Security",
     classification: "Admin",
@@ -84,6 +99,7 @@ export const API_DOCUMENTATION_CONTRACTS: ApiDocumentationContractDefinition[] =
 export function getApiDocumentationContract(
   endpoint: ApiDocumentationEndpoint,
 ): ApiDocumentationContract {
+  if (endpoint.contract) return endpoint.contract;
   if (endpoint.scope === "admin") return "admin";
   if (endpoint.path.startsWith("/api/v1")) return "rajaongkir-v2";
   if (
@@ -1129,6 +1145,7 @@ key: {{api_key}}`,
     response: `{
   "data": [
     {
+      "tenant_id": "merchant_123",
       "provider_code": "rajaongkir",
       "credential_alias": "rajaongkir-50k-01",
       "daily_limit": 50000,
@@ -1209,5 +1226,118 @@ key: {{api_key}}`,
     parameters: ["id — UUID customer API key yang akan dicabut"],
     request: `POST {{base_url}}/v1/admin/api-keys/{{customer_api_key_id}}/revoke`,
     response: `HTTP 204 No Content`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "GET",
+    path: "/v1/integrations/provider-credentials",
+    title: "Daftar credential provider milik merchant",
+    description:
+      "Hanya mengembalikan credential yang tenant_id-nya sama dengan claim sub. Secret asli tidak pernah dikembalikan.",
+    authentication:
+      "Customer API key + tenant token dengan scope provider-credentials:read",
+    request: `GET {{base_url}}/v1/integrations/provider-credentials
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}`,
+    response: `{
+  "data": [
+    {
+      "id": "11111111-2222-4333-8444-555555555555",
+      "tenant_id": "merchant_123",
+      "provider_code": "rajaongkir",
+      "display_key": "demo••••1234",
+      "daily_limit": 50000,
+      "active": true,
+      "validation_status": "valid"
+    }
+  ],
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/v1/integrations/provider-credentials",
+    title: "Hubungkan key RajaOngkir seller",
+    description:
+      "Memvalidasi key ke provider, mengenkripsinya dengan AES-256-GCM, dan mengikat credential ke merchant dari tenant token. Validasi menggunakan satu hit provider.",
+    authentication:
+      "Customer API key + tenant token dengan scope provider-credentials:write",
+    request: `POST {{base_url}}/v1/integrations/provider-credentials
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}
+Content-Type: application/json
+
+{
+  "provider_code": "rajaongkir",
+  "api_key": "{{seller_rajaongkir_key}}",
+  "daily_limit": 50000
+}`,
+    response: `{
+  "data": {
+    "id": "11111111-2222-4333-8444-555555555555",
+    "tenant_id": "merchant_123",
+    "provider_code": "rajaongkir",
+    "display_key": "demo••••1234",
+    "daily_limit": 50000,
+    "active": true,
+    "validation_status": "valid"
+  },
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/v1/integrations/provider-credentials/{id}/disable",
+    title: "Putuskan credential seller",
+    description:
+      "Menonaktifkan credential hanya bila UUID tersebut dimiliki merchant pada tenant token.",
+    authentication:
+      "Customer API key + tenant token dengan scope provider-credentials:write",
+    parameters: ["id — UUID credential milik merchant aktif"],
+    request: `POST {{base_url}}/v1/integrations/provider-credentials/{{credential_id}}/disable
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}`,
+    response: `HTTP 204 No Content`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/calculate/district/domestic-cost",
+    title: "Cek ongkir dengan key seller",
+    description:
+      "Kontrak respons tetap RajaOngkir V2, tetapi credential dipilih dari sub dan integration_id wajib dalam tenant token. Snapshot dipisahkan per merchant dan integrasi.",
+    authentication:
+      "Customer API key + tenant token dengan scope shipping:read",
+    request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}
+Content-Type: application/x-www-form-urlencoded
+
+origin=442&destination=1354&weight=1200&courier=jne`,
+    response: `Respons 1:1 RajaOngkir V2. Jika merchant tidak mempunyai credential aktif, API mengembalikan RATE_NOT_AVAILABLE tanpa meminjam key platform atau seller lain.`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/track/waybill",
+    title: "Tracking dengan key seller",
+    description:
+      "Tracking sinkron dan refresh worker mempertahankan tenant_id serta credential integration_id milik order.",
+    authentication:
+      "Customer API key + tenant token dengan scope tracking:read",
+    request: `POST {{base_url}}/api/v1/track/waybill
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}
+Content-Type: application/x-www-form-urlencoded
+
+awb=TEST123456789&courier=jne`,
+    response: `Respons tracking RajaOngkir V2. Hit dicatat pada ledger credential merchant yang terautentikasi.`,
   },
 ];

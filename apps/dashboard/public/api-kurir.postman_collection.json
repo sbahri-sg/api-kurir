@@ -790,7 +790,106 @@
       ]
     },
     {
-      "name": "5. Admin · Operations & Security",
+      "name": "5. Emisell Gateway · Seller BYOK",
+      "description": "Request tenant-aware. tenant_token harus dibuat backend Emisell menggunakan private key Ed25519; jangan pernah dibuat di browser seller.",
+      "item": [
+        {
+          "name": "List Seller Provider Credentials",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/integrations/provider-credentials",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "integrations", "provider-credentials"]
+            },
+            "description": "Memerlukan scope provider-credentials:read dan hanya mengembalikan key milik merchant pada claim sub."
+          },
+          "response": []
+        },
+        {
+          "name": "Connect Seller RajaOngkir Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Credential seller tersimpan', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data.id) {",
+                  "  pm.environment.set('seller_provider_credential_id', payload.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_code\": \"rajaongkir\",\n  \"api_key\": \"{{seller_rajaongkir_api_key}}\",\n  \"daily_limit\": 50000\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/integrations/provider-credentials",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "integrations", "provider-credentials"]
+            },
+            "description": "Memerlukan scope provider-credentials:write. Validasi memakai satu hit RajaOngkir seller."
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Seller Provider Credential",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/integrations/provider-credentials/{{seller_provider_credential_id}}/disable",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "integrations",
+                "provider-credentials",
+                "{{seller_provider_credential_id}}",
+                "disable"
+              ]
+            },
+            "description": "Credential tenant lain diperlakukan sebagai tidak ditemukan."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Admin · Operations & Security",
       "auth": {
         "type": "bearer",
         "bearer": [

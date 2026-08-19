@@ -35,3 +35,28 @@ func TestProviderRequestFingerprintIncludesDimensions(t *testing.T) {
 		t.Fatal("dimensions did not change the request fingerprint")
 	}
 }
+
+func TestProviderRequestFingerprintIsolatedByTenantAndIntegration(t *testing.T) {
+	t.Parallel()
+
+	base := Request{
+		Origin:            "origin",
+		Destination:       "destination",
+		ActualWeightGrams: 1200,
+		Couriers:          []string{"jne"},
+	}
+	tenantA := base
+	tenantA.TenantID = "merchant_a"
+	tenantA.IntegrationID = "credential_a"
+	tenantB := tenantA
+	tenantB.TenantID = "merchant_b"
+	secondIntegration := tenantA
+	secondIntegration.IntegrationID = "credential_b"
+
+	baseFingerprint := providerRequestFingerprint(base)
+	if baseFingerprint == providerRequestFingerprint(tenantA) ||
+		providerRequestFingerprint(tenantA) == providerRequestFingerprint(tenantB) ||
+		providerRequestFingerprint(tenantA) == providerRequestFingerprint(secondIntegration) {
+		t.Fatal("provider quote fingerprint was shared across tenant or credential")
+	}
+}

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/emisell/api-kurir/internal/tenancy"
 )
 
 type Runner struct {
@@ -133,7 +135,14 @@ func (r *Runner) processOneAs(ctx context.Context, workerID string) error {
 		request.LastPhoneDigits = values.LastPhoneNumber
 	}
 
-	result, err := adapter.Track(ctx, request)
+	providerCtx := ctx
+	if job.TenantID != "" {
+		providerCtx = tenancy.WithIdentity(ctx, tenancy.Identity{
+			TenantID:      job.TenantID,
+			IntegrationID: job.ProviderCredentialID,
+		})
+	}
+	result, err := adapter.Track(providerCtx, request)
 	if err != nil {
 		return r.failJob(ctx, job, trackingFailureCode(err), err)
 	}
