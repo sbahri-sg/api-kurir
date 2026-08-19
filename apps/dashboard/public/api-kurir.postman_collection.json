@@ -548,7 +548,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "calculate", "domestic-cost"]
             },
-            "description": "Drop-in request direct shipping-cost untuk SDK RajaOngkir V2."
+            "description": "Drop-in request direct shipping-cost untuk SDK RajaOngkir V2. Field price mengurutkan semua layanan (lowest naik, highest turun), bukan memilih satu hasil."
           },
           "response": []
         },
@@ -619,7 +619,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "calculate", "district", "domestic-cost"]
             },
-            "description": "Drop-in request district shipping-cost untuk SDK RajaOngkir V2."
+            "description": "Drop-in request district shipping-cost untuk SDK RajaOngkir V2. Field price mengurutkan semua layanan (lowest naik, highest turun), bukan memilih satu hasil."
           },
           "response": []
         }

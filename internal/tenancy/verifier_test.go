@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -76,11 +77,15 @@ func TestVerifierRejectsExpiredWrongAudienceAndTamperedTokens(t *testing.T) {
 		"iss": "emisell-api", "aud": "api-kurir", "sub": "merchant_123",
 		"iat": now.Unix(), "exp": now.Add(time.Minute).Unix(),
 	})
+	signatureStart := strings.LastIndex(valid, ".") + 1
 	replacement := "A"
-	if valid[len(valid)-1:] == replacement {
+	if valid[signatureStart:signatureStart+1] == replacement {
 		replacement = "B"
 	}
-	tests = append(tests, valid[:len(valid)-1]+replacement)
+	tests = append(
+		tests,
+		valid[:signatureStart]+replacement+valid[signatureStart+1:],
+	)
 	for _, token := range tests {
 		if _, err := verifier.Verify(token); err == nil {
 			t.Fatalf("expected token rejection: %s", token)

@@ -27,7 +27,19 @@ func (r *PostgresRepository) Search(
 	if len(terms) == 0 {
 		return []Location{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, fmt.Errorf("begin location search: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(
+		ctx,
+		"SET LOCAL pg_trgm.word_similarity_threshold = 0.35",
+	); err != nil {
+		return nil, fmt.Errorf("configure fuzzy location search: %w", err)
+	}
+
+	rows, err := tx.Query(ctx, `
 		WITH input_terms AS (
 			SELECT DISTINCT term
 			FROM unnest($1::text[]) AS term
@@ -81,6 +93,30 @@ func (r *PostgresRepository) Search(
 			 AND location.official_region_code IS NOT NULL
 			GROUP BY location.id
 		),
+		fuzzy_location_matches AS (
+			SELECT
+				location.id,
+				count(DISTINCT term.term)::int AS matched_terms,
+				5 AS match_rank,
+				max(
+					greatest(
+						similarity(lower(coalesce(location.subdistrict, '')), term.term),
+						similarity(lower(coalesce(location.district, '')), term.term),
+						similarity(lower(coalesce(location.city, '')), term.term),
+						similarity(lower(coalesce(location.province, '')), term.term)
+					)
+				) AS match_score
+			FROM input_terms term
+			JOIN locations location
+			  ON term.term <% location.search_text
+			WHERE term.term !~ '^[0-9]+$'
+			  AND location.active
+			  AND location.level = 'subdistrict'
+			  AND location.official_region_code IS NOT NULL
+			  AND NOT EXISTS (SELECT 1 FROM location_matches)
+			  AND NOT EXISTS (SELECT 1 FROM postal_matches)
+			GROUP BY location.id
+		),
 		candidates AS (
 			SELECT id, matched_terms, match_rank, match_score
 			FROM location_matches
@@ -89,6 +125,11 @@ func (r *PostgresRepository) Search(
 
 			SELECT id, matched_terms, match_rank, match_score
 			FROM postal_matches
+
+			UNION ALL
+
+			SELECT id, matched_terms, match_rank, match_score
+			FROM fuzzy_location_matches
 		),
 		ranked AS (
 			SELECT
@@ -185,6 +226,10 @@ func (r *PostgresRepository) Search(
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate locations: %w", err)
+	}
+	rows.Close()
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit location search: %w", err)
 	}
 	return result, nil
 }

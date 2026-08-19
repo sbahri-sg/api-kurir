@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -165,6 +166,145 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 	}
 	if _, exists := payload.Meta["request_id"]; exists {
 		t.Fatalf("compatibility meta contains internal extension: %#v", payload.Meta)
+	}
+}
+
+func TestRajaOngkirV2CalculateContractDoesNotDependOnAuthenticationHeader(t *testing.T) {
+	t.Parallel()
+
+	service := rates.NewService(staticRateRepository{
+		cards: []rates.RateCard{{
+			CourierCode:            "jne",
+			CourierName:            "JNE",
+			ServiceCode:            "REG",
+			ServiceName:            "Layanan Reguler",
+			PricingModel:           "flat",
+			BasePrice:              15_000,
+			WeightIncrementGrams:   1_000,
+			RoundingMode:           "ceil",
+			RoundingIncrementGrams: 1_000,
+		}},
+	}, time.Second)
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
+	e.POST(
+		"/api/v1/calculate/domestic-cost",
+		calculatePublicRateHandler(service, legacyHTTPRepositoryStub{}, "subdistrict"),
+	)
+
+	responses := make([][]byte, 0, 2)
+	for _, headers := range []map[string]string{
+		{"key": "sdk-key"},
+		{"Authorization": "Bearer sdk-key"},
+	} {
+		form := url.Values{
+			"origin":      {"3273061001"},
+			"destination": {"3212122001"},
+			"weight":      {"1000"},
+			"courier":     {"jne"},
+		}
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/calculate/domestic-cost",
+			bytes.NewBufferString(form.Encode()),
+		)
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		for name, value := range headers {
+			request.Header.Set(name, value)
+		}
+		response := httptest.NewRecorder()
+		e.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("headers=%v status=%d body=%s", headers, response.Code, response.Body)
+		}
+		responses = append(responses, append([]byte(nil), response.Body.Bytes()...))
+	}
+	if !bytes.Equal(responses[0], responses[1]) {
+		t.Fatalf("authentication header changed contract:\nkey=%s\nbearer=%s", responses[0], responses[1])
+	}
+}
+
+func TestRajaOngkirV2CalculateRejectsJSONWith415(t *testing.T) {
+	t.Parallel()
+
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.POST(
+		"/api/v1/calculate/domestic-cost",
+		calculatePublicRateHandler(
+			rates.NewService(staticRateRepository{}, time.Second),
+			legacyHTTPRepositoryStub{},
+			"subdistrict",
+		),
+	)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/calculate/domestic-cost",
+		bytes.NewBufferString(`{"origin":4911,"destination":25976,"weight":1000,"courier":"jne"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status: got %d want %d body=%s", response.Code, http.StatusUnsupportedMediaType, response.Body)
+	}
+	var payload struct {
+		Meta struct {
+			Code int `json:"code"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Meta.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("unexpected response: %s", response.Body)
+	}
+}
+
+func TestRajaOngkirV2CalculateAcceptsMultipartForm(t *testing.T) {
+	t.Parallel()
+
+	service := rates.NewService(staticRateRepository{
+		cards: []rates.RateCard{{
+			CourierCode:            "jne",
+			CourierName:            "JNE",
+			ServiceCode:            "REG",
+			ServiceName:            "Layanan Reguler",
+			PricingModel:           "flat",
+			BasePrice:              15_000,
+			WeightIncrementGrams:   1_000,
+			RoundingMode:           "ceil",
+			RoundingIncrementGrams: 1_000,
+		}},
+	}, time.Second)
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.POST(
+		"/api/v1/calculate/domestic-cost",
+		calculatePublicRateHandler(service, legacyHTTPRepositoryStub{}, "subdistrict"),
+	)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range map[string]string{
+		"origin": "3273061001", "destination": "3212122001",
+		"weight": "1000", "courier": "jne",
+	} {
+		if err := writer.WriteField(name, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/calculate/domestic-cost", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status: got %d want %d body=%s", response.Code, http.StatusOK, response.Body)
 	}
 }
 

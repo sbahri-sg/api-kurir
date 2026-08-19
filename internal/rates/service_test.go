@@ -253,3 +253,69 @@ func TestServiceDoesNotHideProviderFailureBehindPartialLocalResult(t *testing.T)
 		t.Fatalf("expected provider failure, got %v", err)
 	}
 }
+
+func TestServicePriceFilterSortsWithoutDroppingServices(t *testing.T) {
+	t.Parallel()
+
+	cards := []RateCard{
+		testFlatRateCard("YES", 30_000),
+		testFlatRateCard("OKE", 10_000),
+		testFlatRateCard("REG", 20_000),
+	}
+	service := NewService(staticRepository{cards: cards}, time.Second)
+
+	for _, test := range []struct {
+		name        string
+		priceFilter string
+		wantCosts   []int64
+	}{
+		{name: "default", wantCosts: []int64{10_000, 20_000, 30_000}},
+		{name: "lowest", priceFilter: "lowest", wantCosts: []int64{10_000, 20_000, 30_000}},
+		{name: "highest", priceFilter: "highest", wantCosts: []int64{30_000, 20_000, 10_000}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			results, err := service.Calculate(context.Background(), Request{
+				Origin:            "loc_origin",
+				Destination:       "loc_destination",
+				ActualWeightGrams: 1_000,
+				Couriers:          []string{"jne"},
+				PriceFilter:       test.priceFilter,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(results) != len(test.wantCosts) {
+				t.Fatalf("result count: got %d want %d", len(results), len(test.wantCosts))
+			}
+			for index, wantCost := range test.wantCosts {
+				if results[index].Cost.Total != wantCost {
+					t.Fatalf(
+						"cost[%d]: got %d want %d",
+						index,
+						results[index].Cost.Total,
+						wantCost,
+					)
+				}
+			}
+		})
+	}
+}
+
+func testFlatRateCard(serviceCode string, price int64) RateCard {
+	return RateCard{
+		CourierCode:            "jne",
+		CourierName:            "JNE",
+		ServiceCode:            serviceCode,
+		ServiceName:            serviceCode,
+		PricingModel:           "flat",
+		BasePrice:              price,
+		WeightIncrementGrams:   1_000,
+		RoundingMode:           "ceil",
+		RoundingIncrementGrams: 1_000,
+		VerificationStatus:     "official_contract",
+		EffectiveFrom:          time.Now().UTC(),
+		FetchedAt:              time.Now().UTC(),
+		SourceProvider:         "test",
+		RoundingProfileCode:    "test",
+	}
+}

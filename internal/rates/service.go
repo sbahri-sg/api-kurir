@@ -116,11 +116,10 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 		return nil, ErrRateNotAvailable
 	}
 	sortResults(results)
-	switch request.PriceFilter {
-	case "lowest":
-		results = results[:1]
-	case "highest":
-		results = results[len(results)-1:]
+	if request.PriceFilter == "highest" {
+		for left, right := 0, len(results)-1; left < right; left, right = left+1, right-1 {
+			results[left], results[right] = results[right], results[left]
+		}
 	}
 	return results, nil
 }

@@ -311,3 +311,57 @@ func TestRajaOngkirV2TrackingNotFoundUses404Envelope(t *testing.T) {
 		t.Fatalf("unexpected response: %#v", payload)
 	}
 }
+
+func TestRajaOngkirV2TrackingContractDoesNotDependOnAuthenticationHeader(t *testing.T) {
+	t.Parallel()
+
+	fetchedAt := time.Date(2026, 7, 29, 3, 15, 0, 0, time.UTC)
+	adapter := &trackingHTTPAdapterStub{result: tracking.Result{
+		NormalizedStatus: "in_transit",
+		StatusLabel:      "Dalam perjalanan",
+		Summary: map[string]any{
+			"courier_code":    "jne",
+			"courier_name":    "Jalur Nugraha Ekakurir (JNE)",
+			"waybill_number":  "TEST123456789",
+			"status":          "IN TRANSIT",
+			"delivery_status": "IN TRANSIT",
+		},
+		ProviderCode: "rajaongkir",
+		FetchedAt:    fetchedAt,
+	}}
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
+	e.POST(
+		"/api/v1/track/waybill",
+		trackingPublicHandler(trackingTestService(t), adapter),
+	)
+
+	responses := make([][]byte, 0, 2)
+	for _, headers := range []map[string]string{
+		{"key": "sdk-key"},
+		{"Authorization": "Bearer sdk-key"},
+	} {
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/track/waybill?awb=TEST123456789&courier=jne",
+			nil,
+		)
+		for name, value := range headers {
+			request.Header.Set(name, value)
+		}
+		response := httptest.NewRecorder()
+		e.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("headers=%v status=%d body=%s", headers, response.Code, response.Body)
+		}
+		responses = append(responses, append([]byte(nil), response.Body.Bytes()...))
+	}
+	if !bytes.Equal(responses[0], responses[1]) {
+		t.Fatalf(
+			"key and bearer contracts differ:\nkey=%s\nbearer=%s",
+			responses[0],
+			responses[1],
+		)
+	}
+}

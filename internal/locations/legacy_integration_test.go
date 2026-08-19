@@ -205,6 +205,32 @@ func TestLegacyBulkImportAndHierarchyLookup(t *testing.T) {
 	if len(rawSearchResult) != 1 || rawSearchResult[0].ID != "32" {
 		t.Fatalf("unexpected normalized raw-address result: %#v", rawSearchResult)
 	}
+	typoSearchResult, err := repository.SearchLegacy(
+		ctx,
+		provider,
+		"Sasaa",
+		20,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(typoSearchResult) != 1 || typoSearchResult[0].ID != "32" {
+		t.Fatalf("unexpected fuzzy search result: %#v", typoSearchResult)
+	}
+	unknownPostalResult, err := repository.SearchLegacy(
+		ctx,
+		provider,
+		"99999",
+		20,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unknownPostalResult) != 0 {
+		t.Fatalf("unknown postal code must not use fuzzy name matching: %#v", unknownPostalResult)
+	}
 
 	publicID, err := repository.ResolveLegacyPublicID(ctx, provider, "district", "32")
 	if err != nil {

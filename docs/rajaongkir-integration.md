@@ -136,7 +136,8 @@ Kontrak shipping-cost yang tersedia pada base path tersebut:
 - `POST /calculate/domestic-cost`;
 - `POST /calculate/district/domestic-cost`;
 - `POST /track/waybill`;
-- request kalkulasi `application/x-www-form-urlencoded`;
+- request kalkulasi `application/x-www-form-urlencoded` atau
+  `multipart/form-data`; JSON ditolak dengan HTTP `415`;
 - respons dan error memakai envelope `meta` dan `data`.
 
 ID wilayah pada `/api/v1` berasal dari dump RajaOngkir milik
@@ -238,6 +239,10 @@ weight
 courier
 price (opsional)
 ```
+
+`price=lowest` mengurutkan seluruh opsi termurah ke termahal, sedangkan
+`price=highest` mengurutkan seluruh opsi termahal ke termurah. Parameter ini
+tidak menghapus opsi layanan lain dari respons.
 
 Dimensi tidak tercantum sebagai field resmi pada form tersebut. Adapter hanya
 mengirim `weight` ke RajaOngkir. Jika request API Kurir menyertakan dimensi:

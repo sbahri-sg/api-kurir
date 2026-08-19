@@ -24,6 +24,7 @@ func TestProviderHierarchyAndPostalCodeSearch(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	suffix := time.Now().UTC().Format("150405000000000")
+	compatibilityID := time.Now().UTC().UnixNano()
 	provider := "integration-postal-" + suffix
 	province := "PROVINSI TEST " + suffix
 	city := "KOTA TEST " + suffix
@@ -114,6 +115,19 @@ func TestProviderHierarchyAndPostalCodeSearch(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("unexpected imported count: %d", count)
 		}
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE locations location
+		SET official_region_code = $3,
+		    compatibility_id = $4,
+		    updated_at = now()
+		FROM provider_location_mappings mapping
+		WHERE mapping.location_id = location.id
+		  AND mapping.provider_code = $1
+		  AND mapping.provider_location_id = $2
+		  AND mapping.granularity = 'subdistrict'
+	`, provider, sharedProviderLocationID, "integration."+suffix, compatibilityID); err != nil {
+		t.Fatal(err)
 	}
 
 	var mappingCount int

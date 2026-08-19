@@ -242,6 +242,9 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               $ref: "#/components/schemas/RajaOngkirCalculateCostRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/RajaOngkirCalculateCostRequest"
       responses:
         "200":
           description: Pilihan layanan dan biaya
@@ -257,6 +260,8 @@ paths:
                 $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "415":
+          $ref: "#/components/responses/RajaOngkirUnsupportedMediaType"
         "422":
           description: Courier tidak valid atau tarif belum tersedia
           content:
@@ -292,6 +297,9 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               $ref: "#/components/schemas/RajaOngkirCalculateCostRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/RajaOngkirCalculateCostRequest"
       responses:
         "200":
           description: Pilihan layanan dan biaya dalam kontrak RajaOngkir V2
@@ -311,6 +319,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "415":
+          $ref: "#/components/responses/RajaOngkirUnsupportedMediaType"
         "422":
           description: Courier tidak valid
           content:
@@ -1425,6 +1435,12 @@ components:
             oneOf:
               - $ref: "#/components/schemas/ErrorResponse"
               - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+    RajaOngkirUnsupportedMediaType:
+      description: Kalkulasi RajaOngkir V2 hanya menerima form-urlencoded atau multipart form
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RajaOngkirErrorResponse"
     ProviderError:
       description: Provider belum tersedia, timeout, atau kuotanya habis
       content:
@@ -1809,6 +1825,10 @@ components:
         price:
           type: string
           enum: [lowest, highest]
+          description: >
+            Mengurutkan seluruh opsi layanan. lowest mengurutkan biaya naik dan
+            highest mengurutkan biaya turun; parameter ini tidak membatasi hasil
+            menjadi satu layanan.
 
     Dimensions:
       type: object

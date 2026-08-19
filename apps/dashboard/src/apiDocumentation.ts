@@ -43,7 +43,7 @@ export const API_DOCUMENTATION_CONTRACTS: ApiDocumentationContractDefinition[] =
     idFormat: "Integer dari snapshot RajaOngkir lokal",
     authentication: "Header key atau Bearer customer API key",
     description:
-      "Kontrak utama untuk pencarian wilayah, cek ongkir, dan tracking dengan bentuk request serta respons kompatibel RajaOngkir V2.",
+      "Kontrak publik utama untuk Emisell: pencarian wilayah, cek ongkir, dan tracking dengan bentuk request serta respons kompatibel RajaOngkir V2. Gunakan path ini untuk checkout dan SDK seller.",
   },
   {
     id: "emisell-legacy",
@@ -67,7 +67,7 @@ export const API_DOCUMENTATION_CONTRACTS: ApiDocumentationContractDefinition[] =
     idFormat: "Public ID canonical loc_idn_*",
     authentication: "Header key atau Bearer customer API key",
     description:
-      "Kontrak internal yang tidak terikat ID provider dan menjadi fondasi mapping multi-provider API Kurir.",
+      "Kontrak khusus dashboard dan service internal. Jangan gunakan ID loc_idn_* ini pada SDK RajaOngkir V2 atau checkout Emisell.",
   },
   {
     id: "gateway",
@@ -660,13 +660,13 @@ key: {{api_key}}`,
     path: "/api/v1/calculate/domestic-cost",
     title: "Cek ongkir SDK V2 · kelurahan",
     description:
-      "Endpoint form-urlencoded RajaOngkir V2 untuk origin dan destination hasil direct search atau endpoint sub-district.",
+      "Endpoint form-urlencoded atau multipart RajaOngkir V2 untuk origin dan destination hasil direct search atau endpoint sub-district. JSON tidak diterima pada kontrak ini.",
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint sub-district atau domestic-destination",
       "weight — berat gram",
       "courier — kode kurir dipisahkan titik dua",
-      "price — lowest atau highest, opsional",
+      "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
     ],
     request: `POST {{base_url}}/api/v1/calculate/domestic-cost
 Content-Type: application/x-www-form-urlencoded
@@ -697,13 +697,13 @@ origin=4911&destination=25976&weight=1000&courier=jne&price=lowest`,
     path: "/api/v1/calculate/district/domestic-cost",
     title: "Cek ongkir SDK V2 · kecamatan",
     description:
-      "Drop-in endpoint form-urlencoded untuk SDK RajaOngkir V2. Gunakan /api/v1/calculate/domestic-cost dengan bentuk request yang sama untuk ID subdistrict.",
+      "Drop-in endpoint form-urlencoded atau multipart untuk SDK RajaOngkir V2. Gunakan /api/v1/calculate/domestic-cost dengan bentuk request yang sama untuk ID subdistrict. JSON tidak diterima.",
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint district",
       "weight — berat gram",
       "courier — kode kurir dipisahkan titik dua",
-      "price — lowest atau highest, opsional",
+      "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
     ],
     request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
 Content-Type: application/x-www-form-urlencoded

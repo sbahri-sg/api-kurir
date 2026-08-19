@@ -81,6 +81,12 @@ func (r *PostgresRepository) SearchLegacy(
 	if _, err := tx.Exec(ctx, "SET LOCAL max_parallel_workers_per_gather = 0"); err != nil {
 		return nil, fmt.Errorf("configure legacy search: %w", err)
 	}
+	if _, err := tx.Exec(
+		ctx,
+		"SET LOCAL pg_trgm.word_similarity_threshold = 0.35",
+	); err != nil {
+		return nil, fmt.Errorf("configure fuzzy legacy search: %w", err)
+	}
 
 	rows, err := tx.Query(ctx, `
 		WITH input_terms AS (
@@ -134,10 +140,37 @@ func (r *PostgresRepository) SearchLegacy(
 			 AND mapping.granularity = 'subdistrict'
 			 AND mapping.active
 		),
+		fuzzy_location_candidate_terms AS (
+			SELECT
+				mapping.id AS mapping_id,
+				term.term,
+				5 AS match_rank,
+				greatest(
+					similarity(lower(coalesce(location.subdistrict, '')), term.term),
+					similarity(lower(coalesce(location.district, '')), term.term),
+					similarity(lower(coalesce(location.city, '')), term.term),
+					similarity(lower(coalesce(location.province, '')), term.term)
+				) AS match_score
+			FROM input_terms term
+			JOIN locations location
+			  ON term.term !~ '^[0-9]+$'
+			 AND location.active
+			 AND location.level = 'subdistrict'
+			 AND term.term <% location.search_text
+			JOIN provider_location_mappings mapping
+			  ON mapping.location_id = location.id
+			 AND mapping.provider_code = $1
+			 AND mapping.granularity = 'subdistrict'
+			 AND mapping.active
+			WHERE NOT EXISTS (SELECT 1 FROM location_candidate_terms)
+			  AND NOT EXISTS (SELECT 1 FROM postal_candidate_terms)
+		),
 		candidate_terms AS (
 			SELECT * FROM location_candidate_terms
 			UNION ALL
 			SELECT * FROM postal_candidate_terms
+			UNION ALL
+			SELECT * FROM fuzzy_location_candidate_terms
 		),
 		matched_mappings AS (
 			SELECT

@@ -52,7 +52,8 @@ Semua path customer menerima `Authorization: Bearer <api-key>` maupun
 `key: <api-key>` dengan hasil yang sama. Pada `/api/v1`, ID lokasi diterbitkan
 sebagai integer dari snapshot
 `region-service-main` RajaOngkir dan request kalkulasi memakai
-`application/x-www-form-urlencoded`. Client harus selalu mengambil ID dari
+`application/x-www-form-urlencoded` atau `multipart/form-data`; payload JSON
+ditolak dengan HTTP `415`. Client harus selalu mengambil ID dari
 endpoint API Kurir karena namespace ID berlaku per level. Sebagai contoh,
 provinsi `32` adalah Maluku Utara pada snapshot RajaOngkir dan bukan kode
 Kemendagri Jawa Barat. Path `/api/v1` sama dengan base path resmi RajaOngkir
@@ -258,6 +259,12 @@ Content-Type: application/x-www-form-urlencoded
 
 origin=4911&destination=25976&weight=1000&courier=jne&price=lowest
 ```
+
+Form `multipart/form-data` juga diterima dengan field yang sama. Payload JSON
+tidak termasuk kontrak RajaOngkir V2 dan memperoleh HTTP `415`. Parameter
+`price=lowest` mengurutkan seluruh layanan dari termurah ke termahal;
+`price=highest` mengurutkan seluruh layanan dari termahal ke termurah. Parameter
+ini tidak memfilter hasil menjadi satu layanan.
 
 Kalkulasi berdasarkan kecamatan tersedia pada:
 

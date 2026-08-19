@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"regexp"
 	"sort"
@@ -22,6 +23,11 @@ import (
 const maxCalculateBodyBytes = 64 * 1024
 
 var validCourierCode = regexp.MustCompile(`^[a-z0-9_-]{2,32}$`)
+
+var (
+	errUnsupportedRajaOngkirRateMediaType = errors.New("unsupported RajaOngkir rate media type")
+	errInvalidRajaOngkirRateForm          = errors.New("invalid RajaOngkir rate form")
+)
 
 type calculateRequest struct {
 	Origin      string              `json:"origin"`
@@ -215,7 +221,16 @@ func calculateRajaOngkirV2Rate(
 		c.Request().Body,
 		maxCalculateBodyBytes,
 	)
-	if err := c.Request().ParseForm(); err != nil {
+	if err := parseRajaOngkirRateForm(c); err != nil {
+		if errors.Is(err, errUnsupportedRajaOngkirRateMediaType) {
+			return writeError(
+				c,
+				http.StatusUnsupportedMediaType,
+				"UNSUPPORTED_MEDIA_TYPE",
+				"Content-Type harus application/x-www-form-urlencoded atau multipart/form-data.",
+				nil,
+			)
+		}
 		return writeError(
 			c,
 			http.StatusBadRequest,
@@ -344,6 +359,28 @@ func calculateRajaOngkirV2Rate(
 		},
 		"data": data,
 	})
+}
+
+func parseRajaOngkirRateForm(c *echo.Context) error {
+	mediaType, _, err := mime.ParseMediaType(
+		strings.TrimSpace(c.Request().Header.Get("Content-Type")),
+	)
+	if err != nil {
+		return errUnsupportedRajaOngkirRateMediaType
+	}
+
+	switch mediaType {
+	case "application/x-www-form-urlencoded":
+		err = c.Request().ParseForm()
+	case "multipart/form-data":
+		err = c.Request().ParseMultipartForm(maxCalculateBodyBytes)
+	default:
+		return errUnsupportedRajaOngkirRateMediaType
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %v", errInvalidRajaOngkirRateForm, err)
+	}
+	return nil
 }
 
 func resolveRajaOngkirLocation(
