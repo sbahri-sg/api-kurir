@@ -7,7 +7,6 @@ import {
 } from "react";
 import {
   AdminApi,
-  API_URL,
   type Courier,
   type CustomerAPIKey,
   type GeneratedCustomerAPIKey,
@@ -22,8 +21,10 @@ import {
 } from "./api";
 import {
   API_DOCUMENTATION,
+  API_DOCUMENTATION_CONTRACTS,
+  getApiDocumentationContract,
+  type ApiDocumentationContract,
   type ApiDocumentationEndpoint,
-  type ApiDocumentationScope,
 } from "./apiDocumentation";
 
 type Tab =
@@ -38,6 +39,7 @@ type Tab =
   | "documentation";
 
 type NavGroupId = "operations" | "master-data" | "provider" | "developer";
+type ApiDocumentationView = ApiDocumentationContract | "partner";
 
 type NavItem = {
   value: Tab;
@@ -221,8 +223,8 @@ export function App() {
   const [keyActionLoading, setKeyActionLoading] = useState(false);
   const [rateSearch, setRateSearch] = useState("");
   const [mappingSearch, setMappingSearch] = useState("");
-  const [documentationScope, setDocumentationScope] =
-    useState<ApiDocumentationScope>("customer");
+  const [documentationView, setDocumentationView] =
+    useState<ApiDocumentationView>("rajaongkir-v2");
 
   const api = useMemo(
     () => new AdminApi(adminKey, actor || "emisell"),
@@ -1051,8 +1053,8 @@ export function App() {
 
         {tab === "documentation" && (
           <ApiDocumentation
-            scope={documentationScope}
-            onScopeChange={setDocumentationScope}
+            view={documentationView}
+            onViewChange={setDocumentationView}
           />
         )}
       </section>
@@ -2043,124 +2045,278 @@ function APIKeyManagement({
   );
 }
 
+const PARTNER_DOCUMENTATION_VIEW = {
+  id: "partner" as const,
+  label: "Partner API",
+  classification: "Partner",
+  status: "Draft",
+  audience: "Vendor kurir, aggregator, dan penyedia last-mile",
+  basePath: "https://<partner-host>/partner/v1",
+  idFormat: "String canonical milik partner",
+  authentication: "Bearer partner + HMAC-SHA256",
+  description:
+    "Kontrak southbound yang wajib disediakan vendor. API Kurir memanggil connector partner; partner tidak memakai endpoint customer atau admin.",
+};
+
+const DOCUMENTATION_VIEWS = [
+  ...API_DOCUMENTATION_CONTRACTS,
+  PARTNER_DOCUMENTATION_VIEW,
+];
+
 function ApiDocumentation({
-  scope,
-  onScopeChange,
+  view,
+  onViewChange,
 }: {
-  scope: ApiDocumentationScope;
-  onScopeChange: (scope: ApiDocumentationScope) => void;
+  view: ApiDocumentationView;
+  onViewChange: (view: ApiDocumentationView) => void;
 }) {
-  const endpoints = API_DOCUMENTATION.filter(
-    (endpoint) => endpoint.scope === scope,
-  );
+  const activeView =
+    DOCUMENTATION_VIEWS.find((item) => item.id === view) ??
+    API_DOCUMENTATION_CONTRACTS[0];
+  const endpoints =
+    view === "partner"
+      ? []
+      : API_DOCUMENTATION.filter(
+          (endpoint) => getApiDocumentationContract(endpoint) === view,
+        );
+  const isPartner = view === "partner";
 
   return (
     <div className="documentation-page">
       <section className="docs-hero">
         <div>
           <p className="eyebrow">DEVELOPER PORTAL</p>
-          <h2>Integrasi API Kurir</h2>
+          <h2>Kontrak API yang tidak tercampur</h2>
           <p>
-            Kontrak customer mengikuti pola RajaOngkir: cari ID lokasi lokal,
-            kirim berat dalam gram, lalu pilih kurir. Provider dapat berubah
-            tanpa mengubah integrasi Emisell.
+            Pilih kontrak berdasarkan pemanggil dan base path. Jenis header
+            hanya untuk autentikasi; bentuk ID dan respons selalu ditentukan
+            oleh path endpoint.
           </p>
         </div>
         <div className="docs-downloads">
-          <a
-            className="button button-primary"
-            href="/api-kurir.postman_collection.json"
-            download
-          >
-            Unduh Postman Collection
-          </a>
-          <a
-            className="button button-secondary"
-            href="/api-kurir.local.postman_environment.json"
-            download
-          >
-            Unduh Environment
-          </a>
+          {isPartner ? (
+            <a
+              className="button button-primary"
+              href="/openapi/api-kurir-partner-v1.yaml"
+              download
+            >
+              Unduh OpenAPI Partner
+            </a>
+          ) : (
+            <>
+              <a
+                className="button button-primary"
+                href="/api-kurir.postman_collection.json"
+                download
+              >
+                Unduh Postman
+              </a>
+              <a
+                className="button button-secondary"
+                href="/openapi/api-kurir-public-v1.yaml"
+                download
+              >
+                Unduh OpenAPI
+              </a>
+            </>
+          )}
         </div>
+      </section>
+
+      <section className="docs-contract-selector" aria-label="Kontrak API">
+        {DOCUMENTATION_VIEWS.map((item) => {
+          const endpointCount =
+            item.id === "partner"
+              ? null
+              : API_DOCUMENTATION.filter(
+                  (endpoint) =>
+                    getApiDocumentationContract(endpoint) === item.id,
+                ).length;
+          return (
+            <button
+              key={item.id}
+              className={view === item.id ? "contract-active" : ""}
+              onClick={() => onViewChange(item.id)}
+            >
+              <span>{item.classification}</span>
+              <strong>{item.label}</strong>
+              <small>
+                {endpointCount === null
+                  ? "Kontrak vendor"
+                  : `${endpointCount} endpoint`}
+              </small>
+            </button>
+          );
+        })}
       </section>
 
       <section className="docs-quickstart">
         <article>
-          <span>Base URL</span>
-          <strong>{API_URL}</strong>
-          <small>Gunakan variabel Postman: {"{{base_url}}"}</small>
+          <span>Base path</span>
+          <strong>{activeView.basePath}</strong>
+          <small>{activeView.audience}</small>
         </article>
         <article>
-          <span>Autentikasi customer</span>
-          <strong>Bearer {"{{api_key}}"}</strong>
-          <small>Untuk endpoint /v1 customer</small>
+          <span>Klasifikasi</span>
+          <strong>
+            {activeView.classification} · {activeView.status}
+          </strong>
+          <small>{activeView.description}</small>
         </article>
         <article>
-          <span>Autentikasi admin</span>
-          <strong>Bearer {"{{admin_api_key}}"}</strong>
-          <small>Hanya untuk endpoint /v1/admin</small>
+          <span>Format ID</span>
+          <strong>{activeView.idFormat}</strong>
+          <small>ID dari kontrak lain tidak boleh dicampur.</small>
+        </article>
+        <article>
+          <span>Autentikasi</span>
+          <strong>{activeView.authentication}</strong>
+          <small>Secret asli tidak boleh ditulis pada dokumentasi atau log.</small>
         </article>
       </section>
 
-      <section className="panel docs-guide">
-        <div>
-          <p className="eyebrow">MULAI DARI POSTMAN</p>
-          <h2>Empat langkah integrasi</h2>
-        </div>
-        <ol>
-          <li>Import Collection dan Environment dari tombol unduh.</li>
-          <li>
-            Isi <code>api_key</code> atau <code>admin_api_key</code> di Current
-            Value Postman.
-          </li>
-          <li>
-            Jalankan pencarian lokasi untuk memperoleh <code>origin_id</code>{" "}
-            dan <code>destination_id</code>.
-          </li>
-          <li>
-            Jalankan cek ongkir; snapshot provider akan digunakan ulang selama
-            masih aktif.
-          </li>
-        </ol>
-      </section>
+      {isPartner ? (
+        <PartnerDocumentation />
+      ) : (
+        <>
+          <section className="panel docs-guide">
+            <div>
+              <p className="eyebrow">ALUR INTEGRASI</p>
+              <h2>Gunakan satu kontrak sampai selesai</h2>
+            </div>
+            <ol>
+              <li>Import Collection dan isi hanya variable secret lokal.</li>
+              <li>
+                Gunakan base path <code>{activeView.basePath}</code> secara
+                konsisten.
+              </li>
+              <li>Ambil ID lokasi dari endpoint dalam kontrak yang sama.</li>
+              <li>Jangan meneruskan ID provider sebagai ID canonical internal.</li>
+            </ol>
+          </section>
 
-      <section className="docs-section-heading">
-        <div>
-          <p className="eyebrow">ENDPOINT TERSEDIA</p>
-          <h2>{endpoints.length} API {scope === "customer" ? "customer" : "admin"}</h2>
-        </div>
-        <div className="docs-scope-switch" aria-label="Kategori dokumentasi">
-          <button
-            className={scope === "customer" ? "scope-active" : ""}
-            onClick={() => onScopeChange("customer")}
-          >
-            Customer & health
-          </button>
-          <button
-            className={scope === "admin" ? "scope-active" : ""}
-            onClick={() => onScopeChange("admin")}
-          >
-            Admin & security
-          </button>
-        </div>
-      </section>
+          <section className="docs-section-heading">
+            <div>
+              <p className="eyebrow">ENDPOINT TERSEDIA</p>
+              <h2>
+                {endpoints.length} endpoint · {activeView.label}
+              </h2>
+            </div>
+            <span
+              className={`docs-status docs-status-${activeView.classification.toLowerCase()}`}
+            >
+              {activeView.classification} · {activeView.status}
+            </span>
+          </section>
 
-      <div className="endpoint-list">
-        {endpoints.map((endpoint, index) => (
-          <EndpointDocumentation
-            endpoint={endpoint}
-            key={`${endpoint.method}-${endpoint.path}`}
-            open={index === 0}
-          />
-        ))}
-      </div>
+          <div className="endpoint-list">
+            {endpoints.map((endpoint, index) => (
+              <EndpointDocumentation
+                endpoint={endpoint}
+                classification={activeView.classification}
+                key={`${endpoint.method}-${endpoint.path}`}
+                open={index === 0}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       <section className="docs-footnote">
-        <strong>Aturan satuan</strong>
+        <strong>Aturan global dan keamanan</strong>
         <p>
           Semua berat memakai gram, uang memakai integer rupiah, timestamp
-          memakai ISO 8601 UTC, dan ID provider tidak boleh dijadikan primary ID
-          oleh service utama.
+          memakai ISO 8601 UTC. Gunakan placeholder seperti
+          <code> {"{{api_key}}"}</code>; jangan pernah menaruh API key aktif,
+          ciphertext, atau credential provider dalam contoh.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+function PartnerDocumentation() {
+  return (
+    <div className="partner-docs">
+      <section className="panel partner-docs-intro">
+        <div>
+          <p className="eyebrow">SOUTHBOUND CONTRACT</p>
+          <h2>Vendor menyediakan connector, API Kurir menjadi gateway</h2>
+          <p>
+            Partner mengimplementasikan kontrak ini pada infrastrukturnya.
+            Emisell tidak memanggil API native partner dan API Kurir tidak
+            menyimpan adapter khusus untuk setiap vendor baru.
+          </p>
+        </div>
+        <div className="partner-flow" aria-label="Alur Partner API">
+          <span>Emisell</span>
+          <i>→</i>
+          <strong>API Kurir</strong>
+          <i>→</i>
+          <span>Partner Connector</span>
+        </div>
+      </section>
+
+      <section className="partner-docs-grid">
+        <article>
+          <span>01 · Discovery</span>
+          <h3>Capability & layanan</h3>
+          <p>
+            Partner menyediakan health, capability, service catalog, coverage,
+            dan informasi fitur seperti regular, cargo, instant, COD, atau
+            external tracking.
+          </p>
+        </article>
+        <article>
+          <span>02 · Transaksi</span>
+          <h3>Rate, shipment & pickup</h3>
+          <p>
+            Quote dikunci ke provider account asal. Booking, pickup, cancel,
+            label, dan rekonsiliasi tidak boleh berpindah provider setelah
+            shipment terbentuk.
+          </p>
+        </article>
+        <article>
+          <span>03 · Status</span>
+          <h3>Tracking & webhook</h3>
+          <p>
+            Event AWB dan perjalanan dikirim ke callback API Kurir. Endpoint
+            detail tetap menjadi sumber rekonsiliasi saat event terlambat atau
+            gagal.
+          </p>
+        </article>
+        <article>
+          <span>04 · Publish</span>
+          <h3>Sandbox & sertifikasi</h3>
+          <p>
+            Extension baru dapat dipublikasikan setelah contract test,
+            idempotency, retry, signature, isolasi tenant, dan skenario kegagalan
+            tervalidasi.
+          </p>
+        </article>
+      </section>
+
+      <section className="panel partner-security">
+        <div>
+          <p className="eyebrow">MINIMUM PRODUCTION</p>
+          <h2>Kontrol keamanan wajib</h2>
+        </div>
+        <ul>
+          <li>TLS 1.2+, Bearer credential terpisah, dan rotasi tanpa downtime.</li>
+          <li>HMAC-SHA256 untuk request mutasi dan seluruh webhook.</li>
+          <li>Timestamp, nonce, replay protection, dan idempotency key.</li>
+          <li>Secret terenkripsi serta tidak pernah muncul pada log atau respons.</li>
+          <li>Rate limit per partner, audit trail, dan isolasi data seller.</li>
+          <li>Contract test sandbox wajib lulus sebelum status production.</li>
+        </ul>
+      </section>
+
+      <section className="docs-footnote docs-draft-note">
+        <strong>Status: Draft untuk implementasi dan sertifikasi</strong>
+        <p>
+          Spesifikasi Partner API adalah kontrak target. Endpoint tidak boleh
+          dianggap aktif di production sebelum vendor tercatat lulus validasi
+          pada Partner Portal.
         </p>
       </section>
     </div>
@@ -2169,9 +2325,11 @@ function ApiDocumentation({
 
 function EndpointDocumentation({
   endpoint,
+  classification,
   open,
 }: {
   endpoint: ApiDocumentationEndpoint;
+  classification: string;
   open: boolean;
 }) {
   return (
@@ -2180,6 +2338,7 @@ function EndpointDocumentation({
         <span className={`method-badge method-${endpoint.method.toLowerCase()}`}>
           {endpoint.method}
         </span>
+        <span className="endpoint-contract">{classification}</span>
         <code>{endpoint.path}</code>
         <span className="endpoint-title">{endpoint.title}</span>
         <span className="endpoint-chevron">⌄</span>
@@ -2214,11 +2373,21 @@ function EndpointDocumentation({
 }
 
 function CodeExample({ title, content }: { title: string; content: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyExample() {
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_500);
+  }
+
   return (
     <div className="code-example">
       <div className="code-example-heading">
         <span>{title}</span>
-        <small>JSON</small>
+        <button type="button" onClick={() => void copyExample()}>
+          {copied ? "Tersalin" : "Salin"}
+        </button>
       </div>
       <pre>
         <code>{content}</code>

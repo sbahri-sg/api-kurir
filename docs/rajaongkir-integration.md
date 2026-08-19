@@ -45,10 +45,10 @@ Autentikasi menggunakan header:
 key: <shipping-cost-api-key>
 ```
 
-API Kurir juga menerima header `key` dari customer untuk mengaktifkan façade
-RajaOngkir V2. Key tersebut adalah customer API key API Kurir, bukan provider
-key yang tersimpan terenkripsi. Request Bearer tetap menggunakan kontrak
-internal sehingga dashboard tidak terpengaruh.
+API Kurir menerima header `key` maupun Bearer dari customer. Key tersebut
+adalah customer API key API Kurir, bukan provider key yang tersimpan
+terenkripsi. Bentuk kontrak ditentukan oleh path: `/api/v1` selalu memakai
+façade RajaOngkir V2 dan `/v1` selalu memakai kontrak canonical internal.
 
 Façade mendukung:
 
@@ -127,7 +127,7 @@ https://<domain-api-kurir>/api/v1
 
 Kontrak shipping-cost yang tersedia pada base path tersebut:
 
-- header autentikasi `key`;
+- header autentikasi `key` atau Bearer dengan hasil yang sama;
 - `GET /destination/domestic-destination`;
 - `GET /destination/province`;
 - `GET /destination/city/{province_id}`;
@@ -139,14 +139,14 @@ Kontrak shipping-cost yang tersedia pada base path tersebut:
 - request kalkulasi `application/x-www-form-urlencoded`;
 - respons dan error memakai envelope `meta` dan `data`.
 
-ID wilayah yang dikembalikan adalah integer stabil milik API Kurir dan harus
-dipakai kembali pada request berikutnya. ID ini bukan ID provider RajaOngkir;
-adapter menerjemahkannya ke provider secara lazy. Karena ID kelurahan dapat
-mencapai 10 digit, gunakan integer 64-bit pada SDK.
+ID wilayah pada `/api/v1` berasal dari dump RajaOngkir milik
+`region-service-main` dan harus dipakai kembali pada request berikutnya.
+Namespace ID dipisahkan berdasarkan level sehingga angka yang sama dapat
+digunakan oleh provinsi, kota, kecamatan, dan kelurahan tanpa bentrok.
 
 Base path lama `/v1` tetap aktif untuk dashboard dan integrasi JSON API Kurir.
-Dengan header Bearer, kontrak tracking lama tetap asynchronous agar dashboard
-dan integrasi lama tidak berubah.
+Kontrak tracking pada path tersebut tetap asynchronous agar dashboard dan
+integrasi lama tidak berubah, terlepas dari header autentikasinya.
 
 Tracking kompatibel SDK tersedia pada:
 
@@ -271,9 +271,10 @@ dan kelengkapan kode pos sebelum transaksi disimpan. Cakupan snapshot:
 83.762 mapping kode pos
 ```
 
-Public ID diturunkan dari kode wilayah Kemendagri dan tetap stabil walaupun
-provider ongkir diganti. Provenance dataset dicatat di
-`location_dataset_imports`.
+Public ID canonical internal tetap tersedia untuk menyatukan mapping lintas
+provider. SDK Emisell tidak perlu mengirim kode Kemendagri; path `/api/v1`
+memakai ID dump RajaOngkir, sedangkan ID Mengantar, KiriminAja, atau provider
+lain disimpan pada namespace masing-masing di `provider_location_mappings`.
 
 Ketika cek ongkir pertama untuk suatu lokasi:
 
@@ -290,9 +291,10 @@ upstream diperlakukan sebagai rate limit sementara, bukan langsung dianggap
 50.000 hit harian habis. Semua request RajaOngkir dipacu dengan interval global
 yang dikonfigurasi melalui `RAJAONGKIR_MIN_REQUEST_INTERVAL`.
 
-Full sync hierarki RajaOngkir bukan lagi sumber master dan tidak berjalan
-secara default. Tool lama hanya tersedia melalui profile
-`legacy-provider-full-sync` untuk kebutuhan diagnosis.
+Dump `region-service-main/data/regions.db` menjadi sumber ID kompatibilitas
+Emisell dan diimpor melalui `make legacy-region-import`. Full sync API
+RajaOngkir tidak berjalan secara default; tool tersebut tetap tersedia melalui
+profile `legacy-provider-full-sync` untuk pembaruan atau diagnosis.
 
 ## 9. Quota ledger
 
@@ -364,8 +366,9 @@ curl -X POST http://localhost:8080/v1/calculate/domestic-cost \
   }'
 ```
 
-Jangan memasukkan provider ID langsung ke public request. Gunakan ID lokal
-hasil endpoint destination API Kurir.
+Pada path `/v1`, gunakan public ID canonical hasil endpoint destination API
+Kurir. Pada path `/api/v1`, gunakan ID RajaOngkir lokal hasil endpoint yang
+sama; jangan mencampurkan ID dari provider atau level lain.
 
 ## 12. Tracking
 

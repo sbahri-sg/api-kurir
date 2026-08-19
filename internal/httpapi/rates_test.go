@@ -108,12 +108,13 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 		}},
 	}, time.Second)
 	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
 	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
 	e.POST(
-		"/v1/calculate/domestic-cost",
+		"/api/v1/calculate/domestic-cost",
 		calculatePublicRateHandler(
 			service,
-			locationHTTPRepositoryStub{},
+			legacyHTTPRepositoryStub{},
 			"subdistrict",
 		),
 	)
@@ -126,10 +127,10 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 	form.Set("price", "lowest")
 	request := httptest.NewRequest(
 		http.MethodPost,
-		"/v1/calculate/domestic-cost",
+		"/api/v1/calculate/domestic-cost",
 		bytes.NewBufferString(form.Encode()),
 	)
-	request.Header.Set("key", "sdk-key")
+	request.Header.Set("Authorization", "Bearer sdk-key")
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response := httptest.NewRecorder()
 
@@ -172,6 +173,7 @@ func TestRajaOngkirV2CalculateRejectsInvalidCourierWith422(t *testing.T) {
 
 	service := rates.NewService(staticRateRepository{}, time.Second)
 	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
 	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
 	e.POST(
 		"/api/v1/calculate/domestic-cost",

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "4b8ac7bb-fbd1-4b02-9c39-45a9c368cc71",
     "name": "API Kurir · Emisell",
-    "description": "Collection resmi untuk API Kurir. Workflow pencarian origin dan destination otomatis menyimpan ID lokasi ke environment sebelum cek ongkir.",
+    "description": "Collection resmi API Kurir. Folder dikelompokkan berdasarkan alur; label pada nama request menunjukkan kontrak. Jangan mencampur ID Canonical, RajaOngkir V2, dan Emisell Legacy.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -62,11 +62,11 @@
       ]
     },
     {
-      "name": "1. Locations",
-      "description": "Jalankan dua request ini terlebih dahulu. Test script otomatis menyimpan origin_id dan destination_id ke environment.",
+      "name": "1. Locations · Canonical & RajaOngkir V2",
+      "description": "Jalankan pencarian sesuai kontrak yang dipakai. Test script menyimpan ID ke variable terpisah agar ID canonical dan numerik RajaOngkir tidak tercampur.",
       "item": [
         {
-          "name": "Search Origin",
+          "name": "[Canonical] Search Origin",
           "event": [
             {
               "listen": "test",
@@ -103,12 +103,12 @@
                 }
               ]
             },
-            "description": "Mencari origin dan menyimpan ID hasil pertama ke origin_id."
+            "description": "Mencari origin dan menyimpan ID hasil pertama ke origin_id. Search menerima alamat mentah; awalan administratif dan tanda baca dinormalisasi otomatis."
           },
           "response": []
         },
         {
-          "name": "Search Destination",
+          "name": "[Canonical] Search Destination",
           "event": [
             {
               "listen": "test",
@@ -185,7 +185,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "destination", "province"]
             },
-            "description": "Daftar provinsi Kemendagri lokal dengan bentuk respons RajaOngkir V2."
+            "description": "Daftar provinsi dari snapshot RajaOngkir lokal dengan bentuk respons RajaOngkir V2. ID bukan kode Kemendagri."
           },
           "response": []
         },
@@ -359,7 +359,7 @@
                 }
               ]
             },
-            "description": "Direct search kompatibel SDK dan menyimpan ID numerik origin."
+            "description": "Direct search kompatibel SDK dan menyimpan ID numerik origin. Search menerima alamat mentah; awalan administratif dan tanda baca dinormalisasi otomatis."
           },
           "response": []
         },
@@ -420,10 +420,10 @@
       ]
     },
     {
-      "name": "2. Shipping Cost",
+      "name": "2. Shipping Cost · Canonical & RajaOngkir V2",
       "item": [
         {
-          "name": "List Couriers",
+          "name": "[Canonical] List Couriers",
           "request": {
             "method": "GET",
             "header": [],
@@ -437,7 +437,7 @@
           "response": []
         },
         {
-          "name": "Calculate Domestic Cost",
+          "name": "[Canonical] Calculate Domestic Cost",
           "event": [
             {
               "listen": "test",
@@ -589,12 +589,12 @@
               "urlencoded": [
                 {
                   "key": "origin",
-                  "value": "327306",
+                  "value": "1354",
                   "type": "text"
                 },
                 {
                   "key": "destination",
-                  "value": "321212",
+                  "value": "2612",
                   "type": "text"
                 },
                 {
@@ -676,7 +676,7 @@
           "response": []
         },
         {
-          "name": "Track Waybill (Legacy Async)",
+          "name": "[Canonical] Track Waybill Async",
           "request": {
             "method": "POST",
             "header": [
@@ -706,7 +706,91 @@
       ]
     },
     {
-      "name": "Admin · Operations & Security",
+      "name": "4. Emisell Legacy · Region & Shipping",
+      "description": "Façade kompatibilitas region-service lama. Semua ID numerik harus berasal dari dump dan endpoint legacy yang sama.",
+      "item": [
+        {
+          "name": "List Provinces",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/regions/provinces",
+              "host": ["{{base_url}}"],
+              "path": ["regions", "provinces"]
+            },
+            "description": "Daftar provinsi kompatibel region-service Emisell lama."
+          },
+          "response": []
+        },
+        {
+          "name": "List Cities by Province",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/regions/cities?provinceId=5",
+              "host": ["{{base_url}}"],
+              "path": ["regions", "cities"],
+              "query": [{ "key": "provinceId", "value": "5" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Districts by City",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/regions/districts?cityId=55",
+              "host": ["{{base_url}}"],
+              "path": ["regions", "districts"],
+              "query": [{ "key": "cityId", "value": "55" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Subdistricts by District",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/regions/subdistricts?districtId=442",
+              "host": ["{{base_url}}"],
+              "path": ["regions", "subdistricts"],
+              "query": [{ "key": "districtId", "value": "442" }]
+            },
+            "description": "Daftar kelurahan/desa beserta kode pos."
+          },
+          "response": []
+        },
+        {
+          "name": "Calculate Domestic Cost",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/shipping/domestic-cost?origin=1354&destination=2612&weight={{weight_grams}}&courier={{courier}}&price=lowest",
+              "host": ["{{base_url}}"],
+              "path": ["shipping", "domestic-cost"],
+              "query": [
+                { "key": "origin", "value": "1354" },
+                { "key": "destination", "value": "2612" },
+                { "key": "weight", "value": "{{weight_grams}}" },
+                { "key": "courier", "value": "{{courier}}" },
+                { "key": "price", "value": "lowest" }
+              ]
+            },
+            "description": "Origin dan destination memakai ID kecamatan dari kontrak legacy."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Admin · Operations & Security",
       "auth": {
         "type": "bearer",
         "bearer": [

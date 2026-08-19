@@ -89,8 +89,9 @@ func New(
 	})
 	e.GET("/health/ready", readinessHandler(pool))
 
+	canonicalGroup := e.Group("/v1")
 	registerCustomerRoutes(
-		e.Group("/v1"),
+		canonicalGroup,
 		rateService,
 		locationRepository,
 		courierRepository,
@@ -99,8 +100,10 @@ func New(
 		customerAPIKeyService,
 		apiKeys,
 	)
+	rajaOngkirGroup := e.Group("/api/v1")
+	rajaOngkirGroup.Use(rajaOngkirV2CompatibilityMiddleware())
 	registerCustomerRoutes(
-		e.Group("/api/v1"),
+		rajaOngkirGroup,
 		rateService,
 		locationRepository,
 		courierRepository,
@@ -109,6 +112,15 @@ func New(
 		customerAPIKeyService,
 		apiKeys,
 	)
+	if legacyRepository, ok := locationRepository.(legacyRegionStore); ok {
+		registerLegacyRegionRoutes(
+			e,
+			rateService,
+			legacyRepository,
+			customerAPIKeyService,
+			apiKeys,
+		)
+	}
 
 	adminGroup := e.Group("/v1/admin")
 	adminGroup.Use(apiKeyMiddleware(adminAPIKeys))
@@ -282,9 +294,7 @@ func customerAPIKeyMiddleware(
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			token := strings.TrimSpace(c.Request().Header.Get("key"))
-			if token != "" {
-				c.Set(rajaOngkirV2CompatibilityContextKey, true)
-			} else {
+			if token == "" {
 				token = bearerToken(c.Request().Header.Get("Authorization"))
 			}
 			if token == "" {
@@ -398,4 +408,13 @@ func writeError(
 func rajaOngkirV2Compatibility(c *echo.Context) bool {
 	enabled, _ := c.Get(rajaOngkirV2CompatibilityContextKey).(bool)
 	return enabled
+}
+
+func rajaOngkirV2CompatibilityMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.Set(rajaOngkirV2CompatibilityContextKey, true)
+			return next(c)
+		}
+	}
 }

@@ -2,7 +2,7 @@
 
 Status: **contract-first**
 Versi: **1.0**
-Terakhir ditinjau: **29 Juli 2026**
+Terakhir ditinjau: **19 Agustus 2026**
 
 ## 1. Tujuan
 
@@ -12,9 +12,12 @@ tenant, dan tanggung jawab operasional tidak tercampur.
 
 ## 2. Permukaan API
 
-| Permukaan | Pemanggil | Penerima | Kontrak |
+| Permukaan | Pemanggil | Penerima | Base path/kontrak |
 |---|---|---|---|
-| Public API | Emisell atau aplikasi seller | API Kurir | `openapi/public.yaml` |
+| RajaOngkir V2 compatible | Emisell atau SDK RajaOngkir | API Kurir | `/api/v1`, `openapi/public.yaml` |
+| Emisell Legacy | Modul region-service lama | API Kurir | `/regions`, `/shipping`, `openapi/public.yaml` |
+| Canonical/Internal | Dashboard atau service internal | API Kurir | `/v1`, `openapi/public.yaml` |
+| Admin | Operator API Kurir | API Kurir | `/v1/admin`, `openapi/public.yaml` |
 | Provider Account API | Seller/admin Emisell | API Kurir | `openapi/provider-account-v1.yaml` |
 | Partner Connector API | API Kurir | Sistem partner | `openapi/partner-v1.yaml` |
 | Partner Event Webhook | Sistem partner | API Kurir | bagian `webhooks` pada `openapi/partner-v1.yaml` |
@@ -24,6 +27,12 @@ tenant, dan tanggung jawab operasional tidak tercampur.
 Public API mempertahankan kompatibilitas RajaOngkir V2 untuk destination,
 cek ongkir, dan tracking. Emisell tidak menerima credential provider dan
 tidak memanggil provider secara langsung.
+
+Kontrak customer dipilih melalui path dan tidak berubah karena jenis header:
+`/api/v1` memakai ID/respons RajaOngkir V2, `/v1` memakai public ID canonical
+internal, sedangkan `/regions` dan `/shipping` mempertahankan kontrak
+region-service lama. Semua menerima customer API key melalui header `key` atau
+Bearer.
 
 ### 2.2 Provider Account API
 

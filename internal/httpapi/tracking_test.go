@@ -206,6 +206,7 @@ func TestRajaOngkirV2TrackingReturnsSynchronousContract(t *testing.T) {
 		IsFinal:      true,
 	}}
 	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
 	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
 	e.POST(
 		"/api/v1/track/waybill",
@@ -216,7 +217,7 @@ func TestRajaOngkirV2TrackingReturnsSynchronousContract(t *testing.T) {
 		"/api/v1/track/waybill?awb=TEST123456789&courier=jne",
 		nil,
 	)
-	request.Header.Set("key", "sdk-key")
+	request.Header.Set("Authorization", "Bearer sdk-key")
 	response := httptest.NewRecorder()
 
 	e.ServeHTTP(response, request)
@@ -271,6 +272,7 @@ func TestRajaOngkirV2TrackingNotFoundUses404Envelope(t *testing.T) {
 
 	adapter := &trackingHTTPAdapterStub{err: tracking.ErrWaybillNotFound}
 	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
 	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
 	e.POST(
 		"/api/v1/track/waybill",

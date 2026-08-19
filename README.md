@@ -54,6 +54,8 @@ Fondasi versi `0.9.0` sudah mencakup:
 - penyimpanan alias kode mentah provider tanpa input mapping manual, termasuk
   varian JNE seperti `REG23`, `CTCYES`, `CTCSPS`, dan `JTR>130`;
 - import master wilayah lokal Kemendagri sampai kelurahan/desa dan kode pos;
+- compatibility facade region-service Emisell yang mempertahankan ID numerik
+  dump RajaOngkir tanpa mencampurnya dengan kode Kemendagri;
 - kode pos many-to-many dengan provenance dataset, versi/checksum sumber, dan
   validasi lima digit;
 - dashboard operasional Vite untuk snapshot tarif, mapping otomatis, kuota,
@@ -156,8 +158,62 @@ bootstrap. Import bersifat idempotent dan dapat dijalankan ulang setelah
 deployment.
 
 Import tidak memakai hit RajaOngkir. Pencarian customer selalu membaca
-PostgreSQL lokal. ID lokasi RajaOngkir dibuat otomatis secara lazy ketika
-sebuah lokasi pertama kali digunakan untuk cek ongkir.
+PostgreSQL lokal. ID RajaOngkir untuk Emisell lama diisi dari dump
+region-service; mapping provider lain dapat ditambahkan pada lokasi internal
+yang sama tanpa mengubah ID yang tersimpan di Emisell.
+
+### Mengimpor ID lama region-service Emisell
+
+Emisell lama memakai ID numerik dari snapshot RajaOngkir yang tersimpan pada
+`region-service-main/data/regions.db`. ID tersebut mempunyai namespace berbeda
+dari kode Kemendagri; sebagai contoh ID provinsi lama `32` berarti Maluku
+Utara, sedangkan kode Kemendagri `32` berarti Jawa Barat.
+
+Import snapshot satu kali setelah migrasi dan import master wilayah selesai:
+
+```bash
+make legacy-region-import \
+  REGION_DB=/absolute/path/region-service-main/data/regions.db
+```
+
+Pada server yang menjalankan Docker:
+
+```bash
+make legacy-region-import-docker \
+  REGION_DB=/absolute/path/region-service-main/data/regions.db
+```
+
+Import bersifat idempotent. ID provider disimpan sebagai string pada
+`provider_location_mappings` dengan kombinasi unik provider, level, dan ID.
+Karena itu ID provinsi `32`, kota `32`, dan kecamatan `32` dapat hidup
+bersamaan tanpa bentrok. Provider lain seperti Mengantar menyimpan ID-nya pada
+namespace provider masing-masing dan tetap diarahkan ke lokasi internal yang
+sama.
+
+Endpoint kompatibilitas berikut tersedia untuk Emisell lama:
+
+```text
+GET /regions/provinces
+GET /regions/provinces/{id}
+GET /regions/cities?provinceId={id}
+GET /regions/cities/{id}
+GET /regions/districts?cityId={id}
+GET /regions/districts/{id}
+GET /regions/subdistricts?districtId={id}
+GET /shipping/domestic-cost
+```
+
+Semua endpoint tersebut memakai API key customer melalui header `key` atau
+`Authorization: Bearer`. Pada route `/regions` dan `/shipping`, angka polos
+selalu ditafsirkan sebagai ID RajaOngkir lama. Endpoint canonical
+`/v1/destination/*` tetap memakai `loc_idn_*` dan tidak berubah.
+
+Kontrak tidak bergantung pada bentuk header autentikasi. Path `/api/v1`
+selalu memakai ID dan respons RajaOngkir V2, sedangkan `/v1` selalu memakai
+public ID canonical internal. Pencarian pada kedua path menerima alamat mentah:
+awalan seperti `Jl.`, `Kec.`, dan `Kel.`, tanda baca, nomor bangunan, serta
+kode pos dinormalisasi dan hasil diranking berdasarkan token wilayah yang
+cocok.
 
 Redis tidak dijalankan oleh `make db-up`. Saat diperlukan:
 
@@ -217,24 +273,20 @@ menggunakan nomor resi dan kode ekspedisi.
 
 ## Dokumen
 
-1. [Arsitektur sistem](docs/architecture.md)
-2. [Model tarif dan aturan berat](docs/rate-and-weight-engine.md)
-3. [Kontrak API](docs/api-contract.md)
+Mulai dari [Pusat Dokumentasi API Kurir](docs/README.md). Dokumen tersebut
+memisahkan kontrak RajaOngkir V2, Emisell Legacy, Canonical/Internal, Admin,
+dan Partner API berdasarkan pemanggil serta base path.
+
+Dokumentasi utama:
+
+1. [Kontrak API publik](docs/api-contract.md)
+2. [Peta kontrak dan arah komunikasi](docs/api-surface-map.md)
+3. [Integrasi RajaOngkir V2](docs/rajaongkir-integration.md)
 4. [Katalog ekspedisi dan regulasi layanan](docs/provider-service-catalog.md)
-5. [Matriks toleransi dan pembulatan berat](docs/weight-rounding-matrix.md)
-6. [Operasional, kuota, dan compliance](docs/operations-and-compliance.md)
-7. [Register sumber](docs/source-register.md)
-8. [Stack teknologi dan concurrency](docs/technology-stack.md)
-9. [Integrasi RajaOngkir V2](docs/rajaongkir-integration.md)
-10. [Dashboard admin dan tracking](docs/admin-dashboard-and-tracking.md)
-11. [Operasional adapter tracking RajaOngkir](docs/rajaongkir-tracking.md)
-12. [Partner Integration Contract v1](docs/partner-api-v1.md)
-13. [Peta kontrak dan arah komunikasi](docs/api-surface-map.md)
-14. [Provider Account API v1](docs/provider-account-api-v1.md)
-15. [Partner Event Webhook v1](docs/partner-webhooks-v1.md)
-16. [Keamanan dan request signing](docs/security-and-signing.md)
-17. [Sertifikasi partner](docs/partner-certification.md)
-18. [Partner Portal dan publikasi extension](docs/partner-portal.md)
+5. [Partner Integration Contract v1](docs/partner-api-v1.md)
+6. [Keamanan dan request signing](docs/security-and-signing.md)
+7. [Sertifikasi partner](docs/partner-certification.md)
+8. [Partner Portal dan publikasi extension](docs/partner-portal.md)
 
 OpenAPI partner contract-first tersedia di
 [`openapi/partner-v1.yaml`](openapi/partner-v1.yaml). Kontrak partner belum

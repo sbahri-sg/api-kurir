@@ -1,5 +1,22 @@
 export type ApiDocumentationScope = "customer" | "admin";
 export type ApiDocumentationMethod = "GET" | "POST";
+export type ApiDocumentationContract =
+  | "rajaongkir-v2"
+  | "emisell-legacy"
+  | "canonical"
+  | "admin";
+
+export type ApiDocumentationContractDefinition = {
+  id: ApiDocumentationContract;
+  label: string;
+  classification: "Public" | "Legacy" | "Internal" | "Admin";
+  status: "Stable" | "Compatibility" | "Restricted";
+  audience: string;
+  basePath: string;
+  idFormat: string;
+  authentication: string;
+  description: string;
+};
 
 export type ApiDocumentationEndpoint = {
   scope: ApiDocumentationScope;
@@ -12,6 +29,71 @@ export type ApiDocumentationEndpoint = {
   request?: string;
   response: string;
 };
+
+export const API_DOCUMENTATION_CONTRACTS: ApiDocumentationContractDefinition[] = [
+  {
+    id: "rajaongkir-v2",
+    label: "RajaOngkir V2",
+    classification: "Public",
+    status: "Stable",
+    audience: "Emisell dan SDK yang sudah memakai RajaOngkir V2",
+    basePath: "/api/v1",
+    idFormat: "Integer dari snapshot RajaOngkir lokal",
+    authentication: "Header key atau Bearer customer API key",
+    description:
+      "Kontrak utama untuk pencarian wilayah, cek ongkir, dan tracking dengan bentuk request serta respons kompatibel RajaOngkir V2.",
+  },
+  {
+    id: "emisell-legacy",
+    label: "Emisell Legacy",
+    classification: "Legacy",
+    status: "Compatibility",
+    audience: "Modul Emisell yang masih memakai region-service lama",
+    basePath: "/regions dan /shipping",
+    idFormat: "Integer dari dump region-service RajaOngkir",
+    authentication: "Header key atau Bearer customer API key",
+    description:
+      "Façade kompatibilitas untuk mengganti region-service lama tanpa mengubah form alamat dan alur ongkir Emisell secara besar.",
+  },
+  {
+    id: "canonical",
+    label: "Canonical/Internal",
+    classification: "Internal",
+    status: "Stable",
+    audience: "Dashboard dan service internal API Kurir",
+    basePath: "/v1",
+    idFormat: "Public ID canonical loc_idn_*",
+    authentication: "Header key atau Bearer customer API key",
+    description:
+      "Kontrak internal yang tidak terikat ID provider dan menjadi fondasi mapping multi-provider API Kurir.",
+  },
+  {
+    id: "admin",
+    label: "Admin & Security",
+    classification: "Admin",
+    status: "Restricted",
+    audience: "Operator API Kurir yang terautentikasi",
+    basePath: "/v1/admin",
+    idFormat: "Canonical ID dan UUID internal",
+    authentication: "Bearer admin API key",
+    description:
+      "Endpoint operasional untuk credential, kuota, API key, katalog, snapshot, dan observasi data internal.",
+  },
+];
+
+export function getApiDocumentationContract(
+  endpoint: ApiDocumentationEndpoint,
+): ApiDocumentationContract {
+  if (endpoint.scope === "admin") return "admin";
+  if (endpoint.path.startsWith("/api/v1")) return "rajaongkir-v2";
+  if (
+    endpoint.path.startsWith("/regions") ||
+    endpoint.path.startsWith("/shipping")
+  ) {
+    return "emisell-legacy";
+  }
+  return "canonical";
+}
 
 export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
   {
@@ -44,10 +126,10 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
     path: "/v1/destination/domestic-destination",
     title: "Cari lokasi domestik",
     description:
-      "Mencari master wilayah lokal sampai kelurahan/desa dan kode pos. Gunakan ID hasil endpoint ini untuk origin dan destination.",
-    authentication: "Bearer customer API key",
+      "Mencari master wilayah lokal sampai kelurahan/desa dan kode pos. Alamat mentah dinormalisasi otomatis. Gunakan ID hasil endpoint ini untuk origin dan destination.",
+    authentication: "Header key atau Bearer customer API key",
     parameters: [
-      "search — wajib, minimal 2 karakter; mendukung nama wilayah atau kode pos",
+      "search — wajib, minimal 2 karakter; mendukung alamat mentah, nama wilayah, atau kode pos",
       "limit — opsional, 1–50; default 20",
     ],
     request: `GET {{base_url}}/v1/destination/domestic-destination?search=Dago Bandung&limit=20`,
@@ -85,11 +167,100 @@ export const API_DOCUMENTATION: ApiDocumentationEndpoint[] = [
   {
     scope: "customer",
     method: "GET",
+    path: "/v1/destination/province",
+    title: "Daftar provinsi canonical",
+    description:
+      "Membaca provinsi lokal dengan public ID canonical untuk service internal.",
+    authentication: "Header key atau Bearer customer API key",
+    request: `GET {{base_url}}/v1/destination/province`,
+    response: `{
+  "meta": {
+    "message": "Success Get Province",
+    "code": 200,
+    "status": "success",
+    "request_id": "req_example"
+  },
+  "data": [
+    { "id": "loc_idn_32", "name": "Jawa Barat" }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/v1/destination/city/{province_id}",
+    title: "Kota per provinsi canonical",
+    description: "Membaca kota/kabupaten dengan ID canonical parent.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["province_id — wajib, ID canonical dari daftar provinsi"],
+    request: `GET {{base_url}}/v1/destination/city/loc_idn_32`,
+    response: `{
+  "meta": {
+    "message": "Success Get City By Province ID",
+    "code": 200,
+    "status": "success",
+    "request_id": "req_example"
+  },
+  "data": [
+    { "id": "loc_idn_32_73", "name": "Kota Bandung", "zip_code": "" }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/v1/destination/district/{city_id}",
+    title: "Kecamatan per kota canonical",
+    description: "Membaca kecamatan dengan ID canonical parent.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["city_id — wajib, ID canonical dari daftar kota"],
+    request: `GET {{base_url}}/v1/destination/district/loc_idn_32_73`,
+    response: `{
+  "meta": {
+    "message": "Success Get District By City ID",
+    "code": 200,
+    "status": "success",
+    "request_id": "req_example"
+  },
+  "data": [
+    { "id": "loc_idn_32_73_02", "name": "Coblong", "zip_code": "" }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/v1/destination/sub-district/{district_id}",
+    title: "Kelurahan per kecamatan canonical",
+    description:
+      "Membaca kelurahan/desa dan kode pos dengan ID canonical parent.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["district_id — wajib, ID canonical dari daftar kecamatan"],
+    request: `GET {{base_url}}/v1/destination/sub-district/loc_idn_32_73_02`,
+    response: `{
+  "meta": {
+    "message": "Success Get Sub District By District ID",
+    "code": 200,
+    "status": "success",
+    "request_id": "req_example"
+  },
+  "data": [
+    {
+      "id": "loc_idn_32_73_02_1004",
+      "name": "Dago",
+      "zip_code": "40135"
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
     path: "/api/v1/destination/domestic-destination",
     title: "Cari lokasi SDK RajaOngkir V2",
     description:
-      "Direct search wilayah lokal dengan path, header, query, ID numerik, dan respons RajaOngkir V2.",
-    authentication: "Header key: customer API key",
+      "Direct search wilayah lokal dengan ID numerik dan respons RajaOngkir V2. Alamat mentah, awalan administratif, dan tanda baca dinormalisasi otomatis.",
+    authentication: "Header key atau Bearer customer API key",
     parameters: [
       "search — wajib, minimal 2 karakter",
       "limit — opsional, 1–1.000; default 20",
@@ -105,12 +276,12 @@ key: {{api_key}}`,
   },
   "data": [
     {
-      "id": 3273061001,
-      "label": "Husein Sastranegara, Cicendo, Kota Bandung, Jawa Barat, 40174",
+      "id": 4911,
+      "label": "HUSEN SASTRANEGARA, CICENDO, BANDUNG, JAWA BARAT, 40174",
       "province_name": "Jawa Barat",
-      "city_name": "Kota Bandung",
-      "district_name": "Cicendo",
-      "subdistrict_name": "Husein Sastranegara",
+      "city_name": "BANDUNG",
+      "district_name": "CICENDO",
+      "subdistrict_name": "HUSEN SASTRANEGARA",
       "zip_code": "40174"
     }
   ]
@@ -122,8 +293,8 @@ key: {{api_key}}`,
     path: "/api/v1/destination/province",
     title: "Daftar provinsi",
     description:
-      "Membaca daftar provinsi dari master Kemendagri lokal dengan bentuk respons hierarki RajaOngkir V2.",
-    authentication: "Header key: customer API key (mode SDK RajaOngkir V2)",
+      "Membaca daftar provinsi dari dump region-service RajaOngkir tanpa hit provider.",
+    authentication: "Header key atau Bearer customer API key",
     request: `GET {{base_url}}/api/v1/destination/province`,
     response: `{
   "meta": {
@@ -134,7 +305,7 @@ key: {{api_key}}`,
   "data": [
     {
       "id": 32,
-      "name": "Jawa Barat"
+      "name": "MALUKU UTARA"
     }
   ]
 }`,
@@ -146,11 +317,11 @@ key: {{api_key}}`,
     title: "Kota per provinsi",
     description:
       "Membaca kota/kabupaten berdasarkan ID provinsi lokal. ID hasil berbeda dari ID provinsi.",
-    authentication: "Header key: customer API key (mode SDK RajaOngkir V2)",
+    authentication: "Header key atau Bearer customer API key",
     parameters: [
       "province_id — wajib, ID dari endpoint daftar provinsi",
     ],
-    request: `GET {{base_url}}/api/v1/destination/city/32`,
+    request: `GET {{base_url}}/api/v1/destination/city/5`,
     response: `{
   "meta": {
     "message": "Success Get City By Province ID",
@@ -159,8 +330,8 @@ key: {{api_key}}`,
   },
   "data": [
     {
-      "id": 3273,
-      "name": "Kota Bandung",
+      "id": 55,
+      "name": "BANDUNG",
       "zip_code": ""
     }
   ]
@@ -173,9 +344,9 @@ key: {{api_key}}`,
     title: "Kecamatan per kota",
     description:
       "Membaca kecamatan berdasarkan ID kota/kabupaten lokal.",
-    authentication: "Header key: customer API key (mode SDK RajaOngkir V2)",
+    authentication: "Header key atau Bearer customer API key",
     parameters: ["city_id — wajib, ID dari endpoint daftar kota"],
-    request: `GET {{base_url}}/api/v1/destination/district/3273`,
+    request: `GET {{base_url}}/api/v1/destination/district/55`,
     response: `{
   "meta": {
     "message": "Success Get District By City ID",
@@ -184,8 +355,8 @@ key: {{api_key}}`,
   },
   "data": [
     {
-      "id": 327306,
-      "name": "Cicendo",
+      "id": 442,
+      "name": "CICENDO",
       "zip_code": ""
     }
   ]
@@ -198,9 +369,9 @@ key: {{api_key}}`,
     title: "Kelurahan per kecamatan",
     description:
       "Membaca kelurahan/desa berdasarkan ID kecamatan lokal sampai kode pos.",
-    authentication: "Header key: customer API key (mode SDK RajaOngkir V2)",
+    authentication: "Header key atau Bearer customer API key",
     parameters: ["district_id — wajib, ID dari endpoint daftar kecamatan"],
-    request: `GET {{base_url}}/api/v1/destination/sub-district/327306`,
+    request: `GET {{base_url}}/api/v1/destination/sub-district/442`,
     response: `{
   "meta": {
     "message": "Success Get Sub District By District ID",
@@ -209,9 +380,160 @@ key: {{api_key}}`,
   },
   "data": [
     {
-      "id": 3273061001,
-      "name": "Husein Sastranegara",
+      "id": 4911,
+      "name": "HUSEN SASTRANEGARA",
       "zip_code": "40174"
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/regions/provinces",
+    title: "Region-service · daftar provinsi",
+    description:
+      "Façade Emisell lama dengan ID numerik yang sama seperti dump region-service RajaOngkir.",
+    authentication: "Header key atau Bearer customer API key",
+    request: `GET {{base_url}}/regions/provinces
+key: {{api_key}}`,
+    response: `{
+  "data": [
+    { "id": 5, "name": "JAWA BARAT" }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/regions/provinces/{id}",
+    title: "Region-service · detail provinsi",
+    description: "Membaca satu provinsi berdasarkan ID RajaOngkir lama.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["id — ID dari daftar provinsi"],
+    request: `GET {{base_url}}/regions/provinces/5
+key: {{api_key}}`,
+    response: `{
+  "data": { "id": 5, "name": "JAWA BARAT" }
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/regions/cities",
+    title: "Region-service · kota per provinsi",
+    description: "Kontrak cascading kota yang dipakai form alamat Emisell.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["provinceId — wajib, ID provinsi lama"],
+    request: `GET {{base_url}}/regions/cities?provinceId=5
+key: {{api_key}}`,
+    response: `{
+  "data": [
+    { "id": 55, "name": "BANDUNG" }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/regions/cities/{id}",
+    title: "Region-service · detail kota",
+    description: "Membaca satu kota/kabupaten berdasarkan ID lama.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["id — ID kota/kabupaten lama"],
+    request: `GET {{base_url}}/regions/cities/55
+key: {{api_key}}`,
+    response: `{
+  "data": { "id": 55, "name": "BANDUNG" }
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/regions/districts",
+    title: "Region-service · kecamatan per kota",
+    description: "Kontrak cascading kecamatan yang dipakai form alamat Emisell.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["cityId — wajib, ID kota lama"],
+    request: `GET {{base_url}}/regions/districts?cityId=55
+key: {{api_key}}`,
+    response: `{
+  "data": [
+    { "id": 442, "name": "CICENDO", "zipCode": "" }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/regions/districts/{id}",
+    title: "Region-service · detail kecamatan",
+    description: "Mengembalikan kecamatan beserta ID dan nama parent-nya.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["id — ID kecamatan lama"],
+    request: `GET {{base_url}}/regions/districts/442
+key: {{api_key}}`,
+    response: `{
+  "data": {
+    "id": 442,
+    "name": "CICENDO",
+    "cityId": 55,
+    "cityName": "BANDUNG",
+    "provinceId": 5,
+    "provinceName": "JAWA BARAT"
+  }
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/regions/subdistricts",
+    title: "Region-service · kelurahan per kecamatan",
+    description: "Mengembalikan kelurahan dan kode pos dengan ID parent lama.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: ["districtId — wajib, ID kecamatan lama"],
+    request: `GET {{base_url}}/regions/subdistricts?districtId=442
+key: {{api_key}}`,
+    response: `{
+  "data": [
+    {
+      "id": 4911,
+      "name": "HUSEN SASTRANEGARA",
+      "zipCode": "40174",
+      "districtId": 442,
+      "cityId": 55,
+      "provinceId": 5
+    }
+  ]
+}`,
+  },
+  {
+    scope: "customer",
+    method: "GET",
+    path: "/shipping/domestic-cost",
+    title: "Region-service · cek ongkir",
+    description:
+      "Cek ongkir GET kompatibel Emisell. ID kecamatan lama diterjemahkan ke lokasi internal sebelum provider dipanggil.",
+    authentication: "Header key atau Bearer customer API key",
+    parameters: [
+      "origin dan destination — ID kecamatan lama",
+      "weight — berat gram",
+      "courier — kode kurir dipisahkan titik dua",
+      "price — lowest atau highest, opsional",
+      "serviceName — REG, EXPRESS, SAMEDAY, ECONOMY, TRUCKING, CARGO, MOTOR, atau OTHER",
+    ],
+    request: `GET {{base_url}}/shipping/domestic-cost?origin=1354&destination=2612&weight=1000&courier=jne
+key: {{api_key}}`,
+    response: `{
+  "data": [
+    {
+      "name": "Jalur Nugraha Ekakurir (JNE)",
+      "code": "jne",
+      "service": "JTR",
+      "description": "JNE Trucking",
+      "cost": 55000,
+      "etd": "3",
+      "serviceName": "TRUCKING"
     }
   ]
 }`,
@@ -223,7 +545,7 @@ key: {{api_key}}`,
     title: "Daftar kurir",
     description:
       "Membaca katalog kurir, kemampuan domestik/internasional/tracking, layanan lokal aktif, dan mode kalkulasi.",
-    authentication: "Bearer customer API key",
+    authentication: "Header key atau Bearer customer API key",
     response: `{
   "data": [
     {
@@ -255,7 +577,7 @@ key: {{api_key}}`,
     title: "Cek ongkir domestik",
     description:
       "Mengambil tarif berdasarkan rute, berat, dan pilihan kurir. Snapshot yang masih berlaku dipakai ulang tanpa hit provider.",
-    authentication: "Bearer customer API key",
+    authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID lokasi lokal dari endpoint pencarian",
       "weight — berat yang ditangani Emisell dalam gram",
@@ -323,7 +645,7 @@ key: {{api_key}}`,
     title: "Cek ongkir SDK V2 · kelurahan",
     description:
       "Endpoint form-urlencoded RajaOngkir V2 untuk origin dan destination hasil direct search atau endpoint sub-district.",
-    authentication: "Header key: customer API key",
+    authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint sub-district atau domestic-destination",
       "weight — berat gram",
@@ -334,7 +656,7 @@ key: {{api_key}}`,
 Content-Type: application/x-www-form-urlencoded
 key: {{api_key}}
 
-origin=3273061001&destination=3212122001&weight=1000&courier=jne&price=lowest`,
+origin=4911&destination=25976&weight=1000&courier=jne&price=lowest`,
     response: `{
   "meta": {
     "message": "Success Calculate Domestic Shipping cost",
@@ -360,7 +682,7 @@ origin=3273061001&destination=3212122001&weight=1000&courier=jne&price=lowest`,
     title: "Cek ongkir SDK V2 · kecamatan",
     description:
       "Drop-in endpoint form-urlencoded untuk SDK RajaOngkir V2. Gunakan /api/v1/calculate/domestic-cost dengan bentuk request yang sama untuk ID subdistrict.",
-    authentication: "Header key: customer API key",
+    authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint district",
       "weight — berat gram",
@@ -371,7 +693,7 @@ origin=3273061001&destination=3212122001&weight=1000&courier=jne&price=lowest`,
 Content-Type: application/x-www-form-urlencoded
 key: {{api_key}}
 
-origin=327306&destination=321212&weight=1000&courier=jne&price=lowest`,
+origin=442&destination=2165&weight=1000&courier=jne&price=lowest`,
     response: `{
   "meta": {
     "message": "Success Calculate Domestic Shipping cost",
@@ -397,7 +719,7 @@ origin=327306&destination=321212&weight=1000&courier=jne&price=lowest`,
     title: "Cek resi SDK RajaOngkir V2",
     description:
       "Drop-in tracking sinkron dengan envelope dan field RajaOngkir V2. Hasil disimpan sebagai snapshot agar pengecekan berulang tidak selalu memakai hit provider.",
-    authentication: "Header key: customer API key",
+    authentication: "Header key atau Bearer customer API key",
     parameters: [
       "awb — nomor resi 6–40 karakter",
       "courier — jne, sap, ninja, jnt, tiki, wahana, pos, atau lion",
@@ -460,7 +782,7 @@ key: {{api_key}}`,
     title: "Cek resi asynchronous (legacy)",
     description:
       "Membaca snapshot tracking yang tersimpan atau mengantrikan refresh. Cukup kirim nomor resi dan ekspedisi.",
-    authentication: "Bearer customer API key",
+    authentication: "Header key atau Bearer customer API key",
     parameters: [
       "waybill — nomor resi 6–40 karakter",
       "courier — jne, sap, ninja, jnt, tiki, wahana, pos, atau lion",
@@ -837,7 +1159,7 @@ key: {{api_key}}`,
   "data": [
     {
       "id": "74e79c7b-1f57-45ad-bcb4-43d8d92f22c5",
-      "display_key": "ek_live_Rm8jdK2p••••x7Qn",
+      "display_key": "ek_live_example••••masked",
       "scopes": ["shipping:read", "tracking:read"],
       "active": true,
       "last_used_at": null,
@@ -865,11 +1187,11 @@ key: {{api_key}}`,
   "data": {
     "api_key": {
       "id": "74e79c7b-1f57-45ad-bcb4-43d8d92f22c5",
-      "display_key": "ek_live_Rm8jdK2p••••x7Qn",
+      "display_key": "ek_live_example••••masked",
       "active": true,
       "scopes": ["shipping:read", "tracking:read"]
     },
-    "secret": "ek_live_SECRET_HANYA_TAMPIL_SEKALI"
+    "secret": "ek_live_<secret-hanya-tampil-sekali>"
   },
   "meta": {
     "request_id": "req_example"

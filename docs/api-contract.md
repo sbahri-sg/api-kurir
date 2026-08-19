@@ -13,17 +13,25 @@ origin, destination, weight, courier, serta daftar hasil per layanan. Ini
 adalah kompatibilitas bentuk, bukan pass-through mentah. API Kurir tetap
 menambahkan metadata sumber, freshness, dan rincian berat.
 
-Base URL:
+Base path dan klasifikasi:
 
-```text
-SDK RajaOngkir V2: https://api-kurir.example.com/api/v1
-API Kurir lama:    https://api-kurir.example.com/v1
-```
+| Kontrak | Base path | Pemanggil | ID | Status |
+|---|---|---|---|---|
+| RajaOngkir V2 compatible | `/api/v1` | Emisell/SDK RajaOngkir | Integer snapshot RajaOngkir | Public, stable |
+| Emisell Legacy | `/regions`, `/shipping` | Modul region-service lama | Integer dump region-service | Legacy compatibility |
+| Canonical/Internal | `/v1` | Dashboard dan service internal | `loc_idn_*` | Internal, stable |
+| Admin | `/v1/admin` | Operator API Kurir | Canonical ID/UUID | Restricted |
+
+Partner Connector tidak berada pada base path di atas. Vendor menyediakan
+`/partner/v1` pada host miliknya sendiri sesuai
+[Partner Integration Contract](partner-api-v1.md).
 
 Header:
 
 ```http
 Authorization: Bearer <api-key>
+# atau
+key: <api-key>
 Content-Type: application/json
 X-Request-Id: <uuid-opsional>
 Idempotency-Key: <uuid-untuk-request-mutasi>
@@ -34,22 +42,24 @@ Timestamp menggunakan ISO 8601 UTC.
 
 ### Mode kompatibilitas RajaOngkir V2
 
-API publik mendukung dua kontrak pada endpoint yang sama:
+Kontrak ditentukan oleh base path, bukan oleh bentuk header autentikasi:
 
-- `Authorization: Bearer <api-key>` mempertahankan respons internal API Kurir;
-- `key: <api-key>` mengaktifkan respons 1:1 RajaOngkir V2 untuk SDK Emisell.
+- `/api/v1` selalu memberikan kontrak 1:1 RajaOngkir V2;
+- `/v1` selalu memberikan kontrak canonical internal API Kurir;
+- `/regions` dan `/shipping` selalu memberikan kontrak region-service lama.
 
-Pada mode `key`, ID lokasi diterbitkan sebagai integer stabil dan request
-kalkulasi memakai `application/x-www-form-urlencoded`. ID integer tersebut
-adalah alias API Kurir yang dipetakan ke master Kemendagri lokal; client harus
-mengambil ID dari endpoint API Kurir dan tidak memakai ID hard-code provider.
-Path `/api/v1` sama dengan base path resmi RajaOngkir V2. Alias `/v1` tetap
-tersedia agar dashboard dan client API Kurir lama tidak putus.
-
-ID kompatibilitas dibentuk dari kode wilayah resmi tanpa tanda titik, misalnya
-provinsi `32`, kota `3273`, kecamatan `327306`, dan kelurahan
-`3273061001`. Karena ID kelurahan dapat mencapai 10 digit, SDK harus membaca
-field `id`, `origin`, dan `destination` sebagai integer 64-bit.
+Semua path customer menerima `Authorization: Bearer <api-key>` maupun
+`key: <api-key>` dengan hasil yang sama. Pada `/api/v1`, ID lokasi diterbitkan
+sebagai integer dari snapshot
+`region-service-main` RajaOngkir dan request kalkulasi memakai
+`application/x-www-form-urlencoded`. Client harus selalu mengambil ID dari
+endpoint API Kurir karena namespace ID berlaku per level. Sebagai contoh,
+provinsi `32` adalah Maluku Utara pada snapshot RajaOngkir dan bukan kode
+Kemendagri Jawa Barat. Path `/api/v1` sama dengan base path resmi RajaOngkir
+V2. Path `/v1` tetap tersedia untuk dashboard dan client internal dengan
+public ID canonical `loc_idn_*`. Kode Kemendagri hanya menjadi metadata
+internal untuk pencocokan lintas provider dan tidak menjadi ID yang harus
+dikirim SDK Emisell.
 
 ## 2. Destination
 
@@ -62,8 +72,8 @@ Query:
 
 | Field | Wajib | Keterangan |
 |---|---:|---|
-| `search` | Ya | Nama kota, kecamatan, kelurahan, atau kode pos |
-| `limit` | Tidak | Default 20; maksimum 50 pada mode Bearer atau 1.000 pada mode SDK |
+| `search` | Ya | Nama wilayah, kode pos, atau alamat mentah; awalan dan tanda baca dinormalisasi |
+| `limit` | Tidak | Default 20; maksimum 50 pada `/v1` atau 1.000 pada `/api/v1` |
 | `offset` | Tidak | Offset hasil, default 0 |
 
 Contoh:
@@ -78,29 +88,17 @@ key: <api-key>
   "meta": {
     "message": "Success Get Domestic Destinations",
     "code": 200,
-    "status": "success",
-    "request_id": "req_01J...",
-    "next_cursor": null
+    "status": "success"
   },
   "data": [
     {
-      "id": "loc_idn_32_76_01_1001",
+      "id": 25976,
       "label": "Beji, Beji, Kota Depok, Jawa Barat, 16421",
-      "province_id": "loc_idn_32",
-      "city_id": "loc_idn_32_76",
-      "district_id": "loc_idn_32_76_01",
-      "subdistrict_id": "loc_idn_32_76_01_1001",
       "province_name": "Jawa Barat",
       "city_name": "Kota Depok",
       "district_name": "Beji",
       "subdistrict_name": "Beji",
-      "zip_code": "16421",
-      "province": "Jawa Barat",
-      "city": "Kota Depok",
-      "district": "Beji",
-      "subdistrict": "Beji",
-      "postal_code": "16421",
-      "postal_codes": ["16421"]
+      "zip_code": "16421"
     }
   ]
 }
@@ -108,18 +106,16 @@ key: <api-key>
 
 `meta.message`, `meta.code`, `meta.status`, `province_name`, `city_name`,
 `district_name`, `subdistrict_name`, dan `zip_code` mengikuti bentuk respons
-RajaOngkir V2. Field tanpa akhiran `_name` dan `postal_code` tetap tersedia
-sebagai alias sementara agar dashboard/client lama tidak putus.
+RajaOngkir V2. Pada path `/api/v1`, `id` adalah ID snapshot RajaOngkir untuk
+lokasi akhir. Pada path `/v1`, field hierarki memakai public ID canonical dan
+`postal_codes` berisi seluruh kode pos valid. Nilai kosong, `0`, dan `00000`
+tidak diterbitkan.
 
-`id` adalah ID lokasi akhir yang stabil milik API Kurir. `province_id`,
-`city_id`, `district_id`, dan `subdistrict_id` adalah ID lokal unik pada setiap
-level; keempat nilai tersebut tidak boleh disalin dari satu ID yang sama. ID
-RajaOngkir atau carrier tidak diekspos sebagai primary ID.
-
-`postal_code` mempertahankan kompatibilitas dengan client lama.
-`postal_codes` berisi seluruh kode pos valid dari dataset wilayah/kode pos
-lokal yang versinya dicatat saat import. Nilai kosong, `0`, dan `00000` tidak
-diterbitkan.
+Search menormalisasi alamat mentah: tanda baca dipisahkan, kata administratif
+seperti `jl`, `jalan`, `kec`, `kecamatan`, `kel`, `kelurahan`, `kab`, dan
+`provinsi` diabaikan, token duplikat dibuang, dan kode pos lima digit mendapat
+sinyal pencocokan tersendiri. Hasil diranking dari jumlah token wilayah yang
+cocok, lalu level kelurahan/kecamatan/kota/provinsi.
 
 Pencarian customer hanya menerbitkan lokasi level kelurahan/desa
 (`subdistrict`). Provinsi, kota, dan kecamatan disimpan sebagai parent
@@ -144,25 +140,24 @@ Contoh:
   "meta": {
     "message": "Success Get City By Province ID",
     "code": 200,
-    "status": "success",
-    "request_id": "req_01J..."
+    "status": "success"
   },
   "data": [
     {
-      "id": "loc_idn_32_73",
-      "name": "Kota Bandung",
+      "id": 55,
+      "name": "BANDUNG",
       "zip_code": ""
     }
   ]
 }
 ```
 
-Seluruh endpoint ini membaca master Kemendagri lokal dan tidak memakai hit
-RajaOngkir. ID parent harus diambil dari endpoint level sebelumnya; ID
-kelurahan/desa dapat dipakai sebagai `origin` atau `destination` pada metode
-direct search API Kurir.
+Seluruh endpoint ini membaca dump lokal dan tidak memakai hit RajaOngkir. ID
+parent harus diambil dari endpoint level sebelumnya; ID kelurahan/desa dapat
+dipakai sebagai `origin` atau `destination` pada endpoint direct search.
 
-Dengan header `key`, bentuk respons endpoint hierarki mengikuti RajaOngkir V2:
+Pada path `/api/v1`, bentuk respons endpoint hierarki mengikuti RajaOngkir V2
+untuk header `key` maupun Bearer:
 
 ```json
 {
@@ -173,13 +168,34 @@ Dengan header `key`, bentuk respons endpoint hierarki mengikuti RajaOngkir V2:
   },
   "data": [
     {
-      "id": 327306,
-      "name": "Cicendo",
+      "id": 442,
+      "name": "CICENDO",
       "zip_code": ""
     }
   ]
 }
 ```
+
+### Façade region-service Emisell
+
+Untuk mengganti service Node lama tanpa mengubah form alamat Emisell, API
+Kurir juga menyediakan kontrak berikut:
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /regions/provinces` | Daftar provinsi ID lama |
+| `GET /regions/provinces/{id}` | Detail provinsi |
+| `GET /regions/cities?provinceId={id}` | Kota per provinsi |
+| `GET /regions/cities/{id}` | Detail kota |
+| `GET /regions/districts?cityId={id}` | Kecamatan per kota |
+| `GET /regions/districts/{id}` | Detail kecamatan dan parent |
+| `GET /regions/subdistricts?districtId={id}` | Kelurahan dan kode pos |
+| `GET /shipping/domestic-cost` | Cek ongkir GET untuk Emisell lama |
+
+Route ini memakai header `key` atau Bearer customer API key. Bentuk `data`
+dan nama field camelCase dipertahankan seperti `region-service-main`, termasuk
+`serviceName` pada respons ongkir untuk pengelompokan `REG`, `EXPRESS`,
+`TRUCKING`, `CARGO`, `MOTOR`, dan kategori lainnya.
 
 ## 3. Daftar kurir
 
@@ -240,7 +256,7 @@ POST /api/v1/calculate/domestic-cost
 key: <api-key>
 Content-Type: application/x-www-form-urlencoded
 
-origin=3273061001&destination=3212122001&weight=1000&courier=jne&price=lowest
+origin=4911&destination=25976&weight=1000&courier=jne&price=lowest
 ```
 
 Kalkulasi berdasarkan kecamatan tersedia pada:

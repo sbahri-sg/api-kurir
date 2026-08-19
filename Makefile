@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down redis-up migrate region-import region-import-docker run-api run-worker location-sync location-sync-full location-sync-daemon test test-race fmt vet dashboard-install dashboard-dev dashboard-build compose-up
+.PHONY: help db-up db-down redis-up migrate region-import region-import-docker legacy-region-import legacy-region-import-docker run-api run-worker location-sync location-sync-full location-sync-daemon test test-race fmt vet dashboard-install dashboard-dev dashboard-build compose-up
 
 COMPOSE = docker compose --env-file .env -f docker-compose.yml
 
@@ -8,6 +8,8 @@ help:
 	@echo "make migrate           Apply database migrations"
 	@echo "make region-import     Import pinned Kemendagri and postal datasets"
 	@echo "make region-import-docker  Import regions through Docker (server/bootstrap)"
+	@echo "make legacy-region-import REGION_DB=/path/regions.db  Import legacy RajaOngkir IDs"
+	@echo "make legacy-region-import-docker REGION_DB=/path/regions.db  Docker import legacy IDs"
 	@echo "make run-api           Run the API locally"
 	@echo "make run-worker        Run the worker foundation"
 	@echo "make location-sync SEARCH=Bandung  Import RajaOngkir locations on demand"
@@ -33,6 +35,15 @@ region-import:
 
 region-import-docker:
 	$(COMPOSE) --profile bootstrap run --rm --build region-import
+
+legacy-region-import:
+	@test -n "$(REGION_DB)" || (echo "REGION_DB is required" && exit 1)
+	go run ./apps/legacy-region-import -source "$(REGION_DB)"
+
+legacy-region-import-docker:
+	@test -n "$(REGION_DB)" || (echo "REGION_DB is required" && exit 1)
+	$(COMPOSE) --profile bootstrap run --rm --build \
+		-v "$(REGION_DB):/data/regions.db:ro" legacy-region-import
 
 run-api:
 	go run ./apps/api

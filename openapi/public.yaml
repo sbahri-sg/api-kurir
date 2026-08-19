@@ -7,8 +7,10 @@ info:
     identifier: LicenseRef-Proprietary
   description: >
     API ongkir internal Emisell. Endpoint customer pada /api/v1 kompatibel
-    dengan kontrak shipping-cost RajaOngkir V2; /v1 tetap menjadi alias untuk
-    client lama. Uang menggunakan integer rupiah dan berat menggunakan gram.
+    dengan kontrak shipping-cost RajaOngkir V2 dan memakai ID numerik dump
+    region-service RajaOngkir; /v1 memakai kontrak canonical untuk client
+    internal. Header key dan Bearer hanya cara autentikasi dan tidak mengubah
+    bentuk respons. Uang menggunakan integer rupiah dan berat menggunakan gram.
 servers:
   - url: /
     description: Host API Kurir aktif
@@ -18,14 +20,24 @@ security:
 tags:
   - name: Health
     description: Liveness dan readiness service
-  - name: Locations
-    description: Master lokasi internal
-  - name: Couriers
-    description: Kurir serta layanan aktif
-  - name: Rates
-    description: Kalkulasi ongkir domestik
-  - name: Tracking
-    description: Snapshot dan antrean tracking resi
+  - name: RajaOngkir V2 - Locations
+    description: Master lokasi dengan ID numerik dan envelope RajaOngkir V2
+  - name: RajaOngkir V2 - Couriers
+    description: Kurir serta layanan pada façade RajaOngkir V2
+  - name: RajaOngkir V2 - Rates
+    description: Kalkulasi ongkir form-urlencoded pada façade RajaOngkir V2
+  - name: RajaOngkir V2 - Tracking
+    description: Tracking AWB sinkron dengan envelope RajaOngkir V2
+  - name: Emisell Legacy
+    description: Façade kompatibilitas region-service dan shipping lama
+  - name: Canonical - Locations
+    description: Master lokasi internal dengan public ID loc_idn_*
+  - name: Canonical - Couriers
+    description: Katalog kurir dan service canonical untuk client internal
+  - name: Canonical - Rates
+    description: Kalkulasi ongkir JSON menggunakan ID canonical
+  - name: Canonical - Tracking
+    description: Snapshot dan antrean tracking untuk client internal
   - name: Admin
     description: Operasional dashboard dengan admin API key terpisah
 
@@ -78,7 +90,7 @@ paths:
 
   /api/v1/destination/domestic-destination:
     get:
-      tags: [Locations]
+      tags: [RajaOngkir V2 - Locations]
       operationId: searchDomesticDestination
       summary: Mencari master lokasi lokal dengan respons RajaOngkir V2
       security:
@@ -88,6 +100,9 @@ paths:
         - name: search
           in: query
           required: true
+          description: >
+            Nama wilayah, kode pos, atau alamat mentah. Awalan administratif,
+            tanda baca, nomor non-kode-pos, dan token duplikat dinormalisasi.
           schema:
             type: string
             minLength: 2
@@ -112,11 +127,13 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/LocationSearchResponse"
-                  - $ref: "#/components/schemas/RajaOngkirDestinationSearchResponse"
+                $ref: "#/components/schemas/RajaOngkirDestinationSearchResponse"
         "400":
-          $ref: "#/components/responses/InvalidRequest"
+          description: Parameter pencarian tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
@@ -128,7 +145,7 @@ paths:
 
   /api/v1/destination/province:
     get:
-      tags: [Locations]
+      tags: [RajaOngkir V2 - Locations]
       operationId: listProvinces
       summary: Mendapatkan daftar provinsi lokal
       responses:
@@ -143,7 +160,7 @@ paths:
 
   /api/v1/destination/city/{province_id}:
     get:
-      tags: [Locations]
+      tags: [RajaOngkir V2 - Locations]
       operationId: listCitiesByProvince
       summary: Mendapatkan kota/kabupaten berdasarkan ID provinsi
       parameters:
@@ -160,7 +177,7 @@ paths:
 
   /api/v1/destination/district/{city_id}:
     get:
-      tags: [Locations]
+      tags: [RajaOngkir V2 - Locations]
       operationId: listDistrictsByCity
       summary: Mendapatkan kecamatan berdasarkan ID kota/kabupaten
       parameters:
@@ -177,7 +194,7 @@ paths:
 
   /api/v1/destination/sub-district/{district_id}:
     get:
-      tags: [Locations]
+      tags: [RajaOngkir V2 - Locations]
       operationId: listSubdistrictsByDistrict
       summary: Mendapatkan kelurahan/desa berdasarkan ID kecamatan
       parameters:
@@ -194,7 +211,7 @@ paths:
 
   /api/v1/couriers:
     get:
-      tags: [Couriers]
+      tags: [RajaOngkir V2 - Couriers]
       operationId: listCouriers
       summary: Mendapatkan kurir dan layanan aktif
       responses:
@@ -209,7 +226,7 @@ paths:
 
   /api/v1/calculate/domestic-cost:
     post:
-      tags: [Rates]
+      tags: [RajaOngkir V2 - Rates]
       operationId: calculateDomesticCost
       summary: Menghitung ongkir dari rate card lokal atau exact provider quote
       security:
@@ -218,23 +235,6 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CalculateCostRequest"
-            example:
-              origin: loc_id_3273010
-              destination: loc_id_3276010
-              weight: 10800
-              courier: jne:tiki:sicepat
-              dimensions:
-                length: 40
-                width: 30
-                height: 25
-                unit: cm
-              item_value: 1500000
-              options:
-                include_insurance: false
-                include_unverified: false
           application/x-www-form-urlencoded:
             schema:
               $ref: "#/components/schemas/RajaOngkirCalculateCostRequest"
@@ -244,44 +244,41 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/CalculateCostResponse"
-                  - $ref: "#/components/schemas/RajaOngkirCalculateCostResponse"
+                $ref: "#/components/schemas/RajaOngkirCalculateCostResponse"
         "400":
-          $ref: "#/components/responses/InvalidRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "422":
-          description: Courier tidak valid atau tarif belum tersedia pada mode lama
+          description: Parameter atau lokasi tidak valid
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ErrorResponse"
-                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Courier tidak valid atau tarif belum tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "502":
           description: Provider gagal atau menolak credential
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ErrorResponse"
-                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "503":
           description: Kuota provider habis
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ErrorResponse"
-                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
 
   /api/v1/calculate/district/domestic-cost:
     post:
-      tags: [Rates]
+      tags: [RajaOngkir V2 - Rates]
       operationId: calculateDistrictDomesticCost
       summary: Menghitung ongkir berdasarkan ID kecamatan seperti RajaOngkir V2
       security:
+        - bearerAuth: []
         - rajaOngkirKeyAuth: []
       requestBody:
         required: true
@@ -329,14 +326,13 @@ paths:
 
   /api/v1/track/waybill:
     post:
-      tags: [Tracking]
+      tags: [RajaOngkir V2 - Tracking]
       operationId: trackWaybill
       summary: Melacak AWB secara sinkron seperti RajaOngkir V2
       description: >
-        Header key mengaktifkan kontrak sinkron RajaOngkir V2. Bearer tetap
-        memakai kontrak asynchronous API Kurir lama. Hasil sinkron memakai
-        snapshot PostgreSQL yang masih fresh agar tidak selalu memakai hit
-        provider.
+        Path /api/v1 selalu memakai kontrak sinkron RajaOngkir V2 untuk header
+        key maupun Bearer. Hasil sinkron memakai snapshot PostgreSQL yang masih
+        fresh agar tidak selalu memakai hit provider.
       parameters:
         - name: awb
           in: query
@@ -359,9 +355,6 @@ paths:
       requestBody:
         required: false
         content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TrackingRequest"
           application/x-www-form-urlencoded:
             schema:
               $ref: "#/components/schemas/RajaOngkirTrackingRequest"
@@ -371,15 +364,7 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/TrackingResponse"
-                  - $ref: "#/components/schemas/RajaOngkirTrackingResponse"
-        "202":
-          description: Refresh tracking diantrikan
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TrackingResponse"
+                $ref: "#/components/schemas/RajaOngkirTrackingResponse"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
@@ -389,9 +374,7 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ErrorResponse"
-                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "404":
           description: AWB tidak ditemukan
           content:
@@ -409,15 +392,411 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ErrorResponse"
-                  - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "504":
           description: Provider tracking timeout
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RajaOngkirErrorResponse"
+
+  /regions/provinces:
+    get:
+      tags: [Emisell Legacy]
+      operationId: listLegacyProvinces
+      summary: Daftar provinsi kompatibel region-service Emisell lama
+      description: Mengembalikan ID numerik dari dump RajaOngkir, bukan kode Kemendagri.
+      responses:
+        "200":
+          description: Daftar provinsi lama
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyRegionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /regions/provinces/{id}:
+    get:
+      tags: [Emisell Legacy]
+      operationId: getLegacyProvince
+      summary: Detail provinsi kompatibel region-service lama
+      parameters:
+        - $ref: "#/components/parameters/LegacyRegionID"
+      responses:
+        "200":
+          description: Detail provinsi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyRegionDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/LegacyRegionNotFound"
+
+  /regions/cities:
+    get:
+      tags: [Emisell Legacy]
+      operationId: listLegacyCities
+      summary: Daftar kota/kabupaten berdasarkan ID provinsi lama
+      parameters:
+        - name: provinceId
+          in: query
+          required: true
+          schema:
+            type: integer
+          example: 5
+      responses:
+        "200":
+          description: Daftar kota/kabupaten
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyRegionListResponse"
+        "400":
+          $ref: "#/components/responses/LegacyInvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /regions/cities/{id}:
+    get:
+      tags: [Emisell Legacy]
+      operationId: getLegacyCity
+      summary: Detail kota/kabupaten berdasarkan ID lama
+      parameters:
+        - $ref: "#/components/parameters/LegacyRegionID"
+      responses:
+        "200":
+          description: Detail kota/kabupaten
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyRegionDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/LegacyRegionNotFound"
+
+  /regions/districts:
+    get:
+      tags: [Emisell Legacy]
+      operationId: listLegacyDistricts
+      summary: Daftar kecamatan berdasarkan ID kota lama
+      parameters:
+        - name: cityId
+          in: query
+          required: true
+          schema:
+            type: integer
+          example: 55
+      responses:
+        "200":
+          description: Daftar kecamatan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyRegionListResponse"
+        "400":
+          $ref: "#/components/responses/LegacyInvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /regions/districts/{id}:
+    get:
+      tags: [Emisell Legacy]
+      operationId: getLegacyDistrict
+      summary: Detail kecamatan berdasarkan ID lama
+      parameters:
+        - $ref: "#/components/parameters/LegacyRegionID"
+      responses:
+        "200":
+          description: Detail kecamatan beserta kota dan provinsi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyRegionDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/LegacyRegionNotFound"
+
+  /regions/subdistricts:
+    get:
+      tags: [Emisell Legacy]
+      operationId: listLegacySubdistricts
+      summary: Daftar kelurahan/desa berdasarkan ID kecamatan lama
+      parameters:
+        - name: districtId
+          in: query
+          required: true
+          schema:
+            type: integer
+          example: 442
+      responses:
+        "200":
+          description: Daftar kelurahan/desa beserta kode pos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyRegionListResponse"
+        "400":
+          $ref: "#/components/responses/LegacyInvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /shipping/domestic-cost:
+    get:
+      tags: [Emisell Legacy]
+      operationId: calculateLegacyDomesticCost
+      summary: Cek ongkir kompatibel region-service Emisell lama
+      description: Origin dan destination memakai ID district dari dump RajaOngkir.
+      parameters:
+        - name: origin
+          in: query
+          required: true
+          schema:
+            type: integer
+          example: 1354
+        - name: destination
+          in: query
+          required: true
+          schema:
+            type: integer
+          example: 2612
+        - name: weight
+          in: query
+          required: true
+          description: Berat aktual dalam gram
+          schema:
+            type: integer
+            minimum: 1
+          example: 1000
+        - name: courier
+          in: query
+          description: Kode kurir dipisahkan titik dua; kosong berarti semua kurir default.
+          schema:
+            type: string
+          example: jne:tiki
+        - name: price
+          in: query
+          schema:
+            type: string
+            enum: [lowest, highest]
+        - name: serviceName
+          in: query
+          description: Kelompok layanan, dapat dipisahkan koma.
+          schema:
+            type: string
+          example: REG,TRUCKING
+      responses:
+        "200":
+          description: Pilihan layanan pengiriman
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyShippingCostResponse"
+        "400":
+          $ref: "#/components/responses/LegacyInvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/LegacyProviderError"
+        "502":
+          $ref: "#/components/responses/LegacyProviderError"
+        "503":
+          $ref: "#/components/responses/LegacyProviderError"
+
+  /v1/destination/domestic-destination:
+    get:
+      tags: [Canonical - Locations]
+      operationId: searchCanonicalDomesticDestination
+      summary: Mencari master lokasi dengan public ID canonical
+      description: >
+        Endpoint internal API Kurir. Alamat mentah dinormalisasi dan hasil
+        memakai ID loc_idn_*. Jangan kirim ID numerik dari /api/v1.
+      parameters:
+        - name: search
+          in: query
+          required: true
+          description: Nama wilayah, alamat mentah, atau kode pos
+          schema:
+            type: string
+            minLength: 2
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100000
+            default: 0
+      responses:
+        "200":
+          description: Lokasi canonical yang cocok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationSearchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/destination/province:
+    get:
+      tags: [Canonical - Locations]
+      operationId: listCanonicalProvinces
+      summary: Mendapatkan provinsi dengan public ID canonical
+      responses:
+        "200":
+          description: Daftar provinsi canonical
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationHierarchyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/destination/city/{province_id}:
+    get:
+      tags: [Canonical - Locations]
+      operationId: listCanonicalCitiesByProvince
+      summary: Mendapatkan kota/kabupaten dengan public ID canonical
+      parameters:
+        - $ref: "#/components/parameters/ProvinceID"
+      responses:
+        "200":
+          description: Daftar kota/kabupaten canonical
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationHierarchyResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/destination/district/{city_id}:
+    get:
+      tags: [Canonical - Locations]
+      operationId: listCanonicalDistrictsByCity
+      summary: Mendapatkan kecamatan dengan public ID canonical
+      parameters:
+        - $ref: "#/components/parameters/CityID"
+      responses:
+        "200":
+          description: Daftar kecamatan canonical
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationHierarchyResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/destination/sub-district/{district_id}:
+    get:
+      tags: [Canonical - Locations]
+      operationId: listCanonicalSubdistrictsByDistrict
+      summary: Mendapatkan kelurahan/desa dengan public ID canonical
+      parameters:
+        - $ref: "#/components/parameters/DistrictID"
+      responses:
+        "200":
+          description: Daftar kelurahan/desa canonical
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationHierarchyResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/couriers:
+    get:
+      tags: [Canonical - Couriers]
+      operationId: listCanonicalCouriers
+      summary: Mendapatkan katalog kurir dan layanan canonical
+      responses:
+        "200":
+          description: Daftar kurir dan capability aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CourierListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/calculate/domestic-cost:
+    post:
+      tags: [Canonical - Rates]
+      operationId: calculateCanonicalDomesticCost
+      summary: Menghitung ongkir dengan ID canonical
+      description: >
+        Request memakai JSON dan public ID loc_idn_*. Endpoint ini ditujukan
+        untuk dashboard dan service internal, bukan SDK RajaOngkir V2.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalculateCostRequest"
+      responses:
+        "200":
+          description: Pilihan layanan beserta metadata berat dan sumber tarif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalculateCostResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+        "502":
+          $ref: "#/components/responses/ProviderError"
+        "503":
+          $ref: "#/components/responses/ProviderError"
+
+  /v1/track/waybill:
+    post:
+      tags: [Canonical - Tracking]
+      operationId: trackCanonicalWaybill
+      summary: Membaca snapshot atau mengantrekan refresh tracking
+      description: >
+        Endpoint internal asynchronous. Nomor resi disimpan terenkripsi dan
+        dikembalikan dalam bentuk termasking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingRequest"
+      responses:
+        "200":
+          description: Snapshot tracking aktif atau status refresh
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+        "503":
+          $ref: "#/components/responses/ProviderError"
 
   /v1/admin/overview:
     get:
@@ -810,7 +1189,7 @@ components:
       type: apiKey
       in: header
       name: key
-      description: Mengaktifkan façade kontrak RajaOngkir V2
+      description: Alternatif pengiriman customer API key; tidak mengubah kontrak path
     adminBearerAuth:
       type: http
       scheme: bearer
@@ -848,35 +1227,49 @@ components:
       name: province_id
       in: path
       required: true
-      description: ID lokal provinsi dari endpoint daftar provinsi
+      description: >
+        ID provinsi dari endpoint daftar provinsi. Pada /api/v1 nilainya adalah
+        ID dump RajaOngkir; pada /v1 nilainya public ID canonical.
       schema:
         oneOf:
           - type: integer
             format: int64
           - type: string
-      example: 32
+      example: 5
     CityID:
       name: city_id
       in: path
       required: true
-      description: ID lokal kota/kabupaten dari endpoint daftar kota
+      description: >
+        ID kota/kabupaten dari endpoint daftar kota dengan namespace sesuai
+        base path API.
       schema:
         oneOf:
           - type: integer
             format: int64
           - type: string
-      example: 3273
+      example: 55
     DistrictID:
       name: district_id
       in: path
       required: true
-      description: ID lokal kecamatan dari endpoint daftar kecamatan
+      description: >
+        ID kecamatan dari endpoint daftar kecamatan dengan namespace sesuai
+        base path API.
       schema:
         oneOf:
           - type: integer
             format: int64
           - type: string
-      example: 327306
+      example: 442
+    LegacyRegionID:
+      name: id
+      in: path
+      required: true
+      description: ID numerik dari dump region-service RajaOngkir.
+      schema:
+        type: integer
+      example: 55
     AdminActor:
       name: X-Admin-Actor
       in: header
@@ -901,6 +1294,32 @@ components:
             oneOf:
               - $ref: "#/components/schemas/ErrorResponse"
               - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+    ProviderError:
+      description: Provider belum tersedia, timeout, atau kuotanya habis
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    LegacyRegionNotFound:
+      description: ID wilayah lama tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LegacyRegionErrorResponse"
+    LegacyInvalidRequest:
+      description: Parameter kompatibilitas lama tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LegacyRegionErrorResponse"
+    LegacyProviderError:
+      description: Tarif belum tersedia atau provider gagal merespons
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/LegacyRegionErrorResponse"
+              - $ref: "#/components/schemas/RajaOngkirErrorResponse"
 
   schemas:
     Health:
@@ -910,6 +1329,98 @@ components:
         status:
           type: string
           examples: [ready]
+
+    LegacyRegion:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          oneOf:
+            - type: integer
+            - type: string
+        name:
+          type: string
+        zipCode:
+          type: string
+        provinceId:
+          oneOf:
+            - type: integer
+            - type: string
+        provinceName:
+          type: string
+        cityId:
+          oneOf:
+            - type: integer
+            - type: string
+        cityName:
+          type: string
+        districtId:
+          oneOf:
+            - type: integer
+            - type: string
+
+    LegacyRegionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/LegacyRegion"
+
+    LegacyRegionDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/LegacyRegion"
+
+    LegacyRegionErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    LegacyShippingCost:
+      type: object
+      required: [name, code, service, description, cost, etd, serviceName]
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        service:
+          type: string
+        description:
+          type: string
+        cost:
+          type: integer
+          minimum: 0
+        etd:
+          type: string
+        serviceName:
+          type: string
+          enum: [REG, EXPRESS, SAMEDAY, ECONOMY, TRUCKING, CARGO, MOTOR, OTHER]
+
+    LegacyShippingCostResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          type: object
+          required: [message, code, status]
+          properties:
+            message:
+              type: string
+            code:
+              type: integer
+            status:
+              type: string
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/LegacyShippingCost"
 
     Location:
       type: object
@@ -1013,7 +1524,9 @@ components:
             - type: integer
               format: int64
             - type: string
-          description: ID lokal unik untuk level lokasi ini
+          description: >
+            ID unik pada level dan base path ini. Jangan menafsirkan angka pada
+            /api/v1 sebagai kode Kemendagri.
         name:
           type: string
         zip_code:
@@ -1148,9 +1661,13 @@ components:
         origin:
           type: integer
           format: int64
+          description: ID RajaOngkir lokal sesuai level endpoint calculate
+          examples: [4911]
         destination:
           type: integer
           format: int64
+          description: ID RajaOngkir lokal sesuai level endpoint calculate
+          examples: [25976]
         weight:
           type: integer
           format: int64
@@ -1948,99 +2465,6 @@ components:
           $ref: "#/components/schemas/RequestMeta"
         data:
           $ref: "#/components/schemas/GeneratedCustomerAPIKey"
-
-    AdminRateCardInput:
-      type: object
-      additionalProperties: false
-      required:
-        - origin_public_id
-        - destination_public_id
-        - courier_code
-        - service_code
-        - pricing_model
-        - base_weight_grams
-        - base_price
-        - rate_per_increment
-        - minimum_weight_grams
-        - weight_increment_grams
-        - rounding_profile_code
-        - verification_status
-        - source_provider
-      properties:
-        origin_public_id:
-          type: string
-        destination_public_id:
-          type: string
-        courier_code:
-          type: string
-        service_code:
-          type: string
-        pricing_model:
-          type: string
-          enum: [flat, per_kg, base_plus_increment, minimum_then_per_kg]
-        base_weight_grams:
-          type: integer
-          minimum: 0
-        base_price:
-          type: integer
-          minimum: 0
-        rate_per_increment:
-          type: integer
-          minimum: 0
-        minimum_weight_grams:
-          type: integer
-          minimum: 0
-        maximum_weight_grams:
-          type: [integer, "null"]
-        weight_increment_grams:
-          type: integer
-          minimum: 1
-        volumetric_divisor:
-          type: [integer, "null"]
-        rounding_profile_code:
-          type: string
-        etd_min_days:
-          type: [integer, "null"]
-        etd_max_days:
-          type: [integer, "null"]
-        verification_status:
-          type: string
-          enum:
-            - official_public
-            - official_contract
-            - observed
-            - needs_contract_confirmation
-        source_provider:
-          type: string
-        source_reference:
-          type: string
-        effective_from:
-          type: string
-          format: date-time
-        expires_at:
-          type: [string, "null"]
-          format: date-time
-
-    AdminLocationMappingInput:
-      type: object
-      additionalProperties: false
-      required:
-        - location_public_id
-        - provider_code
-        - provider_location_id
-        - granularity
-      properties:
-        location_public_id:
-          type: string
-        provider_code:
-          type: string
-        provider_location_id:
-          type: string
-        provider_location_name:
-          type: string
-        granularity:
-          type: string
-          enum: [province, city, district, subdistrict]
 
     ErrorResponse:
       type: object

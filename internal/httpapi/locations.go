@@ -67,6 +67,17 @@ func locationSearchHandler(repository locations.Repository) echo.HandlerFunc {
 			}
 			offset = parsed
 		}
+		if rajaOngkirV2Compatibility(c) {
+			if legacyRepository, ok := repository.(locations.LegacyRepository); ok {
+				return searchLegacyLocations(
+					c,
+					legacyRepository,
+					search,
+					limit,
+					offset,
+				)
+			}
+		}
 
 		ctx, cancel := timeBoundContext(c.Request().Context(), 500*time.Millisecond)
 		defer cancel()
@@ -161,6 +172,17 @@ func locationHierarchyHandler(
 				)
 			}
 		}
+		if rajaOngkirV2Compatibility(c) {
+			if legacyRepository, ok := repository.(locations.LegacyRepository); ok {
+				return listLegacyHierarchy(
+					c,
+					legacyRepository,
+					level,
+					parentPublicID,
+					successMessage,
+				)
+			}
+		}
 
 		ctx, cancel := timeBoundContext(c.Request().Context(), time.Second)
 		defer cancel()
@@ -205,4 +227,111 @@ func locationHierarchyHandler(
 			"data": data,
 		})
 	}
+}
+
+func searchLegacyLocations(
+	c *echo.Context,
+	repository locations.LegacyRepository,
+	search string,
+	limit int,
+	offset int,
+) error {
+	ctx, cancel := timeBoundContext(c.Request().Context(), 2*time.Second)
+	defer cancel()
+	result, err := repository.SearchLegacy(
+		ctx,
+		legacyRegionProvider,
+		search,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return err
+	}
+	if len(result) == 0 {
+		return writeError(
+			c,
+			http.StatusNotFound,
+			"NOT_FOUND",
+			"Domestic Destinations Data not found",
+			nil,
+		)
+	}
+
+	data := make([]map[string]any, 0, len(result))
+	for _, location := range result {
+		data = append(data, map[string]any{
+			"id":               legacyExternalID(location.ID),
+			"label":            legacyLocationLabel(location),
+			"province_name":    location.ProvinceName,
+			"city_name":        location.CityName,
+			"district_name":    location.DistrictName,
+			"subdistrict_name": location.Name,
+			"zip_code":         location.PostalCode,
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"meta": map[string]any{
+			"message": "Success Get Domestic Destinations",
+			"code":    http.StatusOK,
+			"status":  "success",
+		},
+		"data": data,
+	})
+}
+
+func listLegacyHierarchy(
+	c *echo.Context,
+	repository locations.LegacyRepository,
+	level string,
+	parentID string,
+	successMessage string,
+) error {
+	ctx, cancel := timeBoundContext(c.Request().Context(), time.Second)
+	defer cancel()
+	result, err := repository.ListLegacyHierarchy(
+		ctx,
+		legacyRegionProvider,
+		level,
+		parentID,
+	)
+	if err != nil {
+		return err
+	}
+
+	data := make([]map[string]any, 0, len(result))
+	for _, location := range result {
+		item := map[string]any{
+			"id":   legacyExternalID(location.ID),
+			"name": location.Name,
+		}
+		if level != "province" {
+			item["zip_code"] = location.PostalCode
+		}
+		data = append(data, item)
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"meta": map[string]any{
+			"message": successMessage,
+			"code":    http.StatusOK,
+			"status":  "success",
+		},
+		"data": data,
+	})
+}
+
+func legacyLocationLabel(location locations.LegacyRegion) string {
+	parts := make([]string, 0, 5)
+	for _, part := range []string{
+		location.Name,
+		location.DistrictName,
+		location.CityName,
+		location.ProvinceName,
+		location.PostalCode,
+	} {
+		if value := strings.TrimSpace(part); value != "" {
+			parts = append(parts, value)
+		}
+	}
+	return strings.Join(parts, ", ")
 }

@@ -42,6 +42,20 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  legacy-region-import:
+    profiles: ["bootstrap"]
+    build:
+      context: .
+      args:
+        APP: legacy-region-import
+    environment:
+      DATABASE_URL: postgres://api_kurir:api_kurir@postgres:5432/api_kurir?sslmode=disable
+      LEGACY_REGION_DB_PATH: /data/regions.db
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   api:
     build:
       context: .
@@ -81,7 +95,8 @@ services:
 
   dashboard:
     build:
-      context: ./apps/dashboard
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
     ports:
       - "${DASHBOARD_BIND_ADDR:-0.0.0.0}:${DASHBOARD_PORT:-5173}:80"
     depends_on:

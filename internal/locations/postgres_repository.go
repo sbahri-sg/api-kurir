@@ -23,48 +23,83 @@ func (r *PostgresRepository) Search(
 	search string,
 	limit, offset int,
 ) ([]Location, error) {
-	escaped := escapeLike(strings.ToLower(strings.TrimSpace(search)))
+	terms := normalizeLocationSearchTerms(search)
+	if len(terms) == 0 {
+		return []Location{}, nil
+	}
 	rows, err := r.pool.Query(ctx, `
-		WITH candidates AS (
+		WITH input_terms AS (
+			SELECT DISTINCT term
+			FROM unnest($1::text[]) AS term
+		),
+		location_matches AS (
 			SELECT
 				location.id,
-				CASE
-					WHEN location.search_text LIKE $1 || '%' ESCAPE '\' THEN 1
-					ELSE 2
-				END AS match_rank,
-				similarity(location.search_text, $1) AS match_score
+				count(DISTINCT term.term)::int AS matched_terms,
+				min(
+					CASE
+						WHEN lower(coalesce(location.subdistrict, '')) = term.term THEN 0
+						WHEN lower(coalesce(location.district, '')) = term.term THEN 1
+						WHEN lower(coalesce(location.city, '')) LIKE '%' || term.term || '%' THEN 2
+						WHEN lower(coalesce(location.province, '')) LIKE '%' || term.term || '%' THEN 3
+						ELSE 4
+					END
+				) AS match_rank,
+				max(
+					greatest(
+						similarity(lower(coalesce(location.subdistrict, '')), term.term),
+						similarity(lower(coalesce(location.district, '')), term.term),
+						similarity(lower(coalesce(location.city, '')), term.term),
+						similarity(lower(coalesce(location.province, '')), term.term)
+					)
+				) AS match_score
 			FROM locations location
+			JOIN input_terms term
+			  ON location.search_text LIKE '%' || term.term || '%'
 			WHERE location.active
 			  AND location.level = 'subdistrict'
 			  AND location.official_region_code IS NOT NULL
-			  AND location.search_text LIKE '%' || $1 || '%' ESCAPE '\'
-
-			UNION ALL
-
+			GROUP BY location.id
+		),
+		postal_matches AS (
 			SELECT
 				location.id,
-				CASE WHEN postal.code = $1 THEN 0 ELSE 1 END AS match_rank,
+				count(DISTINCT term.term)::int AS matched_terms,
+				0 AS match_rank,
 				1::real AS match_score
-			FROM postal_codes postal
+			FROM input_terms term
+			JOIN postal_codes postal
+			  ON postal.active
+			 AND postal.code LIKE '%' || term.term || '%'
 			JOIN location_postal_codes link
 			  ON link.postal_code_id = postal.id
 			 AND link.active
 			JOIN locations location
-			 ON location.id = link.location_id
+			  ON location.id = link.location_id
 			 AND location.active
 			 AND location.level = 'subdistrict'
 			 AND location.official_region_code IS NOT NULL
-			WHERE postal.active
-			  AND postal.code LIKE '%' || $1 || '%' ESCAPE '\'
+			GROUP BY location.id
+		),
+		candidates AS (
+			SELECT id, matched_terms, match_rank, match_score
+			FROM location_matches
+
+			UNION ALL
+
+			SELECT id, matched_terms, match_rank, match_score
+			FROM postal_matches
 		),
 		ranked AS (
 			SELECT
 				id,
+				max(matched_terms) AS matched_terms,
 				min(match_rank) AS match_rank,
 				max(match_score) AS match_score
 			FROM candidates
 			GROUP BY id
 			ORDER BY
+				max(matched_terms) DESC,
 				min(match_rank),
 				max(match_score) DESC,
 				id
@@ -115,12 +150,13 @@ func (r *PostgresRepository) Search(
 			  AND code.active
 		) postal ON true
 		ORDER BY
+			ranked.matched_terms DESC,
 			ranked.match_rank,
 			ranked.match_score DESC,
 			location.city,
 			location.district,
 			location.subdistrict
-		`, escaped, limit, offset)
+		`, terms, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("search locations: %w", err)
 	}

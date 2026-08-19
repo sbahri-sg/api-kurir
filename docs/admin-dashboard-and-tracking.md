@@ -150,8 +150,8 @@ quota, serta waktu sync. Spesifikasi target berada di
   terakhir;
 - secret lengkap hanya dikembalikan pada response generate dan hanya
   dipertahankan di memory halaman sampai panel ditutup;
-- key hasil generate hanya berlaku pada endpoint `/v1` customer dan tidak
-  berlaku pada `/v1/admin`;
+- key hasil generate berlaku pada endpoint customer `/v1`, `/api/v1`,
+  `/regions`, dan `/shipping`, tetapi tidak berlaku pada `/v1/admin`;
 - generate tidak meminta nama atau masa berlaku; key aktif terus sampai
   di-revoke;
 - revoke langsung membersihkan cache pada instance yang memproses request.

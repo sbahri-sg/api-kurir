@@ -73,7 +73,7 @@ func TestLocationSearchIsCompatibleWithRajaOngkirV2Fields(t *testing.T) {
 	e := echo.New()
 	e.GET(
 		"/v1/destination/domestic-destination",
-		locationSearchHandler(locationHTTPRepositoryStub{}),
+		locationSearchHandler(legacyHTTPRepositoryStub{}),
 	)
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -194,17 +194,18 @@ func TestLocationSearchRajaOngkirV2UsesNumericID(t *testing.T) {
 	t.Parallel()
 
 	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
 	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
 	e.GET(
-		"/v1/destination/domestic-destination",
-		locationSearchHandler(locationHTTPRepositoryStub{}),
+		"/api/v1/destination/domestic-destination",
+		locationSearchHandler(legacyHTTPRepositoryStub{}),
 	)
 	request := httptest.NewRequest(
 		http.MethodGet,
-		"/v1/destination/domestic-destination?search=Husein&limit=999&offset=0",
+		"/api/v1/destination/domestic-destination?search=Husein&limit=999&offset=0",
 		nil,
 	)
-	request.Header.Set("key", "sdk-key")
+	request.Header.Set("Authorization", "Bearer sdk-key")
 	response := httptest.NewRecorder()
 
 	e.ServeHTTP(response, request)
@@ -224,7 +225,7 @@ func TestLocationSearchRajaOngkirV2UsesNumericID(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Data) != 1 || payload.Data[0]["id"] != float64(3273061001) {
+	if len(payload.Data) != 1 || payload.Data[0]["id"] != float64(82995) {
 		t.Fatalf("expected numeric compatibility ID: %#v", payload.Data)
 	}
 	if _, exists := payload.Data[0]["province_id"]; exists {
@@ -239,10 +240,12 @@ func TestRajaOngkirV2OfficialBasePathAlias(t *testing.T) {
 	t.Parallel()
 
 	e := echo.New()
+	group := e.Group("/api/v1")
+	group.Use(rajaOngkirV2CompatibilityMiddleware())
 	registerCustomerRoutes(
-		e.Group("/api/v1"),
+		group,
 		nil,
-		locationHTTPRepositoryStub{},
+		legacyHTTPRepositoryStub{},
 		nil,
 		nil,
 		nil,
@@ -269,14 +272,104 @@ func TestRajaOngkirV2OfficialBasePathAlias(t *testing.T) {
 
 	var payload struct {
 		Data []struct {
-			ID int64 `json:"id"`
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Data) != 1 || payload.Data[0].ID != 32 {
+	if len(payload.Data) != 1 ||
+		payload.Data[0].ID != 32 ||
+		payload.Data[0].Name != "MALUKU UTARA" {
 		t.Fatalf("unexpected response: %#v", payload.Data)
+	}
+}
+
+func TestCustomerLocationContractUsesPathNotAuthenticationHeader(t *testing.T) {
+	t.Parallel()
+
+	e := echo.New()
+	canonicalGroup := e.Group("/v1")
+	registerCustomerRoutes(
+		canonicalGroup,
+		nil,
+		legacyHTTPRepositoryStub{},
+		nil,
+		nil,
+		nil,
+		nil,
+		[]string{"sdk-key"},
+	)
+	rajaOngkirGroup := e.Group("/api/v1")
+	rajaOngkirGroup.Use(rajaOngkirV2CompatibilityMiddleware())
+	registerCustomerRoutes(
+		rajaOngkirGroup,
+		nil,
+		legacyHTTPRepositoryStub{},
+		nil,
+		nil,
+		nil,
+		nil,
+		[]string{"sdk-key"},
+	)
+
+	tests := []struct {
+		name        string
+		path        string
+		headerName  string
+		headerValue string
+		wantID      any
+	}{
+		{
+			name:        "sdk path with key header",
+			path:        "/api/v1/destination/domestic-destination?search=Husein",
+			headerName:  "key",
+			headerValue: "sdk-key",
+			wantID:      float64(82995),
+		},
+		{
+			name:        "sdk path with bearer header",
+			path:        "/api/v1/destination/domestic-destination?search=Husein",
+			headerName:  "Authorization",
+			headerValue: "Bearer sdk-key",
+			wantID:      float64(82995),
+		},
+		{
+			name:        "canonical path with key header",
+			path:        "/v1/destination/domestic-destination?search=Husein",
+			headerName:  "key",
+			headerValue: "sdk-key",
+			wantID:      "loc_idn_32_73_06_1001",
+		},
+		{
+			name:        "canonical path with bearer header",
+			path:        "/v1/destination/domestic-destination?search=Husein",
+			headerName:  "Authorization",
+			headerValue: "Bearer sdk-key",
+			wantID:      "loc_idn_32_73_06_1001",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, test.path, nil)
+			request.Header.Set(test.headerName, test.headerValue)
+			response := httptest.NewRecorder()
+			e.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status: got %d body=%s", response.Code, response.Body.String())
+			}
+			var payload struct {
+				Data []map[string]any `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload.Data) != 1 || payload.Data[0]["id"] != test.wantID {
+				t.Fatalf("id: got %#v want %#v", payload.Data, test.wantID)
+			}
+		})
 	}
 }
 
@@ -284,6 +377,7 @@ func TestRajaOngkirV2SearchValidationUses422Envelope(t *testing.T) {
 	t.Parallel()
 
 	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
 	e.Use(customerAPIKeyMiddleware([]string{"sdk-key"}, nil))
 	e.GET(
 		"/api/v1/destination/domestic-destination",
@@ -294,7 +388,7 @@ func TestRajaOngkirV2SearchValidationUses422Envelope(t *testing.T) {
 		"/api/v1/destination/domestic-destination",
 		nil,
 	)
-	request.Header.Set("key", "sdk-key")
+	request.Header.Set("Authorization", "Bearer sdk-key")
 	response := httptest.NewRecorder()
 
 	e.ServeHTTP(response, request)

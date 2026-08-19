@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -260,8 +261,9 @@ func calculateRajaOngkirV2Rate(
 		)
 	}
 
-	origin, err := locationRepository.ResolvePublicID(
+	origin, err := resolveRajaOngkirLocation(
 		c.Request().Context(),
+		locationRepository,
 		c.Request().FormValue("origin"),
 		granularity,
 	)
@@ -274,8 +276,9 @@ func calculateRajaOngkirV2Rate(
 			nil,
 		)
 	}
-	destination, err := locationRepository.ResolvePublicID(
+	destination, err := resolveRajaOngkirLocation(
 		c.Request().Context(),
+		locationRepository,
 		c.Request().FormValue("destination"),
 		granularity,
 	)
@@ -332,6 +335,27 @@ func calculateRajaOngkirV2Rate(
 		},
 		"data": data,
 	})
+}
+
+func resolveRajaOngkirLocation(
+	ctx context.Context,
+	repository locations.Repository,
+	identifier string,
+	granularity string,
+) (string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if strings.HasPrefix(identifier, "loc_") {
+		return repository.ResolvePublicID(ctx, identifier, granularity)
+	}
+	if legacyRepository, ok := repository.(locations.LegacyRepository); ok {
+		return legacyRepository.ResolveLegacyPublicID(
+			ctx,
+			legacyRegionProvider,
+			granularity,
+			identifier,
+		)
+	}
+	return repository.ResolvePublicID(ctx, identifier, granularity)
 }
 
 func writeRajaOngkirRateError(

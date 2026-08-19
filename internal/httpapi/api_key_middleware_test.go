@@ -69,14 +69,14 @@ func TestCustomerAPIKeyMiddlewareRejectsInvalidKey(t *testing.T) {
 	}
 }
 
-func TestCustomerAPIKeyMiddlewareAcceptsRajaOngkirKeyHeader(t *testing.T) {
+func TestCustomerAPIKeyMiddlewareAcceptsKeyHeaderWithoutChangingContract(t *testing.T) {
 	t.Parallel()
 
 	e := echo.New()
 	e.Use(customerAPIKeyMiddleware([]string{"static-key"}, nil))
 	e.GET("/protected", func(c *echo.Context) error {
-		if !rajaOngkirV2Compatibility(c) {
-			t.Fatal("RajaOngkir compatibility mode was not enabled")
+		if rajaOngkirV2Compatibility(c) {
+			t.Fatal("authentication header must not change the API contract")
 		}
 		return c.NoContent(http.StatusNoContent)
 	})
@@ -92,6 +92,42 @@ func TestCustomerAPIKeyMiddlewareAcceptsRajaOngkirKeyHeader(t *testing.T) {
 			http.StatusNoContent,
 			response.Body.String(),
 		)
+	}
+}
+
+func TestRajaOngkirCompatibilityMiddlewareSelectsContractByRoute(t *testing.T) {
+	t.Parallel()
+
+	e := echo.New()
+	group := e.Group("/api/v1")
+	group.Use(rajaOngkirV2CompatibilityMiddleware())
+	group.Use(customerAPIKeyMiddleware([]string{"static-key"}, nil))
+	group.GET("/protected", func(c *echo.Context) error {
+		if !rajaOngkirV2Compatibility(c) {
+			t.Fatal("RajaOngkir compatibility mode was not enabled")
+		}
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	for _, headers := range []map[string]string{
+		{"key": "static-key"},
+		{"Authorization": "Bearer static-key"},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
+		for name, value := range headers {
+			request.Header.Set(name, value)
+		}
+		response := httptest.NewRecorder()
+		e.ServeHTTP(response, request)
+		if response.Code != http.StatusNoContent {
+			t.Fatalf(
+				"headers=%v status: got %d want %d, body=%s",
+				headers,
+				response.Code,
+				http.StatusNoContent,
+				response.Body.String(),
+			)
+		}
 	}
 }
 
