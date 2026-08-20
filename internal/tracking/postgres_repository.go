@@ -121,6 +121,8 @@ func (r *PostgresRepository) register(
 			FROM tracking_shipments
 			WHERE id = $1::uuid
 			  AND NOT is_final
+			  AND validation_status <> 'invalid'
+			  AND provider_hit_count < provider_hit_limit
 			  AND (next_refresh_at IS NULL OR next_refresh_at <= now())
 			ON CONFLICT (shipment_id) WHERE status IN ('pending', 'running') DO NOTHING
 		`, shipmentID)
@@ -154,8 +156,10 @@ func (r *PostgresRepository) Claim(
 			SELECT job.id
 			FROM tracking_refresh_jobs job
 			JOIN tracking_shipments shipment ON shipment.id = job.shipment_id
-			WHERE job.status = 'pending'
-			  AND job.available_at <= now()
+			WHERE (
+				(job.status = 'pending' AND job.available_at <= now()) OR
+				(job.status = 'running' AND job.locked_at < now() - interval '5 minutes')
+			)
 			  AND shipment.courier_code = ANY($2::text[])
 			ORDER BY job.priority, job.available_at, job.created_at
 			FOR UPDATE OF job SKIP LOCKED
@@ -178,7 +182,10 @@ func (r *PostgresRepository) Claim(
 			shipment.waybill_ciphertext,
 			shipment.provider_context_ciphertext,
 			job.attempt_count,
-			job.max_attempts
+			job.max_attempts,
+			shipment.not_found_count,
+			shipment.provider_hit_count,
+			shipment.provider_hit_limit
 	`, workerID, courierCodes).Scan(
 		&job.ID,
 		&job.ShipmentID,
@@ -189,6 +196,9 @@ func (r *PostgresRepository) Claim(
 		&job.ProviderContextCiphertext,
 		&job.AttemptCount,
 		&job.MaxAttempts,
+		&job.NotFoundCount,
+		&job.ProviderHitCount,
+		&job.ProviderHitLimit,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Job{}, ErrNoJobAvailable
@@ -218,6 +228,18 @@ func (r *PostgresRepository) Complete(
 		return fmt.Errorf("begin complete tracking refresh: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var previousStatus, previousValidation string
+	if err := tx.QueryRow(ctx, `
+		SELECT normalized_status, validation_status
+		FROM tracking_shipments
+		WHERE id = $1::uuid
+		FOR UPDATE
+	`, job.ShipmentID).Scan(&previousStatus, &previousValidation); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("lock tracking shipment: %w", err)
+	}
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE tracking_shipments
@@ -229,6 +251,14 @@ func (r *PostgresRepository) Complete(
 		    provider_fetched_at = $7,
 		    next_refresh_at = $8,
 		    is_final = $9,
+		    validation_status = 'valid',
+		    validation_checked_at = $7,
+		    not_found_count = 0,
+		    provider_hit_count = provider_hit_count + 1,
+		    status_changed_at = CASE
+		        WHEN normalized_status <> $2 THEN $7
+		        ELSE status_changed_at
+		    END,
 		    last_error_code = NULL,
 		    updated_at = now()
 		WHERE id = $1::uuid
@@ -248,6 +278,23 @@ func (r *PostgresRepository) Complete(
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrNotFound
+	}
+	if previousStatus != result.NormalizedStatus {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tracking_status_history (
+				shipment_id, normalized_status, status_label,
+				provider_code, provider_fetched_at
+			)
+			VALUES ($1::uuid, $2, $3, $4, $5)
+		`, job.ShipmentID, result.NormalizedStatus, result.StatusLabel,
+			result.ProviderCode, result.FetchedAt); err != nil {
+			return fmt.Errorf("insert tracking status history: %w", err)
+		}
+	}
+	if eventType := changedTrackingEvent(previousStatus, previousValidation, result); eventType != "" {
+		if err := enqueueTrackingWebhook(ctx, tx, job.ShipmentID, eventType); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE tracking_refresh_jobs
@@ -293,6 +340,18 @@ func (r *PostgresRepository) CompleteImmediate(
 		return fmt.Errorf("begin immediate tracking completion: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var previousStatus, previousValidation string
+	if err := tx.QueryRow(ctx, `
+		SELECT normalized_status, validation_status
+		FROM tracking_shipments
+		WHERE id = $1::uuid
+		FOR UPDATE
+	`, shipmentID).Scan(&previousStatus, &previousValidation); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("lock immediate tracking shipment: %w", err)
+	}
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE tracking_shipments
@@ -304,6 +363,14 @@ func (r *PostgresRepository) CompleteImmediate(
 		    provider_fetched_at = $7,
 		    next_refresh_at = $8,
 		    is_final = $9,
+		    validation_status = 'valid',
+		    validation_checked_at = $7,
+		    not_found_count = 0,
+		    provider_hit_count = provider_hit_count + 1,
+		    status_changed_at = CASE
+		        WHEN normalized_status <> $2 THEN $7
+		        ELSE status_changed_at
+		    END,
 		    last_error_code = NULL,
 		    updated_at = now()
 		WHERE id = $1::uuid
@@ -323,6 +390,23 @@ func (r *PostgresRepository) CompleteImmediate(
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrNotFound
+	}
+	if previousStatus != result.NormalizedStatus {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tracking_status_history (
+				shipment_id, normalized_status, status_label,
+				provider_code, provider_fetched_at
+			)
+			VALUES ($1::uuid, $2, $3, $4, $5)
+		`, shipmentID, result.NormalizedStatus, result.StatusLabel,
+			result.ProviderCode, result.FetchedAt); err != nil {
+			return fmt.Errorf("insert immediate tracking status history: %w", err)
+		}
+	}
+	if eventType := changedTrackingEvent(previousStatus, previousValidation, result); eventType != "" {
+		if err := enqueueTrackingWebhook(ctx, tx, shipmentID, eventType); err != nil {
+			return err
+		}
 	}
 
 	completedJobs, err := tx.Exec(ctx, `
@@ -355,6 +439,166 @@ func (r *PostgresRepository) CompleteImmediate(
 	return nil
 }
 
+func (r *PostgresRepository) RecordNotFound(
+	ctx context.Context,
+	job Job,
+	fetchedAt time.Time,
+	nextRefreshAt *time.Time,
+	invalid bool,
+) error {
+	return r.recordNotFound(ctx, job.ShipmentID, job.ID, fetchedAt, nextRefreshAt, invalid)
+}
+
+func (r *PostgresRepository) RecordNotFoundImmediate(
+	ctx context.Context,
+	shipmentID string,
+	fetchedAt time.Time,
+	nextRefreshAt *time.Time,
+	invalid bool,
+) error {
+	return r.recordNotFound(ctx, shipmentID, "", fetchedAt, nextRefreshAt, invalid)
+}
+
+func (r *PostgresRepository) recordNotFound(
+	ctx context.Context,
+	shipmentID, jobID string,
+	fetchedAt time.Time,
+	nextRefreshAt *time.Time,
+	invalid bool,
+) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin record tracking not found: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	validationStatus := "not_found"
+	if invalid {
+		validationStatus = "invalid"
+	}
+	var previousValidation string
+	if err := tx.QueryRow(ctx, `
+		SELECT validation_status
+		FROM tracking_shipments
+		WHERE id = $1::uuid
+		FOR UPDATE
+	`, shipmentID).Scan(&previousValidation); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("lock not-found tracking shipment: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE tracking_shipments
+		SET validation_status = $2,
+		    validation_checked_at = $3,
+		    not_found_count = not_found_count + 1,
+		    provider_hit_count = provider_hit_count + 1,
+		    provider_fetched_at = $3,
+		    next_refresh_at = $4,
+		    last_error_code = 'WAYBILL_NOT_FOUND',
+		    updated_at = now()
+		WHERE id = $1::uuid
+	`, shipmentID, validationStatus, fetchedAt, nextRefreshAt); err != nil {
+		return fmt.Errorf("record tracking not found: %w", err)
+	}
+
+	if jobID != "" {
+		if _, err := tx.Exec(ctx, `
+			UPDATE tracking_refresh_jobs
+			SET status = 'completed', locked_at = NULL, locked_by = NULL,
+			    last_error_code = 'WAYBILL_NOT_FOUND',
+			    last_error_message = 'tracking waybill is not available',
+			    updated_at = now()
+			WHERE id = $1::uuid
+		`, jobID); err != nil {
+			return fmt.Errorf("complete not-found tracking job: %w", err)
+		}
+	} else {
+		if _, err := tx.Exec(ctx, `
+			UPDATE tracking_refresh_jobs
+			SET status = 'completed', locked_at = NULL, locked_by = NULL,
+			    last_error_code = 'WAYBILL_NOT_FOUND', updated_at = now()
+			WHERE shipment_id = $1::uuid AND status IN ('pending', 'running')
+		`, shipmentID); err != nil {
+			return fmt.Errorf("complete immediate not-found tracking job: %w", err)
+		}
+	}
+	if !invalid && nextRefreshAt != nil {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tracking_refresh_jobs (shipment_id, available_at)
+			SELECT id, $2
+			FROM tracking_shipments
+			WHERE id = $1::uuid
+			  AND provider_hit_count < provider_hit_limit
+			ON CONFLICT (shipment_id) WHERE status IN ('pending', 'running') DO NOTHING
+		`, shipmentID, nextRefreshAt); err != nil {
+			return fmt.Errorf("schedule not-found recheck: %w", err)
+		}
+	}
+	if invalid && previousValidation != "invalid" {
+		if err := enqueueTrackingWebhook(ctx, tx, shipmentID, "tracking.invalid"); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tracking not found: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) RecordImmediateFailure(
+	ctx context.Context,
+	shipmentID, errorCode string,
+	retryAt time.Time,
+	countProviderHit bool,
+) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin record immediate tracking failure: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	delta := boolToInt(countProviderHit)
+	tag, err := tx.Exec(ctx, `
+		UPDATE tracking_shipments
+		SET last_error_code = $2,
+		    provider_hit_count = provider_hit_count + $3,
+		    next_refresh_at = CASE
+		        WHEN provider_hit_count + $3 >= provider_hit_limit THEN NULL
+		        ELSE $4
+		    END,
+		    updated_at = now()
+		WHERE id = $1::uuid
+	`, shipmentID, errorCode, delta, retryAt)
+	if err != nil {
+		return fmt.Errorf("record immediate tracking failure: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE tracking_refresh_jobs job
+		SET status = CASE
+		        WHEN shipment.provider_hit_count >= shipment.provider_hit_limit THEN 'dead'
+		        ELSE 'pending'
+		    END,
+		    available_at = $2,
+		    last_error_code = $3,
+		    last_error_message = 'tracking provider request failed',
+		    updated_at = now()
+		FROM tracking_shipments shipment
+		WHERE job.shipment_id = shipment.id
+		  AND shipment.id = $1::uuid
+		  AND job.status = 'pending'
+	`, shipmentID, retryAt, errorCode); err != nil {
+		return fmt.Errorf("reschedule immediate tracking failure: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit immediate tracking failure: %w", err)
+	}
+	return nil
+}
+
 func (r *PostgresRepository) Fail(
 	ctx context.Context,
 	job Job,
@@ -362,8 +606,16 @@ func (r *PostgresRepository) Fail(
 	retryAt time.Time,
 ) error {
 	nextAttempt := job.AttemptCount + 1
+	countProviderHit := errorCode != "ADAPTER_UNAVAILABLE" &&
+		errorCode != "DECRYPTION_FAILED" &&
+		errorCode != "PROVIDER_QUOTA_EXHAUSTED"
+	nextProviderHits := job.ProviderHitCount
+	if countProviderHit {
+		nextProviderHits++
+	}
 	status := "pending"
-	if nextAttempt >= job.MaxAttempts {
+	if nextAttempt >= job.MaxAttempts ||
+		(job.ProviderHitLimit > 0 && nextProviderHits >= job.ProviderHitLimit) {
 		status = "dead"
 	}
 	tag, err := r.pool.Exec(ctx, `
@@ -387,10 +639,19 @@ func (r *PostgresRepository) Fail(
 	_, _ = r.pool.Exec(ctx, `
 		UPDATE tracking_shipments
 		SET last_error_code = $2,
+		    provider_hit_count = provider_hit_count + $3,
+		    next_refresh_at = CASE WHEN $4 = 'dead' THEN NULL ELSE $5 END,
 		    updated_at = now()
 		WHERE id = $1::uuid
-	`, job.ShipmentID, errorCode)
+	`, job.ShipmentID, errorCode, boolToInt(countProviderHit), status, retryAt)
 	return nil
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipment, error) {
@@ -410,6 +671,16 @@ func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipme
 			shipment.next_refresh_at,
 			shipment.is_final,
 			coalesce(shipment.last_error_code, ''),
+			shipment.validation_status,
+			shipment.validation_checked_at,
+			shipment.not_found_count,
+			shipment.provider_hit_count,
+			shipment.provider_hit_limit,
+			(
+				shipment.is_final OR
+				shipment.validation_status = 'invalid' OR
+				shipment.provider_hit_count >= shipment.provider_hit_limit
+			),
 			EXISTS (
 				SELECT 1
 				FROM tracking_refresh_jobs job
@@ -431,6 +702,12 @@ func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipme
 		&shipment.NextRefreshAt,
 		&shipment.IsFinal,
 		&shipment.LastErrorCode,
+		&shipment.ValidationStatus,
+		&shipment.ValidationChecked,
+		&shipment.NotFoundCount,
+		&shipment.ProviderHitCount,
+		&shipment.ProviderHitLimit,
+		&shipment.PollingStopped,
 		&shipment.RefreshQueued,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -446,4 +723,275 @@ func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipme
 		return Shipment{}, fmt.Errorf("decode tracking events: %w", err)
 	}
 	return shipment, nil
+}
+
+func (r *PostgresRepository) UpsertSubscription(
+	ctx context.Context,
+	shipmentID, orderReference, fulfillmentReference string,
+) (Subscription, error) {
+	identity, ok := tenancy.FromContext(ctx)
+	if !ok {
+		return Subscription{}, ErrNotFound
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return Subscription{}, fmt.Errorf("begin upsert tracking subscription: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var subscription Subscription
+	err = tx.QueryRow(ctx, `
+		INSERT INTO tracking_subscriptions (
+			tenant_id, domain_id, order_reference,
+			fulfillment_reference, shipment_id
+		)
+		VALUES ($1, $2, $3, $4, $5::uuid)
+		ON CONFLICT (tenant_id, fulfillment_reference) DO UPDATE
+		SET domain_id = EXCLUDED.domain_id,
+		    order_reference = EXCLUDED.order_reference,
+		    shipment_id = EXCLUDED.shipment_id,
+		    active = true,
+		    updated_at = now()
+		RETURNING id::text, order_reference, fulfillment_reference, domain_id, active
+	`, identity.TenantID, identity.DomainID, orderReference,
+		fulfillmentReference, shipmentID).Scan(
+		&subscription.ID,
+		&subscription.OrderReference,
+		&subscription.FulfillmentReference,
+		&subscription.DomainID,
+		&subscription.Active,
+	)
+	if err != nil {
+		return Subscription{}, fmt.Errorf("upsert tracking subscription: %w", err)
+	}
+	var normalizedStatus, validationStatus string
+	if err := tx.QueryRow(ctx, `
+		SELECT normalized_status, validation_status
+		FROM tracking_shipments
+		WHERE id = $1::uuid
+	`, shipmentID).Scan(&normalizedStatus, &validationStatus); err != nil {
+		return Subscription{}, fmt.Errorf("read subscribed tracking shipment: %w", err)
+	}
+	if eventType := currentTrackingEvent(normalizedStatus, validationStatus); eventType != "" {
+		if err := enqueueTrackingWebhook(ctx, tx, shipmentID, eventType); err != nil {
+			return Subscription{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Subscription{}, fmt.Errorf("commit tracking subscription: %w", err)
+	}
+	shipment, err := r.getShipment(ctx, shipmentID)
+	if err != nil {
+		return Subscription{}, err
+	}
+	subscription.Shipment = shipment
+	return subscription, nil
+}
+
+func currentTrackingEvent(normalizedStatus, validationStatus string) string {
+	if validationStatus == "invalid" {
+		return "tracking.invalid"
+	}
+	if validationStatus != "valid" {
+		return ""
+	}
+	if normalizedStatus == "delivered" {
+		return "tracking.delivered"
+	}
+	if normalizedStatus != "unknown" {
+		return "tracking.status_changed"
+	}
+	return "tracking.validated"
+}
+
+func (r *PostgresRepository) GetSubscription(
+	ctx context.Context,
+	fulfillmentReference string,
+) (Subscription, error) {
+	identity, ok := tenancy.FromContext(ctx)
+	if !ok {
+		return Subscription{}, ErrNotFound
+	}
+	var subscription Subscription
+	var shipmentID string
+	err := r.pool.QueryRow(ctx, `
+		SELECT id::text, order_reference, fulfillment_reference,
+		       domain_id, active, shipment_id::text
+		FROM tracking_subscriptions
+		WHERE tenant_id = $1
+		  AND fulfillment_reference = $2
+	`, identity.TenantID, fulfillmentReference).Scan(
+		&subscription.ID,
+		&subscription.OrderReference,
+		&subscription.FulfillmentReference,
+		&subscription.DomainID,
+		&subscription.Active,
+		&shipmentID,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Subscription{}, ErrNotFound
+	}
+	if err != nil {
+		return Subscription{}, fmt.Errorf("get tracking subscription: %w", err)
+	}
+	shipment, err := r.getShipment(ctx, shipmentID)
+	if err != nil {
+		return Subscription{}, err
+	}
+	subscription.Shipment = shipment
+	return subscription, nil
+}
+
+func changedTrackingEvent(previousStatus, previousValidation string, result Result) string {
+	if result.NormalizedStatus == "delivered" && previousStatus != "delivered" {
+		return "tracking.delivered"
+	}
+	if previousStatus != result.NormalizedStatus {
+		return "tracking.status_changed"
+	}
+	if previousValidation != "valid" {
+		return "tracking.validated"
+	}
+	return ""
+}
+
+func enqueueTrackingWebhook(
+	ctx context.Context,
+	tx pgx.Tx,
+	shipmentID, eventType string,
+) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO tracking_webhook_outbox (
+			subscription_id, shipment_id, tenant_id, event_type,
+			deduplication_key, data_json
+		)
+		SELECT
+			subscription.id,
+			shipment.id,
+			subscription.tenant_id,
+			$2,
+			subscription.id::text || ':' || $2 || ':' || coalesce(
+				shipment.provider_fetched_at::text,
+				shipment.validation_checked_at::text,
+				shipment.updated_at::text
+			),
+			jsonb_build_object(
+				'merchant_id', subscription.tenant_id,
+				'domain_id', subscription.domain_id,
+				'order_id', subscription.order_reference,
+				'fulfillment_id', subscription.fulfillment_reference,
+				'shipment', jsonb_build_object(
+					'courier', shipment.courier_code,
+					'waybill', shipment.waybill_masked,
+					'validation_status', shipment.validation_status,
+					'status', shipment.normalized_status,
+					'status_label', coalesce(shipment.status_label, ''),
+					'provider', coalesce(shipment.provider_code, ''),
+					'provider_fetched_at', shipment.provider_fetched_at,
+					'next_refresh_at', shipment.next_refresh_at,
+					'is_final', shipment.is_final
+				)
+			)
+		FROM tracking_subscriptions subscription
+		JOIN tracking_shipments shipment ON shipment.id = subscription.shipment_id
+		WHERE shipment.id = $1::uuid
+		  AND subscription.active
+		ON CONFLICT (deduplication_key) DO NOTHING
+	`, shipmentID, eventType)
+	if err != nil {
+		return fmt.Errorf("enqueue tracking webhook: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) ClaimWebhook(
+	ctx context.Context,
+	workerID string,
+) (WebhookJob, error) {
+	var job WebhookJob
+	var dataJSON []byte
+	err := r.pool.QueryRow(ctx, `
+		WITH candidate AS (
+			SELECT id
+			FROM tracking_webhook_outbox
+			WHERE (status = 'pending' AND available_at <= now())
+			   OR (status = 'running' AND locked_at < now() - interval '5 minutes')
+			ORDER BY available_at, created_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT 1
+		)
+		UPDATE tracking_webhook_outbox outbox
+		SET status = 'running', locked_at = now(), locked_by = $1, updated_at = now()
+		FROM candidate
+		WHERE outbox.id = candidate.id
+		RETURNING outbox.id::text, outbox.event_type, outbox.data_json,
+		          outbox.attempt_count, outbox.max_attempts, outbox.created_at
+	`, workerID).Scan(
+		&job.ID,
+		&job.EventType,
+		&dataJSON,
+		&job.AttemptCount,
+		&job.MaxAttempts,
+		&job.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return WebhookJob{}, ErrNoJobAvailable
+	}
+	if err != nil {
+		return WebhookJob{}, fmt.Errorf("claim tracking webhook: %w", err)
+	}
+	if err := json.Unmarshal(dataJSON, &job.Data); err != nil {
+		return WebhookJob{}, fmt.Errorf("decode tracking webhook data: %w", err)
+	}
+	return job, nil
+}
+
+func (r *PostgresRepository) CompleteWebhook(
+	ctx context.Context,
+	jobID string,
+	httpStatus int,
+) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE tracking_webhook_outbox
+		SET status = 'delivered', attempt_count = attempt_count + 1,
+		    last_http_status = $2, delivered_at = now(),
+		    locked_at = NULL, locked_by = NULL, updated_at = now()
+		WHERE id = $1::uuid
+	`, jobID, httpStatus)
+	if err != nil {
+		return fmt.Errorf("complete tracking webhook: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresRepository) FailWebhook(
+	ctx context.Context,
+	job WebhookJob,
+	httpStatus int,
+	message string,
+	retryAt time.Time,
+	retry bool,
+) error {
+	nextAttempt := job.AttemptCount + 1
+	status := "dead"
+	if retry && nextAttempt < job.MaxAttempts {
+		status = "pending"
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE tracking_webhook_outbox
+		SET status = $2, attempt_count = $3, available_at = $4,
+		    last_http_status = NULLIF($5, 0),
+		    last_error_message = left($6, 500),
+		    locked_at = NULL, locked_by = NULL, updated_at = now()
+		WHERE id = $1::uuid
+	`, job.ID, status, nextAttempt, retryAt, httpStatus, message)
+	if err != nil {
+		return fmt.Errorf("fail tracking webhook: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+	return nil
 }

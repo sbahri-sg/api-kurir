@@ -13,6 +13,7 @@ provider yang sedang aktif atau jenis header autentikasi.
 | Pilihan layanan merchant | Extension Kurir Emisell | `/api/v1/integrations/shipping-services` | `courier_code:canonical_service_code` | Stable | [`merchant-shipping-services.md`](merchant-shipping-services.md) |
 | Canonical/Internal | Dashboard dan service internal | `/v1` | `loc_idn_*` | Internal | [Kontrak API publik](api-contract.md) |
 | Emisell Merchant Gateway | Backend Emisell | `/api/v1` | `merchant_id` + UUID credential | Internal | [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) |
+| Tracking fulfillment | Backend Emisell | `/api/v1/integrations/tracking` | `merchant_id` + `fulfillment_id` | Internal | [Checkpoint tracking dan webhook](tracking-checkpoint-and-webhooks.md) |
 | Admin | Operator API Kurir | `/v1/admin` | Canonical ID dan UUID | Restricted | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Partner Connector | API Kurir ke sistem vendor | `/partner/v1` pada host partner | String canonical partner | Draft | [`openapi/partner-v1.yaml`](../openapi/partner-v1.yaml) |
 
@@ -35,6 +36,8 @@ Mulai dari dokumen berikut:
    minimum diterima, minimum tagihan, maksimum, dan filter cargo.
 6. [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) untuk
    tenant authentication, credential seller, kuota, dan multi-domain.
+7. [Checkpoint tracking dan webhook](tracking-checkpoint-and-webhooks.md) untuk
+   scheduler hemat, validasi AWB, snapshot, dan update fulfillment otomatis.
 
 Postman Collection pada dashboard memakai placeholder. Isi nilai secret hanya
 pada Postman Environment lokal, bukan pada Collection atau repository.
@@ -61,8 +64,9 @@ dipublikasikan.
 
 - [Arsitektur sistem](architecture.md)
 - [Peta kontrak dan arah komunikasi](api-surface-map.md)
-- [Dashboard admin dan tracking](admin-dashboard-and-tracking.md)
+- [Dashboard admin, tracking, dan manajemen webhook](admin-dashboard-and-tracking.md)
 - [Operasional adapter tracking RajaOngkir](rajaongkir-tracking.md)
+- [Checkpoint tracking hemat dan webhook Emisell](tracking-checkpoint-and-webhooks.md)
 - [Biteship sebagai fallback tracking](biteship-tracking-fallback.md)
 - [Operasional, kuota, dan compliance](operations-and-compliance.md)
 - [Stack teknologi dan concurrency](technology-stack.md)

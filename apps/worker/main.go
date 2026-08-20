@@ -14,6 +14,8 @@ import (
 	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tracking"
+	"github.com/emisell/api-kurir/internal/webhooksettings"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -92,8 +94,9 @@ func main() {
 			"rajaongkir_couriers", len(cfg.RajaOngkir.TrackingCouriers),
 			"biteship_fallback_couriers", len(cfg.Biteship.TrackingCouriers),
 		)
+		trackingRepository := tracking.NewPostgresRepository(pool)
 		runner := tracking.NewRunner(
-			tracking.NewPostgresRepository(pool),
+			trackingRepository,
 			trackingCipher,
 			adapters,
 			cfg.Tracking.WorkerID,
@@ -102,7 +105,30 @@ func main() {
 			logger,
 		)
 		logger.Info("durable tracking worker ready")
-		if err := runner.Run(ctx); err != nil {
+		group, workerCtx := errgroup.WithContext(ctx)
+		group.Go(func() error { return runner.Run(workerCtx) })
+		webhookSettingsService := webhooksettings.NewService(
+			webhooksettings.NewPostgresRepository(pool),
+			providerCredentialCipher,
+			cfg.AppEnv,
+			webhooksettings.Fallback{
+				Enabled:     cfg.Tracking.WebhookEnabled,
+				CallbackURL: cfg.Tracking.WebhookURL,
+				Secret:      cfg.Tracking.WebhookSecret,
+			},
+		)
+		dispatcher := tracking.NewResolvingWebhookDispatcher(
+			trackingRepository,
+			webhookSettingsService,
+			cfg.Tracking.WorkerID,
+			cfg.Tracking.WebhookConcurrency,
+			cfg.Tracking.WebhookPollInterval,
+			cfg.Tracking.WebhookTimeout,
+			logger,
+		)
+		group.Go(func() error { return dispatcher.Run(workerCtx) })
+		logger.Info("tracking webhook dispatcher ready; database settings override environment fallback")
+		if err := group.Wait(); err != nil {
 			logger.Error("tracking worker stopped", "error", err)
 			os.Exit(1)
 		}

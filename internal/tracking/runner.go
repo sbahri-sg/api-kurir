@@ -144,11 +144,31 @@ func (r *Runner) processOneAs(ctx context.Context, workerID string) error {
 	}
 	result, err := adapter.Track(providerCtx, request)
 	if err != nil {
+		if errors.Is(err, ErrWaybillNotFound) {
+			fetchedAt := time.Now().UTC()
+			next, invalid := notFoundCheckpoint(
+				fetchedAt,
+				job.NotFoundCount+1,
+				job.ProviderHitCount+1,
+				job.ProviderHitLimit,
+			)
+			if recordErr := r.repository.RecordNotFound(
+				ctx, job, fetchedAt, next, invalid,
+			); recordErr != nil {
+				return fmt.Errorf("record tracking waybill not found: %w", recordErr)
+			}
+			return nil
+		}
 		return r.failJob(ctx, job, trackingFailureCode(err), err)
 	}
 	if result.FetchedAt.IsZero() {
 		result.FetchedAt = time.Now().UTC()
 	}
+	result = ApplyEconomyCheckpoint(
+		result,
+		job.ProviderHitCount+1,
+		job.ProviderHitLimit,
+	)
 	if err := r.repository.Complete(ctx, job, result); err != nil {
 		return fmt.Errorf("complete tracking job: %w", err)
 	}
@@ -201,6 +221,8 @@ func trackingFailureCode(err error) string {
 		return "PROVIDER_RATE_LIMITED"
 	case errors.Is(err, ErrProviderQuota):
 		return "PROVIDER_QUOTA_EXHAUSTED"
+	case errors.Is(err, ErrProviderTimeout):
+		return "PROVIDER_TIMEOUT"
 	case errors.Is(err, ErrWaybillNotFound):
 		return "WAYBILL_NOT_FOUND"
 	case errors.Is(err, ErrPhoneSuffixRequired):
@@ -212,13 +234,14 @@ func trackingFailureCode(err error) string {
 
 func retryDelay(code string, attempt int, now time.Time) time.Duration {
 	switch code {
-	case "PROVIDER_RATE_LIMITED":
-		exponent := math.Min(float64(attempt), 4)
-		delay := time.Duration(math.Pow(2, exponent)) * 30 * time.Second
-		if delay > 5*time.Minute {
-			return 5 * time.Minute
+	case "PROVIDER_RATE_LIMITED", "PROVIDER_TIMEOUT", "PROVIDER_ERROR":
+		if attempt <= 0 {
+			return time.Hour
 		}
-		return delay
+		if attempt == 1 {
+			return 6 * time.Hour
+		}
+		return 24 * time.Hour
 	case "PROVIDER_QUOTA_EXHAUSTED":
 		jakarta := time.FixedZone("Asia/Jakarta", 7*60*60)
 		localNow := now.In(jakarta)
@@ -237,9 +260,6 @@ func retryDelay(code string, attempt int, now time.Time) time.Duration {
 		return 6 * time.Hour
 	case "PHONE_VALIDATION_REQUIRED":
 		return 24 * time.Hour
-	case "WAYBILL_NOT_FOUND":
-		exponent := math.Min(float64(attempt), 5)
-		return time.Duration(math.Pow(2, exponent)) * 15 * time.Minute
 	default:
 		exponent := math.Min(float64(attempt), 6)
 		return time.Duration(math.Pow(2, exponent)) * time.Minute

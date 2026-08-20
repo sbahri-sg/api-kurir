@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -54,11 +55,17 @@ type BiteshipConfig struct {
 }
 
 type TrackingConfig struct {
-	Enabled       bool
-	EncryptionKey string
-	WorkerID      string
-	Concurrency   int
-	PollInterval  time.Duration
+	Enabled             bool
+	EncryptionKey       string
+	WorkerID            string
+	Concurrency         int
+	PollInterval        time.Duration
+	WebhookEnabled      bool
+	WebhookURL          string
+	WebhookSecret       string
+	WebhookTimeout      time.Duration
+	WebhookConcurrency  int
+	WebhookPollInterval time.Duration
 }
 
 type ProviderCredentialConfig struct {
@@ -132,6 +139,22 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	trackingWebhookEnabled, err := boolEnv("TRACKING_WEBHOOK_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
+	trackingWebhookTimeout, err := durationEnv("TRACKING_WEBHOOK_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	trackingWebhookConcurrency, err := intEnv("TRACKING_WEBHOOK_CONCURRENCY", 4)
+	if err != nil {
+		return Config{}, err
+	}
+	trackingWebhookPollInterval, err := durationEnv("TRACKING_WEBHOOK_POLL_INTERVAL", time.Second)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		AppEnv:          envOr("APP_ENV", "development"),
@@ -180,11 +203,17 @@ func Load() (Config, error) {
 			MaxTTL:    5 * time.Minute,
 		},
 		Tracking: TrackingConfig{
-			Enabled:       trackingEnabled,
-			EncryptionKey: strings.TrimSpace(os.Getenv("TRACKING_ENCRYPTION_KEY")),
-			WorkerID:      envOr("TRACKING_WORKER_ID", "worker-local"),
-			Concurrency:   trackingConcurrency,
-			PollInterval:  trackingPollInterval,
+			Enabled:             trackingEnabled,
+			EncryptionKey:       strings.TrimSpace(os.Getenv("TRACKING_ENCRYPTION_KEY")),
+			WorkerID:            envOr("TRACKING_WORKER_ID", "worker-local"),
+			Concurrency:         trackingConcurrency,
+			PollInterval:        trackingPollInterval,
+			WebhookEnabled:      trackingWebhookEnabled,
+			WebhookURL:          strings.TrimSpace(os.Getenv("EMISELL_TRACKING_WEBHOOK_URL")),
+			WebhookSecret:       strings.TrimSpace(os.Getenv("EMISELL_TRACKING_WEBHOOK_SECRET")),
+			WebhookTimeout:      trackingWebhookTimeout,
+			WebhookConcurrency:  trackingWebhookConcurrency,
+			WebhookPollInterval: trackingWebhookPollInterval,
 		},
 	}
 
@@ -242,6 +271,30 @@ func Load() (Config, error) {
 	}
 	if cfg.Tracking.Concurrency < 1 || cfg.Tracking.Concurrency > 64 {
 		return Config{}, errors.New("TRACKING_WORKER_CONCURRENCY must be between 1 and 64")
+	}
+	if cfg.Tracking.WebhookEnabled {
+		if cfg.Tracking.WebhookURL == "" || cfg.Tracking.WebhookSecret == "" {
+			return Config{}, errors.New(
+				"EMISELL_TRACKING_WEBHOOK_URL and EMISELL_TRACKING_WEBHOOK_SECRET are required when TRACKING_WEBHOOK_ENABLED=true",
+			)
+		}
+		if cfg.AppEnv == "production" && !strings.HasPrefix(cfg.Tracking.WebhookURL, "https://") {
+			return Config{}, errors.New("EMISELL_TRACKING_WEBHOOK_URL must use https in production")
+		}
+		webhookURL, parseErr := url.ParseRequestURI(cfg.Tracking.WebhookURL)
+		if parseErr != nil || webhookURL.Host == "" ||
+			(webhookURL.Scheme != "http" && webhookURL.Scheme != "https") {
+			return Config{}, errors.New("EMISELL_TRACKING_WEBHOOK_URL must be a valid absolute HTTP URL")
+		}
+		if len(cfg.Tracking.WebhookSecret) < 32 {
+			return Config{}, errors.New("EMISELL_TRACKING_WEBHOOK_SECRET must be at least 32 characters")
+		}
+	}
+	if cfg.Tracking.WebhookTimeout <= 0 || cfg.Tracking.WebhookPollInterval <= 0 {
+		return Config{}, errors.New("tracking webhook timeout and poll interval must be positive")
+	}
+	if cfg.Tracking.WebhookConcurrency < 1 || cfg.Tracking.WebhookConcurrency > 32 {
+		return Config{}, errors.New("TRACKING_WEBHOOK_CONCURRENCY must be between 1 and 32")
 	}
 	tenantContextMaxTTL, err := durationEnv("TENANT_CONTEXT_MAX_TTL", cfg.TenantContext.MaxTTL)
 	if err != nil {

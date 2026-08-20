@@ -754,7 +754,7 @@ origin=442&destination=2165&weight=1000&courier=jne&price=lowest&include_group=t
     path: "/api/v1/track/waybill",
     title: "Cek resi SDK RajaOngkir V2",
     description:
-      "Drop-in tracking sinkron dengan envelope dan field RajaOngkir V2. Hasil disimpan sebagai snapshot agar pengecekan berulang tidak selalu memakai hit provider.",
+      "Drop-in tracking sinkron dengan envelope dan field RajaOngkir V2. Snapshot, checkpoint 12/24 jam, dan negative cache memastikan pengecekan berulang tidak selalu memakai hit provider.",
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "awb — nomor resi 6–40 karakter",
@@ -839,10 +839,14 @@ key: {{api_key}}`,
     "events": [],
     "provider": "rajaongkir",
     "provider_fetched_at": "2026-07-28T05:20:00Z",
-    "next_refresh_at": "2026-07-28T06:20:00Z",
+    "next_refresh_at": "2026-07-28T17:20:00Z",
     "is_final": false,
     "refresh_queued": false,
-    "last_error_code": ""
+    "last_error_code": "",
+    "validation_status": "valid",
+    "provider_hit_count": 3,
+    "provider_hit_limit": 10,
+    "polling_stopped": false
   },
   "meta": {
     "request_id": "req_example"
@@ -978,7 +982,11 @@ key: {{api_key}}`,
     "provider": "rajaongkir",
     "refresh_queued": false,
     "is_final": false,
-    "last_error_code": ""
+    "last_error_code": "",
+    "validation_status": "valid",
+    "provider_hit_count": 3,
+    "provider_hit_limit": 10,
+    "polling_stopped": false
   },
   "meta": {"request_id": "req_example"}
 }`,
@@ -1217,6 +1225,89 @@ key: {{api_key}}`,
   {
     scope: "admin",
     method: "GET",
+    path: "/v1/admin/tracking-webhook",
+    title: "Baca pengaturan webhook tracking",
+    description:
+      "Membaca URL callback, status aktif, mask secret, sumber konfigurasi, dan hasil test terakhir. Plaintext secret tidak pernah dikembalikan.",
+    authentication: "Bearer admin API key",
+    response: `{
+  "data": {
+    "configured": true,
+    "callback_url": "https://api.emisell.com/api/v1/webhooks/tracking",
+    "enabled": true,
+    "secret_configured": true,
+    "secret_hint": "whsec_ab••••••••2026",
+    "source": "database",
+    "last_test_success": true
+  }
+}`,
+  },
+  {
+    scope: "admin",
+    method: "PUT",
+    path: "/v1/admin/tracking-webhook",
+    title: "Simpan URL dan aktivasi webhook",
+    description:
+      "Menyimpan endpoint backend Emisell. Production wajib HTTPS publik dan webhook hanya dapat diaktifkan setelah secret tersedia.",
+    authentication: "Bearer admin API key",
+    parameters: [
+      "callback_url — URL penerima webhook di backend Emisell",
+      "enabled — aktifkan atau hentikan delivery event",
+    ],
+    request: `{
+  "callback_url": "https://api.emisell.com/api/v1/webhooks/tracking",
+  "enabled": true
+}`,
+    response: `{
+  "data": {
+    "configured": true,
+    "enabled": true,
+    "secret_configured": true,
+    "source": "database"
+  }
+}`,
+  },
+  {
+    scope: "admin",
+    method: "POST",
+    path: "/v1/admin/tracking-webhook/secret",
+    title: "Generate atau rotate webhook secret",
+    description:
+      "Menghasilkan secret HMAC 256-bit. Plaintext hanya tampil pada response ini; database menyimpan ciphertext dan mask.",
+    authentication: "Bearer admin API key",
+    request: `POST {{base_url}}/v1/admin/tracking-webhook/secret`,
+    response: `{
+  "data": {
+    "settings": {
+      "secret_configured": true,
+      "secret_hint": "whsec_ab••••••••2026"
+    },
+    "secret": "whsec_<secret-hanya-tampil-sekali>"
+  }
+}`,
+  },
+  {
+    scope: "admin",
+    method: "POST",
+    path: "/v1/admin/tracking-webhook/test",
+    title: "Test webhook Emisell",
+    description:
+      "Mengirim event tracking.test bertanda tangan tanpa merchant, order, AWB, alamat, atau identitas penerima.",
+    authentication: "Bearer admin API key",
+    request: `POST {{base_url}}/v1/admin/tracking-webhook/test`,
+    response: `{
+  "data": {
+    "success": true,
+    "http_status": 202,
+    "event_id": "evt_test_<random>",
+    "tested_at": "2026-08-20T12:00:00Z",
+    "message": "Webhook test diterima Emisell."
+  }
+}`,
+  },
+  {
+    scope: "admin",
+    method: "GET",
     path: "/v1/admin/api-keys",
     title: "Daftar customer API key",
     description:
@@ -1280,6 +1371,100 @@ key: {{api_key}}`,
     parameters: ["id — UUID customer API key yang akan dicabut"],
     request: `POST {{base_url}}/v1/admin/api-keys/{{customer_api_key_id}}/revoke`,
     response: `HTTP 204 No Content`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/integrations/tracking/subscriptions",
+    title: "Daftarkan tracking fulfillment",
+    description:
+      "Mendaftarkan AWB satu kali untuk checkpoint tracking hemat. Worker melakukan maksimal 10 hit sepanjang siklus, sedangkan pembacaan seller/customer selalu memakai snapshot lokal.",
+    authentication:
+      "Customer API key + tenant token dengan scope tracking:write",
+    parameters: [
+      "order_id — ID order Emisell, maksimal 128 karakter",
+      "fulfillment_id — ID fulfillment unik dalam merchant",
+      "courier — kode kurir canonical",
+      "waybill — AWB 6–40 karakter",
+      "merchant_id tidak dikirim; diambil dari claim sub",
+    ],
+    request: `POST {{base_url}}/api/v1/integrations/tracking/subscriptions
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}
+Content-Type: application/json
+
+{
+  "order_id": "order_123",
+  "fulfillment_id": "fulfillment_123",
+  "courier": "jne",
+  "waybill": "TEST123456789"
+}`,
+    response: `{
+  "meta": {
+    "message": "Tracking subscription registered",
+    "code": 202,
+    "status": "success",
+    "request_id": "req_example"
+  },
+  "data": {
+    "id": "subscription_uuid",
+    "order_id": "order_123",
+    "fulfillment_id": "fulfillment_123",
+    "active": true,
+    "shipment": {
+      "courier": "jne",
+      "waybill": "********6789",
+      "status": "unknown",
+      "validation_status": "unverified",
+      "provider_hit_count": 0,
+      "provider_hit_limit": 10,
+      "refresh_queued": true,
+      "polling_stopped": false
+    }
+  }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/integrations/tracking/subscriptions/{fulfillment_id}",
+    title: "Baca snapshot tracking fulfillment",
+    description:
+      "Hanya membaca snapshot PostgreSQL berdasarkan merchant dan fulfillment. Endpoint ini tidak memanggil RajaOngkir/Biteship dan aman dipakai berulang oleh backend Emisell.",
+    authentication:
+      "Customer API key + tenant token dengan scope tracking:read",
+    parameters: ["fulfillment_id — ID fulfillment yang sebelumnya didaftarkan"],
+    request: `GET {{base_url}}/api/v1/integrations/tracking/subscriptions/{{fulfillment_id}}
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}`,
+    response: `{
+  "meta": {
+    "message": "Success Get Tracking Subscription",
+    "code": 200,
+    "status": "success",
+    "request_id": "req_example"
+  },
+  "data": {
+    "order_id": "order_123",
+    "fulfillment_id": "fulfillment_123",
+    "active": true,
+    "shipment": {
+      "courier": "jne",
+      "waybill": "********6789",
+      "status": "in_transit",
+      "status_label": "Dalam perjalanan",
+      "validation_status": "valid",
+      "provider": "rajaongkir",
+      "provider_fetched_at": "2026-08-20T10:00:00Z",
+      "next_refresh_at": "2026-08-20T22:00:00Z",
+      "provider_hit_count": 3,
+      "provider_hit_limit": 10,
+      "polling_stopped": false
+    }
+  }
+}`,
   },
   {
     contract: "gateway",

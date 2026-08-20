@@ -175,13 +175,7 @@ func normalizeBiteshipTracking(
 			OccurredAt:  occurredAt.UTC(),
 		})
 	}
-	isFinal := status == "delivered" || status == "returned" || status == "cancelled"
-	var nextRefreshAt *time.Time
-	if !isFinal {
-		next := fetchedAt.Add(biteshipRefreshInterval(status))
-		nextRefreshAt = &next
-	}
-	return tracking.Result{
+	result := tracking.Result{
 		NormalizedStatus: status,
 		StatusLabel:      biteshipStatusLabel(status),
 		Summary: map[string]any{
@@ -197,12 +191,12 @@ func normalizeBiteshipTracking(
 			"tracking_link":   input.Link,
 			"delivered":       status == "delivered",
 		},
-		Events:        events,
-		ProviderCode:  "biteship",
-		FetchedAt:     fetchedAt,
-		NextRefreshAt: nextRefreshAt,
-		IsFinal:       isFinal,
+		Events:       events,
+		ProviderCode: "biteship",
+		FetchedAt:    fetchedAt,
+		IsFinal:      false,
 	}
+	return tracking.ApplyEconomyCheckpoint(result, 1, tracking.DefaultProviderHitLimit)
 }
 
 func normalizeBiteshipStatus(value string) string {
@@ -314,17 +308,4 @@ func biteshipStatusLabel(status string) string {
 		"unknown":          "Status belum diketahui",
 	}
 	return labels[status]
-}
-
-// Public tracking is metered by Biteship, so refreshes are intentionally more
-// conservative than RajaOngkir while a parcel is still moving.
-func biteshipRefreshInterval(status string) time.Duration {
-	switch status {
-	case "out_for_delivery":
-		return 30 * time.Minute
-	case "in_transit", "picked_up":
-		return 2 * time.Hour
-	default:
-		return 6 * time.Hour
-	}
 }

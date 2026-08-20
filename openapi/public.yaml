@@ -997,6 +997,92 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/integrations/tracking/subscriptions:
+    post:
+      tags: [Emisell Gateway]
+      operationId: createTenantTrackingSubscription
+      summary: Mendaftarkan AWB fulfillment untuk checkpoint tracking
+      description: >
+        Merchant berasal dari claim sub. Request idempotent berdasarkan
+        merchant_id dan fulfillment_id. Worker memperbarui snapshot terjadwal;
+        pembacaan snapshot tidak memakai hit provider.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingSubscriptionRequest"
+      responses:
+        "200":
+          description: Subscription dan snapshot sudah tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingSubscriptionResponse"
+        "202":
+          description: Subscription dibuat dan validasi AWB sedang antre
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingSubscriptionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope tracking:write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+
+  /api/v1/integrations/tracking/subscriptions/{fulfillment_id}:
+    get:
+      tags: [Emisell Gateway]
+      operationId: getTenantTrackingSubscription
+      summary: Membaca snapshot tracking fulfillment tanpa hit provider
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      parameters:
+        - name: fulfillment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Snapshot tracking lokal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingSubscriptionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope tracking:read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Subscription tidak ditemukan pada merchant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/admin/overview:
     get:
       tags: [Admin]
@@ -1373,6 +1459,106 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Key tidak ditemukan atau sudah dicabut
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/tracking-webhook:
+    get:
+      tags: [Admin]
+      operationId: adminGetTrackingWebhookSettings
+      summary: Membaca konfigurasi webhook tracking Emisell
+      description: Secret hanya dikembalikan dalam bentuk mask.
+      security:
+        - adminBearerAuth: []
+      responses:
+        "200":
+          description: Konfigurasi efektif dari database atau fallback environment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingWebhookSettingsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Admin]
+      operationId: adminUpdateTrackingWebhookSettings
+      summary: Menyimpan URL dan status aktif webhook
+      description: Production hanya menerima URL HTTPS publik.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AdminActor"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTrackingWebhookSettingsRequest"
+      responses:
+        "200":
+          description: Konfigurasi tersimpan dan langsung dibaca worker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingWebhookSettingsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Secret belum dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: URL webhook tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/tracking-webhook/secret:
+    post:
+      tags: [Admin]
+      operationId: adminGenerateTrackingWebhookSecret
+      summary: Generate atau rotate webhook secret
+      description: Plaintext secret 256-bit hanya tersedia pada response ini.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AdminActor"
+      responses:
+        "201":
+          description: Secret baru dibuat dan tersimpan terenkripsi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedTrackingWebhookSecretResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/tracking-webhook/test:
+    post:
+      tags: [Admin]
+      operationId: adminTestTrackingWebhook
+      summary: Mengirim event test tanpa data pelanggan
+      description: Event tracking.test ditandatangani dengan HMAC yang sama seperti event production.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AdminActor"
+      responses:
+        "200":
+          description: Hasil percobaan delivery webhook
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingWebhookTestResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: URL atau secret belum dikonfigurasi
           content:
             application/json:
               schema:
@@ -2709,6 +2895,73 @@ components:
           type: boolean
         refresh_queued:
           type: boolean
+        last_error_code:
+          type: string
+        validation_status:
+          type: string
+          enum: [unverified, valid, not_found, invalid]
+        validation_checked_at:
+          type: [string, "null"]
+          format: date-time
+        provider_hit_count:
+          type: integer
+          minimum: 0
+        provider_hit_limit:
+          type: integer
+          minimum: 1
+        polling_stopped:
+          type: boolean
+
+    TrackingSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required: [order_id, fulfillment_id, courier, waybill]
+      properties:
+        order_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fulfillment_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        courier:
+          type: string
+        waybill:
+          type: string
+          minLength: 6
+          maxLength: 40
+          pattern: "^[A-Za-z0-9-]+$"
+        last_phone_number:
+          type: string
+          pattern: "^[0-9]{5}$"
+
+    TrackingSubscription:
+      type: object
+      required: [id, order_id, fulfillment_id, active, shipment]
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+        fulfillment_id:
+          type: string
+        domain_id:
+          type: string
+        active:
+          type: boolean
+        shipment:
+          $ref: "#/components/schemas/TrackingShipment"
+
+    TrackingSubscriptionResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TrackingSubscription"
 
     TrackingResponse:
       type: object
@@ -2971,6 +3224,113 @@ components:
           $ref: "#/components/schemas/RequestMeta"
         data:
           $ref: "#/components/schemas/GeneratedCustomerAPIKey"
+
+    TrackingWebhookSettings:
+      type: object
+      required:
+        - configured
+        - callback_url
+        - enabled
+        - secret_configured
+        - secret_hint
+        - source
+        - last_test_error
+      properties:
+        configured:
+          type: boolean
+        callback_url:
+          type: string
+          description: Kosong hanya ketika konfigurasi belum dilengkapi.
+        enabled:
+          type: boolean
+        secret_configured:
+          type: boolean
+        secret_hint:
+          type: string
+          description: Mask aman; bukan secret yang dapat dipakai.
+        source:
+          type: string
+          enum: [database, environment]
+        last_test_at:
+          type: [string, "null"]
+          format: date-time
+        last_test_success:
+          type: [boolean, "null"]
+        last_test_http_status:
+          type: [integer, "null"]
+        last_test_error:
+          type: string
+        updated_by:
+          type: string
+        updated_at:
+          type: [string, "null"]
+          format: date-time
+
+    UpdateTrackingWebhookSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [callback_url, enabled]
+      properties:
+        callback_url:
+          type: string
+          description: Wajib terisi ketika enabled bernilai true.
+        enabled:
+          type: boolean
+
+    TrackingWebhookSettingsResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TrackingWebhookSettings"
+
+    GeneratedTrackingWebhookSecret:
+      type: object
+      required: [settings, secret]
+      properties:
+        settings:
+          $ref: "#/components/schemas/TrackingWebhookSettings"
+        secret:
+          type: string
+          writeOnly: true
+          pattern: "^whsec_[A-Za-z0-9_-]{43}$"
+          description: Plaintext secret hanya tampil pada response generate/rotate.
+
+    GeneratedTrackingWebhookSecretResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/GeneratedTrackingWebhookSecret"
+
+    TrackingWebhookTestResult:
+      type: object
+      required: [success, http_status, event_id, tested_at, message]
+      properties:
+        success:
+          type: boolean
+        http_status:
+          type: integer
+        event_id:
+          type: string
+        tested_at:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    TrackingWebhookTestResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TrackingWebhookTestResult"
 
     ErrorResponse:
       type: object

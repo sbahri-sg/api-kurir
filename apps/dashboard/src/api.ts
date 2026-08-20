@@ -242,6 +242,34 @@ export type GeneratedCustomerAPIKey = {
   secret: string;
 };
 
+export type WebhookSettings = {
+  configured: boolean;
+  callback_url: string;
+  enabled: boolean;
+  secret_configured: boolean;
+  secret_hint: string;
+  source: "database" | "environment";
+  last_test_at: string | null;
+  last_test_success: boolean | null;
+  last_test_http_status: number | null;
+  last_test_error: string;
+  updated_by: string;
+  updated_at: string | null;
+};
+
+export type GeneratedWebhookSecret = {
+  settings: WebhookSettings;
+  secret: string;
+};
+
+export type WebhookTestResult = {
+  success: boolean;
+  http_status: number;
+  event_id: string;
+  tested_at: string;
+  message: string;
+};
+
 export class AdminApi {
   constructor(
     private readonly key: string,
@@ -357,6 +385,33 @@ export class AdminApi {
     return this.request<void>(`/v1/admin/api-keys/${id}/revoke`, {
       method: "POST",
     });
+  }
+
+  webhookSettings(signal?: AbortSignal) {
+    return this.request<WebhookSettings>("/v1/admin/tracking-webhook", {
+      signal,
+    });
+  }
+
+  updateWebhookSettings(callbackURL: string, enabled: boolean) {
+    return this.request<WebhookSettings>("/v1/admin/tracking-webhook", {
+      method: "PUT",
+      body: JSON.stringify({ callback_url: callbackURL, enabled }),
+    });
+  }
+
+  generateWebhookSecret() {
+    return this.request<GeneratedWebhookSecret>(
+      "/v1/admin/tracking-webhook/secret",
+      { method: "POST" },
+    );
+  }
+
+  testWebhook() {
+    return this.request<WebhookTestResult>(
+      "/v1/admin/tracking-webhook/test",
+      { method: "POST" },
+    );
   }
 
   private async request<T>(

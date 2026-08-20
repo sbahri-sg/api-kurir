@@ -107,6 +107,13 @@ terjadi hit provider.
 | `shipping:read` | Mengambil tarif dengan credential merchant |
 | `shipping:write` | Mengatur kurir dan layanan yang boleh tampil di checkout |
 | `tracking:read` | Melacak AWB dengan credential merchant |
+| `tracking:write` | Mendaftarkan fulfillment untuk checkpoint tracking |
+
+Untuk order fulfillment, backend Emisell mendaftarkan AWB melalui
+`POST /api/v1/integrations/tracking/subscriptions`, lalu membaca snapshot pada
+`GET /api/v1/integrations/tracking/subscriptions/{fulfillment_id}`. Perubahan
+status dikirim melalui webhook HMAC. Kontrak lengkap tersedia pada
+[`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md).
 
 Kontrak pilihan kurir/layanan dan pola UI bertingkat dijelaskan lengkap pada
 [`merchant-shipping-services.md`](merchant-shipping-services.md).

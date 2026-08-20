@@ -627,10 +627,14 @@ Respons:
     ],
     "provider": "carrier_adapter",
     "provider_fetched_at": "2026-07-28T08:10:00Z",
-    "next_refresh_at": "2026-07-28T09:10:00Z",
+    "next_refresh_at": "2026-07-28T20:10:00Z",
     "is_final": false,
     "refresh_queued": false,
-    "last_error_code": ""
+    "last_error_code": "",
+    "validation_status": "valid",
+    "provider_hit_count": 3,
+    "provider_hit_limit": 10,
+    "polling_stopped": false
   }
 }
 ```
@@ -658,6 +662,17 @@ Snapshot resi yang sama digunakan ulang; worker memperbarui berdasarkan status
 dan `next_refresh_at`. Nomor resi penuh tidak dikembalikan; database menyimpan
 hash, masked value, dan ciphertext AES-256-GCM. Jika tracking dinonaktifkan,
 endpoint mengembalikan `503 TRACKING_NOT_CONFIGURED`.
+
+Untuk fulfillment Emisell gunakan endpoint tenant-aware berikut agar request
+checkout/customer hanya membaca snapshot dan tidak memicu provider:
+
+| Method | Endpoint | Scope |
+|---|---|---|
+| POST | `/api/v1/integrations/tracking/subscriptions` | `tracking:write` |
+| GET | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | `tracking:read` |
+
+Kebijakan checkpoint, negative cache AWB, batas hit, dan webhook HMAC dijelaskan
+pada [`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md).
 
 ## 7. API admin
 

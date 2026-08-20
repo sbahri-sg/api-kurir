@@ -36,6 +36,12 @@ type Shipment struct {
 	IsFinal           bool           `json:"is_final"`
 	RefreshQueued     bool           `json:"refresh_queued"`
 	LastErrorCode     string         `json:"last_error_code,omitempty"`
+	ValidationStatus  string         `json:"validation_status"`
+	ValidationChecked *time.Time     `json:"validation_checked_at,omitempty"`
+	NotFoundCount     int            `json:"-"`
+	ProviderHitCount  int            `json:"provider_hit_count"`
+	ProviderHitLimit  int            `json:"provider_hit_limit"`
+	PollingStopped    bool           `json:"polling_stopped"`
 }
 
 type Event struct {
@@ -55,6 +61,26 @@ type Job struct {
 	ProviderContextCiphertext []byte
 	AttemptCount              int
 	MaxAttempts               int
+	NotFoundCount             int
+	ProviderHitCount          int
+	ProviderHitLimit          int
+}
+
+type SubscriptionRequest struct {
+	OrderReference       string `json:"order_id"`
+	FulfillmentReference string `json:"fulfillment_id"`
+	CourierCode          string `json:"courier"`
+	Waybill              string `json:"waybill"`
+	LastPhoneDigits      string `json:"last_phone_number,omitempty"`
+}
+
+type Subscription struct {
+	ID                   string   `json:"id"`
+	OrderReference       string   `json:"order_id"`
+	FulfillmentReference string   `json:"fulfillment_id"`
+	DomainID             string   `json:"domain_id,omitempty"`
+	Active               bool     `json:"active"`
+	Shipment             Shipment `json:"shipment"`
 }
 
 type Request struct {
@@ -98,7 +124,27 @@ type Repository interface {
 		shipmentID string,
 		result Result,
 	) error
+	RecordNotFound(ctx context.Context, job Job, fetchedAt time.Time, nextRefreshAt *time.Time, invalid bool) error
+	RecordNotFoundImmediate(ctx context.Context, shipmentID string, fetchedAt time.Time, nextRefreshAt *time.Time, invalid bool) error
+	RecordImmediateFailure(ctx context.Context, shipmentID, errorCode string, retryAt time.Time, countProviderHit bool) error
 	Fail(ctx context.Context, job Job, errorCode, message string, retryAt time.Time) error
+	UpsertSubscription(ctx context.Context, shipmentID, orderReference, fulfillmentReference string) (Subscription, error)
+	GetSubscription(ctx context.Context, fulfillmentReference string) (Subscription, error)
+}
+
+type WebhookJob struct {
+	ID           string
+	EventType    string
+	Data         map[string]any
+	AttemptCount int
+	MaxAttempts  int
+	CreatedAt    time.Time
+}
+
+type WebhookRepository interface {
+	ClaimWebhook(ctx context.Context, workerID string) (WebhookJob, error)
+	CompleteWebhook(ctx context.Context, jobID string, httpStatus int) error
+	FailWebhook(ctx context.Context, job WebhookJob, httpStatus int, message string, retryAt time.Time, retry bool) error
 }
 
 type Adapter interface {

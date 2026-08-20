@@ -92,6 +92,52 @@ func (trackingHTTPRepositoryStub) CompleteImmediate(
 	return nil
 }
 
+func (trackingHTTPRepositoryStub) RecordNotFound(
+	context.Context,
+	tracking.Job,
+	time.Time,
+	*time.Time,
+	bool,
+) error {
+	return nil
+}
+
+func (trackingHTTPRepositoryStub) RecordNotFoundImmediate(
+	context.Context,
+	string,
+	time.Time,
+	*time.Time,
+	bool,
+) error {
+	return nil
+}
+
+func (trackingHTTPRepositoryStub) RecordImmediateFailure(
+	context.Context,
+	string,
+	string,
+	time.Time,
+	bool,
+) error {
+	return nil
+}
+
+func (trackingHTTPRepositoryStub) UpsertSubscription(
+	context.Context,
+	string,
+	string,
+	string,
+) (tracking.Subscription, error) {
+	return tracking.Subscription{}, nil
+}
+
+func (trackingHTTPRepositoryStub) GetSubscription(
+	context.Context,
+	string,
+) (tracking.Subscription, error) {
+	return tracking.Subscription{}, tracking.ErrNotFound
+}
+
 func (trackingHTTPRepositoryStub) Fail(
 	context.Context,
 	tracking.Job,

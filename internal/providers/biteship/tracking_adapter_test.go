@@ -92,8 +92,8 @@ func TestTrackingAdapterNormalizesPublicTracking(t *testing.T) {
 		quota.calls != 1 {
 		t.Fatalf("unexpected tracking result: %#v quota=%d", result, quota.calls)
 	}
-	if result.NextRefreshAt == nil || result.NextRefreshAt.Sub(result.FetchedAt) != 2*time.Hour {
-		t.Fatalf("expected economical two-hour refresh, got %#v", result.NextRefreshAt)
+	if result.NextRefreshAt == nil || result.NextRefreshAt.Sub(result.FetchedAt) != 12*time.Hour {
+		t.Fatalf("expected economical twelve-hour checkpoint, got %#v", result.NextRefreshAt)
 	}
 }
 

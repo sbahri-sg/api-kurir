@@ -30,7 +30,8 @@ func (r *trackingRepositoryStub) Register(
 	r.providerContextCiphertext = append([]byte(nil), providerContextCiphertext...)
 	shipment := Shipment{
 		ID: "shipment-1", CourierCode: courierCode, WaybillMasked: waybillMasked,
-		NormalizedStatus: "unknown", RefreshQueued: true,
+		NormalizedStatus: "unknown", ValidationStatus: "unverified",
+		ProviderHitLimit: DefaultProviderHitLimit, RefreshQueued: true,
 	}
 	r.shipment = shipment
 	return shipment, nil
@@ -44,7 +45,7 @@ func (r *trackingRepositoryStub) RegisterImmediate(
 	waybillCiphertext []byte,
 	providerContextCiphertext []byte,
 ) (Shipment, error) {
-	if r.shipment.ProviderFetchedAt != nil {
+	if r.shipment.ID != "" {
 		return r.shipment, nil
 	}
 	shipment, err := r.Register(
@@ -91,6 +92,79 @@ func (r *trackingRepositoryStub) CompleteImmediate(
 	r.shipment.NextRefreshAt = result.NextRefreshAt
 	r.shipment.IsFinal = result.IsFinal
 	return nil
+}
+
+func (r *trackingRepositoryStub) RecordNotFound(
+	_ context.Context,
+	_ Job,
+	fetchedAt time.Time,
+	nextRefreshAt *time.Time,
+	invalid bool,
+) error {
+	return r.recordNotFound(fetchedAt, nextRefreshAt, invalid)
+}
+
+func (r *trackingRepositoryStub) RecordNotFoundImmediate(
+	_ context.Context,
+	_ string,
+	fetchedAt time.Time,
+	nextRefreshAt *time.Time,
+	invalid bool,
+) error {
+	return r.recordNotFound(fetchedAt, nextRefreshAt, invalid)
+}
+
+func (r *trackingRepositoryStub) RecordImmediateFailure(
+	_ context.Context,
+	_ string,
+	errorCode string,
+	retryAt time.Time,
+	countProviderHit bool,
+) error {
+	r.shipment.LastErrorCode = errorCode
+	r.shipment.NextRefreshAt = &retryAt
+	if countProviderHit {
+		r.shipment.ProviderHitCount++
+	}
+	return nil
+}
+
+func (r *trackingRepositoryStub) recordNotFound(
+	fetchedAt time.Time,
+	nextRefreshAt *time.Time,
+	invalid bool,
+) error {
+	r.shipment.ProviderFetchedAt = &fetchedAt
+	r.shipment.NextRefreshAt = nextRefreshAt
+	r.shipment.NotFoundCount++
+	r.shipment.ProviderHitCount++
+	r.shipment.ValidationStatus = "not_found"
+	if invalid {
+		r.shipment.ValidationStatus = "invalid"
+	}
+	return nil
+}
+
+func (r *trackingRepositoryStub) UpsertSubscription(
+	_ context.Context,
+	_ string,
+	orderReference, fulfillmentReference string,
+) (Subscription, error) {
+	return Subscription{
+		ID: "subscription-1", OrderReference: orderReference,
+		FulfillmentReference: fulfillmentReference, Active: true,
+		Shipment: r.shipment,
+	}, nil
+}
+
+func (r *trackingRepositoryStub) GetSubscription(
+	_ context.Context,
+	fulfillmentReference string,
+) (Subscription, error) {
+	return Subscription{
+		ID: "subscription-1", FulfillmentReference: fulfillmentReference,
+		Active: true, Shipment: r.shipment,
+	}, nil
 }
 
 func (r *trackingRepositoryStub) Fail(
@@ -264,6 +338,75 @@ func TestTrackNowReusesFreshPersistentSnapshot(t *testing.T) {
 	if first.NormalizedStatus != "in_transit" ||
 		second.NormalizedStatus != "in_transit" {
 		t.Fatalf("unexpected results: first=%#v second=%#v", first, second)
+	}
+}
+
+func TestTrackNowNegativeCachesUnknownWaybill(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 20, 8, 0, 0, 0, time.UTC)
+	repository := &trackingRepositoryStub{}
+	service := NewService(repository, testCipher(t), "jne")
+	service.now = func() time.Time { return now }
+	adapter := &countingTrackingAdapterStub{err: ErrWaybillNotFound}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err := service.TrackNow(context.Background(), adapter, "jne", "RANDOM123456", "")
+		if !errors.Is(err, ErrWaybillNotFound) {
+			t.Fatalf("attempt %d: expected not found, got %v", attempt+1, err)
+		}
+	}
+	if adapter.calls != 1 {
+		t.Fatalf("negative cache must suppress repeat provider call, got %d", adapter.calls)
+	}
+	if repository.shipment.NextRefreshAt == nil ||
+		repository.shipment.NextRefreshAt.Sub(now) != 12*time.Hour {
+		t.Fatalf("unexpected negative cache checkpoint: %#v", repository.shipment.NextRefreshAt)
+	}
+}
+
+func TestTrackNowReturnsLastSnapshotAfterHitBudgetStops(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 20, 8, 0, 0, 0, time.UTC)
+	repository := &trackingRepositoryStub{shipment: Shipment{
+		ID: "shipment-1", CourierCode: "jne", WaybillMasked: "********6789",
+		NormalizedStatus: "in_transit", StatusLabel: "Dalam perjalanan",
+		ValidationStatus: "valid", ProviderFetchedAt: &now,
+		ProviderHitCount: 10, ProviderHitLimit: 10, PollingStopped: true,
+	}}
+	service := NewService(repository, testCipher(t), "jne")
+	service.now = func() time.Time { return now.Add(24 * time.Hour) }
+	adapter := &countingTrackingAdapterStub{}
+	result, err := service.TrackNow(context.Background(), adapter, "jne", "ABC123456789", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.calls != 0 || result.NormalizedStatus != "in_transit" {
+		t.Fatalf("budget stop must return snapshot without provider: result=%#v calls=%d", result, adapter.calls)
+	}
+}
+
+func TestTrackNowCachesProviderFailureUntilRetryCheckpoint(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 20, 8, 0, 0, 0, time.UTC)
+	repository := &trackingRepositoryStub{}
+	service := NewService(repository, testCipher(t), "jne")
+	service.now = func() time.Time { return now }
+	adapter := &countingTrackingAdapterStub{err: ErrProviderTimeout}
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err := service.TrackNow(context.Background(), adapter, "jne", "TIMEOUT123456", "")
+		if !errors.Is(err, ErrProviderTimeout) {
+			t.Fatalf("attempt %d: expected timeout, got %v", attempt+1, err)
+		}
+	}
+	if adapter.calls != 1 {
+		t.Fatalf("provider error cache must suppress repeat call, got %d", adapter.calls)
+	}
+	if repository.shipment.NextRefreshAt == nil ||
+		repository.shipment.NextRefreshAt.Sub(now) != time.Hour {
+		t.Fatalf("unexpected provider retry checkpoint: %#v", repository.shipment.NextRefreshAt)
 	}
 }
 

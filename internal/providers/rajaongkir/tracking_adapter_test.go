@@ -105,7 +105,7 @@ func TestTrackingAdapterNormalizesAndSchedulesRefresh(t *testing.T) {
 	}
 	if result.NormalizedStatus != "out_for_delivery" ||
 		result.NextRefreshAt == nil ||
-		!result.NextRefreshAt.Equal(now.Add(15*time.Minute)) {
+		!result.NextRefreshAt.Equal(now.Add(2*time.Hour)) {
 		t.Fatalf("unexpected normalized result: %#v", result)
 	}
 	if quota.calls != 1 || recorder.calls != 1 ||

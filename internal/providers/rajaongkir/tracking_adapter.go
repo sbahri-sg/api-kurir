@@ -223,22 +223,16 @@ func normalizeTrackingResult(input WaybillTracking, fetchedAt time.Time) trackin
 		"pod_time":          input.Delivery.PODTime,
 		"delivered":         input.Delivered,
 	}
-	isFinal := status == "delivered" || status == "returned" || status == "cancelled"
-	var nextRefreshAt *time.Time
-	if !isFinal {
-		next := fetchedAt.Add(refreshInterval(status))
-		nextRefreshAt = &next
-	}
-	return tracking.Result{
+	result := tracking.Result{
 		NormalizedStatus: status,
 		StatusLabel:      label,
 		Summary:          summary,
 		Events:           events,
 		ProviderCode:     "rajaongkir",
 		FetchedAt:        fetchedAt,
-		NextRefreshAt:    nextRefreshAt,
-		IsFinal:          isFinal,
+		IsFinal:          false,
 	}
+	return tracking.ApplyEconomyCheckpoint(result, 1, tracking.DefaultProviderHitLimit)
 }
 
 func normalizeTrackingStatus(value string, delivered bool) string {
@@ -281,21 +275,6 @@ func trackingStatusLabel(status string) string {
 		"unknown":          "Status belum diketahui",
 	}
 	return labels[status]
-}
-
-func refreshInterval(status string) time.Duration {
-	switch status {
-	case "out_for_delivery":
-		return 15 * time.Minute
-	case "in_transit":
-		return 45 * time.Minute
-	case "delivery_failed":
-		return 2 * time.Hour
-	case "picked_up":
-		return time.Hour
-	default:
-		return 3 * time.Hour
-	}
 }
 
 func parseProviderDateTime(dateValue, timeValue string) (time.Time, bool) {

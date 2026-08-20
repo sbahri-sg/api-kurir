@@ -113,12 +113,13 @@ snapshot lintas tenant.
 
 | Status | Interval awal |
 |---|---:|
-| Belum ditemukan, usia <24 jam | 2–4 jam |
-| Pickup/in transit | 1–2 jam |
-| Out for delivery | 30–60 menit |
-| Delivery failed | 2–4 jam |
+| Belum ditemukan pertama | 12 jam |
+| Belum ditemukan kedua | 24 jam |
+| Pickup/in transit | 12 jam |
+| Out for delivery | 2 jam |
+| Delivery failed | 12 jam |
 | Delivered/returned/cancelled | Hentikan polling |
-| Tidak ada perubahan >48 jam | Perlambat menjadi 6–12 jam |
+| Hit provider mencapai 10 | Hentikan polling |
 
 Interval diberi jitter ±10–20%. Prioritaskan resi aktif yang dekat SLA dan
 kurangi frekuensi resi tanpa perubahan.
@@ -129,8 +130,8 @@ kurangi frekuensi resi tanpa perubahan.
 - distributed lock `tracking-refresh:{courier}:{waybill}`;
 - satu refresh aktif per resi;
 - event di-upsert menggunakan hash timestamp+status+location;
-- hasil invalid waybill di-negative-cache 30–120 menit;
-- tidak retry invalid AWB.
+- hasil belum ditemukan di-negative-cache 12 jam lalu 24 jam;
+- miss ketiga menjadi invalid dan tidak di-retry.
 
 ### Webhook
 

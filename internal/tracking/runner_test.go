@@ -16,7 +16,7 @@ func TestTrackingFailureCodeDistinguishesRateLimitFromDailyQuota(t *testing.T) {
 	}
 }
 
-func TestRateLimitRetryUsesShortCappedBackoff(t *testing.T) {
+func TestProviderFailureRetryUsesEconomicalBackoff(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 7, 29, 9, 0, 0, 0, time.FixedZone("Asia/Jakarta", 7*60*60))
@@ -24,11 +24,10 @@ func TestRateLimitRetryUsesShortCappedBackoff(t *testing.T) {
 		attempt int
 		want    time.Duration
 	}{
-		{attempt: 0, want: 30 * time.Second},
-		{attempt: 1, want: time.Minute},
-		{attempt: 2, want: 2 * time.Minute},
-		{attempt: 3, want: 4 * time.Minute},
-		{attempt: 10, want: 5 * time.Minute},
+		{attempt: 0, want: time.Hour},
+		{attempt: 1, want: 6 * time.Hour},
+		{attempt: 2, want: 24 * time.Hour},
+		{attempt: 10, want: 24 * time.Hour},
 	}
 	for _, test := range tests {
 		if got := retryDelay("PROVIDER_RATE_LIMITED", test.attempt, now); got != test.want {

@@ -129,17 +129,18 @@ tersebut pada log.
 
 ## 6. Normalisasi status dan interval
 
-| Status lokal | Refresh berikutnya |
+| Status lokal | Checkpoint berikutnya |
 |---|---:|
-| `out_for_delivery` | 15 menit |
-| `in_transit` | 45 menit |
-| `picked_up` | 60 menit |
-| `delivery_failed` | 2 jam |
-| `pending_pickup` / `unknown` | 3 jam |
+| `out_for_delivery` | 2 jam |
+| `in_transit` / `picked_up` | 12 jam |
+| `delivery_failed` | 12 jam |
+| `pending_pickup` / `unknown` pertama | 12 jam |
+| `pending_pickup` / `unknown` berikutnya | 24 jam |
 | `delivered` / `returned` / `cancelled` | tidak polling lagi |
 
-Interval ini merupakan kebijakan operasional API Kurir, bukan SLA carrier.
-Ubah setelah memiliki data produksi tentang latency update dan konsumsi quota.
+Polling juga berhenti ketika satu AWB mencapai batas default 10 hit provider.
+Detail subscription, negative cache, dan webhook dijelaskan pada
+[`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md).
 
 ## 7. Error dan retry
 
@@ -148,7 +149,7 @@ Ubah setelah memiliki data produksi tentang latency update dan konsumsi quota.
 | Local/upstream quota habis | `PROVIDER_QUOTA_EXHAUSTED` | tunggu reset Jakarta + 5 menit |
 | HTTP 429 / throttle sementara | `PROVIDER_RATE_LIMITED` | exponential 30 detik, maksimum 5 menit |
 | Credential ditolak | `PROVIDER_UNAUTHORIZED` | retry 6 jam; alert operator |
-| Resi belum ditemukan | `WAYBILL_NOT_FOUND` | 15 menit, exponential hingga 8 jam |
+| Resi belum ditemukan | `WAYBILL_NOT_FOUND` | 12 jam, lalu 24 jam; miss ketiga menjadi invalid |
 | Validasi telepon kurang | `PHONE_VALIDATION_REQUIRED` | 24 jam; perbaiki input |
 | Timeout/5xx/network | `PROVIDER_ERROR` | exponential 1–64 menit |
 
@@ -161,7 +162,7 @@ memeriksa penyebab terlebih dahulu agar tidak membakar quota.
 - Partial unique index mencegah dua job aktif untuk shipment yang sama.
 - Banyak customer membaca snapshot lokal yang sama.
 - Request sinkron bersamaan untuk resi yang sama digabung per proses API.
-- Status final tidak dipolling lagi.
+- Status final atau batas 10 hit tidak dipolling lagi.
 - Refresh menyesuaikan status; tidak memakai interval agresif global.
 - Ledger dicek sebelum request keluar.
 - Beberapa credential aktif dirotasi otomatis berdasarkan rasio pemakaian;

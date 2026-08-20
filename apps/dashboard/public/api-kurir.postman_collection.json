@@ -961,6 +961,56 @@
             "description": "Memerlukan scope shipping:write. PUT mengganti seluruh pilihan merchant secara atomik; merchant_id selalu berasal dari claim sub."
           },
           "response": []
+        },
+        {
+          "name": "Register Fulfillment Tracking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"fulfillment_id\": \"{{fulfillment_id}}\",\n  \"courier\": \"{{courier}}\",\n  \"waybill\": \"{{waybill}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/tracking/subscriptions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "integrations", "tracking", "subscriptions"]
+            },
+            "description": "Memerlukan scope tracking:write. Mendaftarkan satu AWB ke checkpoint worker; response 202 berarti validasi sedang antre."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Fulfillment Tracking Snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/tracking/subscriptions/{{fulfillment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "integrations", "tracking", "subscriptions", "{{fulfillment_id}}"]
+            },
+            "description": "Memerlukan scope tracking:read. Hanya membaca snapshot lokal dan tidak memakai hit RajaOngkir/Biteship."
+          },
+          "response": []
         }
       ]
     },
@@ -1301,6 +1351,104 @@
               ]
             },
             "description": "Menonaktifkan satu key agar tidak lagi dipilih untuk cek tarif atau tracking."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Tracking Webhook Settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/tracking-webhook",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "tracking-webhook"]
+            },
+            "description": "Membaca URL, status aktif, mask secret, dan hasil test terakhir. Plaintext secret tidak pernah dikembalikan."
+          },
+          "response": []
+        },
+        {
+          "name": "Save Tracking Webhook Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callback_url\": \"{{emisell_tracking_webhook_url}}\",\n  \"enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/tracking-webhook",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "tracking-webhook"]
+            },
+            "description": "Simpan URL terlebih dahulu dalam kondisi nonaktif. Setelah secret disalin ke Emisell dan test berhasil, ubah enabled menjadi true."
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Tracking Webhook Secret",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Webhook secret berhasil dibuat', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "console.warn('Salin secret dari response sekarang. Secret tidak disimpan otomatis ke environment.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/tracking-webhook/secret",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "tracking-webhook", "secret"]
+            },
+            "description": "Generate atau rotate secret HMAC 256-bit. Plaintext hanya tampil pada response ini."
+          },
+          "response": []
+        },
+        {
+          "name": "Test Tracking Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/tracking-webhook/test",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "tracking-webhook", "test"]
+            },
+            "description": "Mengirim tracking.test bertanda tangan tanpa merchant, order, AWB, alamat, atau identitas penerima."
           },
           "response": []
         },

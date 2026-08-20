@@ -92,13 +92,15 @@ hit pada ledger lokal dan menyimpan snapshot hasil:
 
 | Kondisi | Refresh paling cepat |
 |---|---:|
-| Sedang diantar | 30 menit |
-| Dalam perjalanan / sudah dipickup | 2 jam |
-| Status awal / belum jelas | 6 jam |
+| Sedang diantar | 2 jam |
+| Dalam perjalanan / sudah dipickup | 12 jam |
+| Status awal pertama | 12 jam |
+| Status awal berikutnya | 24 jam |
 | Final (terkirim, retur, batal) | Tidak di-refresh otomatis |
 
 Permintaan berulang sebelum `next_refresh_at` dilayani dari database dan tidak
-memanggil Biteship lagi.
+memanggil Biteship lagi. Polling berhenti ketika batas default 10 hit per AWB
+tercapai.
 
 ## Referensi resmi
 

@@ -18,6 +18,8 @@ import {
   type RateResult,
   type RateSnapshot,
   type TrackingShipment,
+  type WebhookSettings,
+  type WebhookTestResult,
 } from "./api";
 import {
   API_DOCUMENTATION,
@@ -36,6 +38,7 @@ type Tab =
   | "mappings"
   | "quota"
   | "api-keys"
+  | "webhook"
   | "documentation";
 
 type NavGroupId = "operations" | "master-data" | "provider" | "developer";
@@ -93,6 +96,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Developer",
     description: "Akses dan dokumentasi",
     items: [
+      { value: "webhook", label: "Webhook" },
       { value: "documentation", label: "Dokumentasi API" },
       { value: "api-keys", label: "API Key" },
     ],
@@ -114,6 +118,21 @@ const EMPTY_OVERVIEW: Overview = {
   quota_limit_today: 0,
   tracking_pending_jobs: 0,
   tracking_shipments: 0,
+};
+
+const EMPTY_WEBHOOK_SETTINGS: WebhookSettings = {
+  configured: false,
+  callback_url: "",
+  enabled: false,
+  secret_configured: false,
+  secret_hint: "",
+  source: "database",
+  last_test_at: null,
+  last_test_success: null,
+  last_test_http_status: null,
+  last_test_error: "",
+  updated_by: "",
+  updated_at: null,
 };
 
 function getErrorMessage(error: unknown) {
@@ -223,6 +242,13 @@ export function App() {
   const [apiKeys, setAPIKeys] = useState<CustomerAPIKey[]>([]);
   const [generatedAPIKey, setGeneratedAPIKey] =
     useState<GeneratedCustomerAPIKey | null>(null);
+  const [webhookSettings, setWebhookSettings] = useState<WebhookSettings>(
+    EMPTY_WEBHOOK_SETTINGS,
+  );
+  const [generatedWebhookSecret, setGeneratedWebhookSecret] = useState("");
+  const [webhookTestResult, setWebhookTestResult] =
+    useState<WebhookTestResult | null>(null);
+  const [webhookActionLoading, setWebhookActionLoading] = useState(false);
   const [keyActionLoading, setKeyActionLoading] = useState(false);
   const [rateSearch, setRateSearch] = useState("");
   const [mappingSearch, setMappingSearch] = useState("");
@@ -248,6 +274,7 @@ export function App() {
           quotaData,
           apiKeyData,
           providerCredentialData,
+          webhookSettingsData,
         ] =
           await Promise.all([
             api.overview(signal),
@@ -257,6 +284,7 @@ export function App() {
             api.quotas(signal),
             api.apiKeys(signal),
             api.providerCredentials(signal),
+            api.webhookSettings(signal),
           ]);
         setOverview(overviewData);
         setCouriers(courierData);
@@ -265,6 +293,7 @@ export function App() {
         setQuotas(quotaData);
         setAPIKeys(apiKeyData);
         setProviderCredentials(providerCredentialData);
+        setWebhookSettings(webhookSettingsData);
         setAuthenticated(true);
       } catch (loadError) {
         if (loadError instanceof Error && loadError.name === "AbortError")
@@ -329,6 +358,9 @@ export function App() {
     setAPIKeys([]);
     setProviderCredentials([]);
     setGeneratedAPIKey(null);
+    setWebhookSettings(EMPTY_WEBHOOK_SETTINGS);
+    setGeneratedWebhookSecret("");
+    setWebhookTestResult(null);
   }
 
   async function refreshRates() {
@@ -425,6 +457,50 @@ export function App() {
     }
   }
 
+  async function saveWebhook(callbackURL: string, enabled: boolean) {
+    setWebhookActionLoading(true);
+    setError("");
+    try {
+      const settings = await api.updateWebhookSettings(callbackURL, enabled);
+      setWebhookSettings(settings);
+      setWebhookTestResult(null);
+    } catch (saveError) {
+      setError(getErrorMessage(saveError));
+      throw saveError;
+    } finally {
+      setWebhookActionLoading(false);
+    }
+  }
+
+  async function generateWebhookSecret() {
+    setWebhookActionLoading(true);
+    setError("");
+    try {
+      const generated = await api.generateWebhookSecret();
+      setWebhookSettings(generated.settings);
+      setGeneratedWebhookSecret(generated.secret);
+      setWebhookTestResult(null);
+    } catch (generateError) {
+      setError(getErrorMessage(generateError));
+    } finally {
+      setWebhookActionLoading(false);
+    }
+  }
+
+  async function testWebhook() {
+    setWebhookActionLoading(true);
+    setError("");
+    try {
+      const result = await api.testWebhook();
+      setWebhookTestResult(result);
+      setWebhookSettings(await api.webhookSettings());
+    } catch (testError) {
+      setError(getErrorMessage(testError));
+    } finally {
+      setWebhookActionLoading(false);
+    }
+  }
+
   if (!authenticated) {
     return (
       <main className="login-shell">
@@ -483,6 +559,7 @@ export function App() {
     mappings: "Mapping Lokasi Provider",
     quota: "Credential & Kuota",
     "api-keys": "API Key",
+    webhook: "Webhook",
     documentation: "Dokumentasi API",
   };
 
@@ -1089,6 +1166,19 @@ export function App() {
           />
         )}
 
+        {tab === "webhook" && (
+          <WebhookManagement
+            settings={webhookSettings}
+            generatedSecret={generatedWebhookSecret}
+            testResult={webhookTestResult}
+            loading={webhookActionLoading}
+            onSave={saveWebhook}
+            onGenerateSecret={generateWebhookSecret}
+            onDismissSecret={() => setGeneratedWebhookSecret("")}
+            onTest={testWebhook}
+          />
+        )}
+
         {tab === "documentation" && (
           <ApiDocumentation
             view={documentationView}
@@ -1097,6 +1187,250 @@ export function App() {
         )}
       </section>
     </main>
+  );
+}
+
+function WebhookManagement({
+  settings,
+  generatedSecret,
+  testResult,
+  loading,
+  onSave,
+  onGenerateSecret,
+  onDismissSecret,
+  onTest,
+}: {
+  settings: WebhookSettings;
+  generatedSecret: string;
+  testResult: WebhookTestResult | null;
+  loading: boolean;
+  onSave: (callbackURL: string, enabled: boolean) => Promise<void>;
+  onGenerateSecret: () => Promise<void>;
+  onDismissSecret: () => void;
+  onTest: () => Promise<void>;
+}) {
+  const [callbackURL, setCallbackURL] = useState(settings.callback_url);
+  const [enabled, setEnabled] = useState(settings.enabled);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setCallbackURL(settings.callback_url);
+    setEnabled(settings.enabled);
+  }, [settings.callback_url, settings.enabled]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onSave(callbackURL.trim(), enabled);
+  }
+
+  async function copySecret() {
+    if (!generatedSecret) return;
+    await navigator.clipboard.writeText(generatedSecret);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  const canTest = Boolean(
+    settings.callback_url && settings.secret_configured,
+  );
+
+  return (
+    <div className="webhook-page">
+      <section className="webhook-hero">
+        <div>
+          <p className="eyebrow">TRACKING OUTBOUND</p>
+          <h2>Status order bergerak otomatis</h2>
+          <p>
+            API Kurir mengirim perubahan status dan snapshot riwayat ke Emisell.
+            Worker membaca pengaturan terbaru tanpa rebuild container.
+          </p>
+        </div>
+        <div className="webhook-hero-status">
+          <span
+            className={`badge ${
+              settings.enabled ? "badge-success" : "badge-warning"
+            }`}
+          >
+            {settings.enabled ? "Aktif" : "Nonaktif"}
+          </span>
+          <small>
+            Sumber {settings.source === "database" ? "dashboard" : ".env lama"}
+          </small>
+        </div>
+      </section>
+
+      <div className="webhook-grid">
+        <form className="panel webhook-config-card" onSubmit={submit}>
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">TUJUAN WEBHOOK</p>
+              <h2>Endpoint Emisell</h2>
+            </div>
+          </div>
+          <label>
+            Callback URL
+            <input
+              type="url"
+              value={callbackURL}
+              onChange={(event) => setCallbackURL(event.target.value)}
+              placeholder="https://api.emisell.com/api/v1/webhooks/tracking"
+              required={enabled}
+            />
+            <small>
+              Production wajib HTTPS. Gunakan endpoint backend Emisell, bukan
+              alamat dashboard browser.
+            </small>
+          </label>
+          <label className="webhook-toggle">
+            <input
+              type="checkbox"
+              checked={enabled}
+              disabled={!settings.secret_configured}
+              onChange={(event) => setEnabled(event.target.checked)}
+            />
+            <span>
+              <strong>Aktifkan pengiriman event</strong>
+              <small>
+                {settings.secret_configured
+                  ? "Worker akan mengirim event status yang menunggu."
+                  : "Generate secret sebelum webhook dapat diaktifkan."}
+              </small>
+            </span>
+          </label>
+          <button className="button button-primary" disabled={loading}>
+            {loading ? "Menyimpan…" : "Simpan pengaturan"}
+          </button>
+        </form>
+
+        <section className="panel webhook-secret-card">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">HMAC SIGNING</p>
+              <h2>Webhook secret</h2>
+            </div>
+            <span
+              className={`badge ${
+                settings.secret_configured ? "badge-success" : "badge-warning"
+              }`}
+            >
+              {settings.secret_configured ? "Tersimpan" : "Belum dibuat"}
+            </span>
+          </div>
+          {settings.secret_configured && !generatedSecret && (
+            <div className="webhook-secret-mask">
+              <code>{settings.secret_hint || "Secret terenkripsi"}</code>
+              <small>Secret asli tidak dapat ditampilkan kembali.</small>
+            </div>
+          )}
+          {!settings.secret_configured && !generatedSecret && (
+            <p className="webhook-muted">
+              Generate secret, lalu salin satu kali ke konfigurasi penerima
+              webhook di API Emisell.
+            </p>
+          )}
+          {generatedSecret && (
+            <div className="webhook-generated-secret">
+              <strong>Salin sekarang — hanya ditampilkan sekali</strong>
+              <code>{generatedSecret}</code>
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => void copySecret()}
+                >
+                  {copied ? "Sudah disalin" : "Salin secret"}
+                </button>
+                <button
+                  type="button"
+                  className="table-action"
+                  onClick={onDismissSecret}
+                >
+                  Saya sudah menyimpan
+                </button>
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={loading}
+            onClick={() => {
+              if (
+                settings.secret_configured &&
+                !window.confirm(
+                  "Rotate secret akan membuat secret lama tidak berlaku. Lanjutkan?",
+                )
+              ) {
+                return;
+              }
+              void onGenerateSecret();
+            }}
+          >
+            {settings.secret_configured ? "Rotate secret" : "Generate secret"}
+          </button>
+        </section>
+      </div>
+
+      <section className="panel webhook-test-card">
+        <div>
+          <p className="eyebrow">VERIFIKASI KONEKSI</p>
+          <h2>Test webhook tanpa data pelanggan</h2>
+          <p>
+            Mengirim event <code>tracking.test</code> bertanda tangan. Nama,
+            alamat, nomor resi, dan data order tidak disertakan.
+          </p>
+        </div>
+        <div className="webhook-test-action">
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={loading || !canTest}
+            onClick={() => void onTest()}
+          >
+            {loading ? "Menguji…" : "Kirim test webhook"}
+          </button>
+          {(testResult || settings.last_test_at) && (
+            <div
+              className={`webhook-test-result ${
+                (testResult?.success ?? settings.last_test_success)
+                  ? "webhook-test-success"
+                  : "webhook-test-failed"
+              }`}
+            >
+              <strong>
+                {(testResult?.success ?? settings.last_test_success)
+                  ? "Koneksi berhasil"
+                  : "Koneksi belum berhasil"}
+              </strong>
+              <small>
+                {testResult?.message ||
+                  settings.last_test_error ||
+                  `HTTP ${settings.last_test_http_status ?? "—"}`} ·{" "}
+                {formatDate(testResult?.tested_at || settings.last_test_at)}
+              </small>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="webhook-flow">
+        <article>
+          <span>1</span>
+          <strong>Snapshot berubah</strong>
+          <small>Worker mendapatkan status baru dari provider.</small>
+        </article>
+        <article>
+          <span>2</span>
+          <strong>Event ditandatangani</strong>
+          <small>HMAC SHA-256 melindungi isi dan timestamp.</small>
+        </article>
+        <article>
+          <span>3</span>
+          <strong>Order Emisell diperbarui</strong>
+          <small>Timeline dan status fulfillment bergerak otomatis.</small>
+        </article>
+      </section>
+    </div>
   );
 }
 

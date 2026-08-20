@@ -39,6 +39,7 @@ Integrasi Provider
       - Snapshot Tarif
       - Mapping Lokasi
 Developer
+  - Webhook
   - Dokumentasi API
   - API Key
 ```
@@ -96,6 +97,10 @@ Nilainya dicatat sebagai alias. Nilai API key tidak pernah dicatat.
 | GET | `/v1/admin/api-keys` | Membaca metadata dan status customer API key |
 | POST | `/v1/admin/api-keys` | Generate customer API key; secret tampil satu kali |
 | POST | `/v1/admin/api-keys/{id}/revoke` | Mencabut satu customer API key |
+| GET | `/v1/admin/tracking-webhook` | Membaca URL, status, mask secret, dan hasil test terakhir |
+| PUT | `/v1/admin/tracking-webhook` | Menyimpan callback URL dan status aktif |
+| POST | `/v1/admin/tracking-webhook/secret` | Generate/rotate secret HMAC; plaintext tampil satu kali |
+| POST | `/v1/admin/tracking-webhook/test` | Mengirim event `tracking.test` tanpa data pelanggan |
 
 Tidak ada endpoint mutasi manual rate card maupun mapping. Master wilayah
 berasal dari importer dataset wilayah lokal Kemendagri; mapping provider dan
@@ -103,14 +108,37 @@ snapshot tarif dibentuk otomatis saat cek ongkir pertama. Dashboard bersifat
 observasi dan pencarian, bukan input data tarif atau mapping. Harga tidak dapat
 dibuat, diedit, dipromosikan, atau dinonaktifkan oleh operator dashboard.
 Mutasi dashboard hanya tersedia untuk lifecycle credential customer dan
-provider; bukan untuk tarif atau mapping.
+provider, serta konfigurasi webhook Emisell; bukan untuk tarif atau mapping.
 
 Menu `Ekspedisi & Service` membaca katalog ini secara read-only. Kemampuan cek
 ongkir, internasional, dan tracking berasal dari katalog provider yang
 diverifikasi. Service lokal hanya ditampilkan bila sudah terdaftar; service
 lain tetap mengikuti respons provider pada rute yang benar-benar dicek.
 
-### 3.1 Keamanan provider credential
+### 3.1 Manajemen webhook tracking
+
+Menu **Developer → Webhook** menggantikan input manual URL dan secret untuk
+deployment baru:
+
+1. operator menyimpan callback URL backend Emisell;
+2. backend API Kurir menghasilkan secret CSPRNG 256-bit;
+3. plaintext secret hanya dikembalikan sekali untuk disalin ke Emisell;
+4. database hanya menyimpan ciphertext AES-256-GCM, fingerprint, dan mask;
+5. operator mengirim event `tracking.test` sebelum mengaktifkan delivery;
+6. worker membaca perubahan database secara dinamis tanpa rebuild container.
+
+Pada production, URL wajib HTTPS dan literal localhost/private IP ditolak.
+Event test tidak membawa merchant, order, AWB, alamat, atau identitas penerima.
+Rotate secret langsung membuat secret sebelumnya tidak berlaku dan otomatis
+menonaktifkan delivery. Receiver Emisell harus diperbarui sebelum delivery
+diaktifkan kembali; event yang menunggu tetap aman di outbox.
+
+Variabel `TRACKING_WEBHOOK_ENABLED`, `EMISELL_TRACKING_WEBHOOK_URL`, dan
+`EMISELL_TRACKING_WEBHOOK_SECRET` tetap didukung sebagai fallback migrasi.
+Begitu konfigurasi database dibuat, nilai dashboard menjadi sumber utama,
+termasuk ketika operator menonaktifkan webhook.
+
+### 3.2 Keamanan provider credential
 
 - form menerima `provider_code=rajaongkir|biteship` dan `api_key`;
 - credential Biteship hanya dipakai sebagai fallback tracking, bukan tarif;
@@ -144,7 +172,7 @@ write-only, sedangkan UI hanya menampilkan mask, status validasi, capability,
 quota, serta waktu sync. Spesifikasi target berada di
 [Provider Account API v1](provider-account-api-v1.md).
 
-### 3.2 Keamanan customer API key
+### 3.3 Keamanan customer API key
 
 - secret memakai prefix `ek_live_` dan 32 byte acak dari CSPRNG;
 - database hanya menyimpan hash SHA-256, prefix aman, dan empat karakter
@@ -160,7 +188,7 @@ quota, serta waktu sync. Spesifikasi target berada di
   lambat setelah TTL cache autentikasi 60 detik;
 - setiap create dan revoke dicatat ke audit log tanpa secret atau hash.
 
-### 3.3 Dokumentasi dan Postman
+### 3.4 Dokumentasi dan Postman
 
 Menu `Dokumentasi API` pada dashboard berisi endpoint customer, health, dan
 admin dan security beserta parameter serta contoh request/response. File berikut

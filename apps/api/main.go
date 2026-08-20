@@ -23,6 +23,7 @@ import (
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/emisell/api-kurir/internal/tracking"
+	"github.com/emisell/api-kurir/internal/webhooksettings"
 	"github.com/labstack/echo/v5"
 	"github.com/redis/go-redis/v9"
 )
@@ -104,6 +105,16 @@ func run(logger *slog.Logger) error {
 				cfg.Biteship.Timeout,
 			),
 		}),
+	)
+	webhookSettingsService := webhooksettings.NewService(
+		webhooksettings.NewPostgresRepository(pool),
+		providerCredentialCipher,
+		cfg.AppEnv,
+		webhooksettings.Fallback{
+			Enabled:     cfg.Tracking.WebhookEnabled,
+			CallbackURL: cfg.Tracking.WebhookURL,
+			Secret:      cfg.Tracking.WebhookSecret,
+		},
 	)
 	tenantVerifier, err := tenancy.NewVerifier(
 		cfg.TenantContext.PublicKey,
@@ -204,6 +215,7 @@ func run(logger *slog.Logger) error {
 		immediateTrackingAdapter,
 		customerAPIKeyService,
 		providerCredentialService,
+		webhookSettingsService,
 		merchantShippingService,
 		tenantVerifier,
 		cfg.APIKeys,

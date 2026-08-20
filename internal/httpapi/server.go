@@ -21,6 +21,7 @@ import (
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/emisell/api-kurir/internal/tracking"
+	"github.com/emisell/api-kurir/internal/webhooksettings"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -44,6 +45,7 @@ func New(
 	immediateTrackingAdapter tracking.Adapter,
 	customerAPIKeyService *apikeys.Service,
 	providerCredentialService *providercredentials.Service,
+	webhookSettingsService *webhooksettings.Service,
 	merchantShippingService *merchantshipping.Service,
 	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
@@ -123,6 +125,7 @@ func New(
 		customerAPIKeyService,
 		providerCredentialService,
 		merchantShippingService,
+		trackingService,
 		tenantVerifier,
 		apiKeys,
 	)
@@ -133,6 +136,7 @@ func New(
 		customerAPIKeyService,
 		providerCredentialService,
 		merchantShippingService,
+		trackingService,
 		tenantVerifier,
 		apiKeys,
 	)
@@ -173,6 +177,22 @@ func New(
 		"/provider-credentials/:id/disable",
 		adminProviderCredentialDisableHandler(providerCredentialService),
 	)
+	adminGroup.GET(
+		"/tracking-webhook",
+		adminTrackingWebhookGetHandler(webhookSettingsService),
+	)
+	adminGroup.PUT(
+		"/tracking-webhook",
+		adminTrackingWebhookUpdateHandler(webhookSettingsService),
+	)
+	adminGroup.POST(
+		"/tracking-webhook/secret",
+		adminTrackingWebhookGenerateSecretHandler(webhookSettingsService),
+	)
+	adminGroup.POST(
+		"/tracking-webhook/test",
+		adminTrackingWebhookTestHandler(webhookSettingsService),
+	)
 
 	return &Server{Echo: e}
 }
@@ -182,6 +202,7 @@ func registerTenantIntegrationRoutes(
 	customerAPIKeyService *apikeys.Service,
 	providerCredentialService *providercredentials.Service,
 	merchantShippingService *merchantshipping.Service,
+	trackingService *tracking.Service,
 	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
 ) {
@@ -211,6 +232,16 @@ func registerTenantIntegrationRoutes(
 		"/shipping-services",
 		tenantShippingServiceUpdateHandler(merchantShippingService),
 		tenantScopeMiddleware("shipping:write"),
+	)
+	integrationGroup.POST(
+		"/tracking/subscriptions",
+		trackingSubscriptionCreateHandler(trackingService),
+		tenantScopeMiddleware("tracking:write"),
+	)
+	integrationGroup.GET(
+		"/tracking/subscriptions/:fulfillment_id",
+		trackingSubscriptionGetHandler(trackingService),
+		tenantScopeMiddleware("tracking:read"),
 	)
 }
 

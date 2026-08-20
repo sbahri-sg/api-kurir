@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 var validWaybill = regexp.MustCompile(`^[A-Z0-9-]{6,40}$`)
 var validPhoneSuffix = regexp.MustCompile(`^\d{5}$`)
+var validReference = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
 
 type Service struct {
 	repository        Repository
@@ -163,6 +165,27 @@ func (s *Service) trackNow(
 	if err != nil {
 		return Result{}, err
 	}
+	if shipment.ValidationStatus == "invalid" {
+		return Result{}, ErrWaybillNotFound
+	}
+	if shipment.ValidationStatus == "not_found" &&
+		shipment.NextRefreshAt != nil &&
+		s.now().UTC().Before(*shipment.NextRefreshAt) {
+		return Result{}, ErrWaybillNotFound
+	}
+	if shipment.LastErrorCode != "" && shipment.NextRefreshAt != nil &&
+		s.now().UTC().Before(*shipment.NextRefreshAt) {
+		if shipment.ValidationStatus == "valid" && shipment.ProviderFetchedAt != nil {
+			return resultFromShipment(shipment), nil
+		}
+		return Result{}, trackingErrorFromCode(shipment.LastErrorCode)
+	}
+	if shipment.PollingStopped {
+		if shipment.ValidationStatus == "valid" && shipment.ProviderFetchedAt != nil {
+			return resultFromShipment(shipment), nil
+		}
+		return Result{}, ErrProviderQuota
+	}
 	if shipment.ProviderFetchedAt != nil &&
 		(shipment.IsFinal ||
 			(shipment.NextRefreshAt != nil &&
@@ -172,15 +195,113 @@ func (s *Service) trackNow(
 
 	result, err := adapter.Track(ctx, request)
 	if err != nil {
+		if errors.Is(err, ErrWaybillNotFound) {
+			fetchedAt := s.now().UTC()
+			next, invalid := notFoundCheckpoint(
+				fetchedAt,
+				shipment.NotFoundCount+1,
+				shipment.ProviderHitCount+1,
+				shipment.ProviderHitLimit,
+			)
+			if recordErr := s.repository.RecordNotFoundImmediate(
+				ctx,
+				shipment.ID,
+				fetchedAt,
+				next,
+				invalid,
+			); recordErr != nil {
+				return Result{}, recordErr
+			}
+		} else {
+			code := trackingFailureCode(err)
+			countProviderHit := code != "ADAPTER_UNAVAILABLE" &&
+				code != "DECRYPTION_FAILED" &&
+				code != "PROVIDER_QUOTA_EXHAUSTED"
+			retryAt := s.now().UTC().Add(retryDelay(
+				code,
+				shipment.ProviderHitCount,
+				s.now(),
+			))
+			if recordErr := s.repository.RecordImmediateFailure(
+				ctx, shipment.ID, code, retryAt, countProviderHit,
+			); recordErr != nil {
+				return Result{}, recordErr
+			}
+		}
 		return Result{}, err
 	}
 	if result.FetchedAt.IsZero() {
 		result.FetchedAt = s.now().UTC()
 	}
+	result = ApplyEconomyCheckpoint(
+		result,
+		shipment.ProviderHitCount+1,
+		shipment.ProviderHitLimit,
+	)
 	if err := s.repository.CompleteImmediate(ctx, shipment.ID, result); err != nil {
 		return Result{}, err
 	}
 	return result, nil
+}
+
+func trackingErrorFromCode(code string) error {
+	switch code {
+	case "PROVIDER_UNAUTHORIZED":
+		return ErrProviderUnauthorized
+	case "PROVIDER_RATE_LIMITED":
+		return ErrProviderRateLimited
+	case "PROVIDER_QUOTA_EXHAUSTED":
+		return ErrProviderQuota
+	case "PROVIDER_TIMEOUT":
+		return ErrProviderTimeout
+	case "PHONE_VALIDATION_REQUIRED":
+		return ErrPhoneSuffixRequired
+	case "WAYBILL_NOT_FOUND":
+		return ErrWaybillNotFound
+	default:
+		return ErrProviderUnavailable
+	}
+}
+
+func (s *Service) Subscribe(
+	ctx context.Context,
+	request SubscriptionRequest,
+) (Subscription, error) {
+	request.OrderReference = strings.TrimSpace(request.OrderReference)
+	request.FulfillmentReference = strings.TrimSpace(request.FulfillmentReference)
+	if !validReference.MatchString(request.OrderReference) ||
+		!validReference.MatchString(request.FulfillmentReference) {
+		return Subscription{}, ErrInvalidWaybill
+	}
+	if tenancy.TenantID(ctx) == "" {
+		return Subscription{}, ErrNotFound
+	}
+	shipment, err := s.Register(
+		ctx,
+		request.CourierCode,
+		request.Waybill,
+		request.LastPhoneDigits,
+	)
+	if err != nil {
+		return Subscription{}, err
+	}
+	return s.repository.UpsertSubscription(
+		ctx,
+		shipment.ID,
+		request.OrderReference,
+		request.FulfillmentReference,
+	)
+}
+
+func (s *Service) Subscription(
+	ctx context.Context,
+	fulfillmentReference string,
+) (Subscription, error) {
+	fulfillmentReference = strings.TrimSpace(fulfillmentReference)
+	if !validReference.MatchString(fulfillmentReference) {
+		return Subscription{}, ErrNotFound
+	}
+	return s.repository.GetSubscription(ctx, fulfillmentReference)
 }
 
 func (s *Service) normalizeRequest(request Request) (Request, error) {
