@@ -22,6 +22,7 @@ type Config struct {
 	ShutdownTimeout     time.Duration
 	Redis               RedisConfig
 	RajaOngkir          RajaOngkirConfig
+	Biteship            BiteshipConfig
 	ProviderCredentials ProviderCredentialConfig
 	TenantContext       TenantContextConfig
 	Tracking            TrackingConfig
@@ -44,6 +45,12 @@ type RajaOngkirConfig struct {
 	CredentialAlias    string
 	SnapshotTTL        time.Duration
 	MinRequestInterval time.Duration
+}
+
+type BiteshipConfig struct {
+	BaseURL          string
+	Timeout          time.Duration
+	TrackingCouriers []string
 }
 
 type TrackingConfig struct {
@@ -109,6 +116,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	biteshipTimeout, err := durationEnv("BITESHIP_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
 	trackingEnabled, err := boolEnv("TRACKING_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -141,7 +152,7 @@ func Load() (Config, error) {
 		RajaOngkir: RajaOngkirConfig{
 			TrackingCouriers: splitCSV(envOr(
 				"RAJAONGKIR_TRACKING_COURIERS",
-				"jne,sap,ninja,jnt,tiki,wahana,pos,lion",
+				"jne,sap,ninja,jnt,tiki,wahana,pos,lion,anteraja",
 			)),
 			APIKey:             strings.TrimSpace(os.Getenv("RAJAONGKIR_API_KEY")),
 			BaseURL:            envOr("RAJAONGKIR_BASE_URL", "https://rajaongkir.komerce.id/api/v1/"),
@@ -150,6 +161,14 @@ func Load() (Config, error) {
 			CredentialAlias:    envOr("RAJAONGKIR_CREDENTIAL_ALIAS", "primary"),
 			SnapshotTTL:        rajaOngkirSnapshotTTL,
 			MinRequestInterval: rajaOngkirMinRequestInterval,
+		},
+		Biteship: BiteshipConfig{
+			BaseURL: envOr("BITESHIP_BASE_URL", "https://api.biteship.com/"),
+			Timeout: biteshipTimeout,
+			TrackingCouriers: splitCSV(envOr(
+				"BITESHIP_TRACKING_COURIERS",
+				"ide,rpx,sentral,sicepat",
+			)),
 		},
 		ProviderCredentials: ProviderCredentialConfig{
 			EncryptionKey: strings.TrimSpace(os.Getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY")),
@@ -203,6 +222,18 @@ func Load() (Config, error) {
 			"RajaOngkir timeout/snapshot TTL must be positive and request interval at least 10ms",
 		)
 	}
+	if cfg.Biteship.Timeout <= 0 {
+		return Config{}, errors.New("BITESHIP_TIMEOUT must be positive")
+	}
+	if overlap := overlappingValues(
+		cfg.RajaOngkir.TrackingCouriers,
+		cfg.Biteship.TrackingCouriers,
+	); len(overlap) > 0 {
+		return Config{}, fmt.Errorf(
+			"BITESHIP_TRACKING_COURIERS must only contain RajaOngkir tracking gaps; overlap: %s",
+			strings.Join(overlap, ","),
+		)
+	}
 	if cfg.Tracking.Enabled && cfg.Tracking.EncryptionKey == "" {
 		return Config{}, errors.New("TRACKING_ENCRYPTION_KEY is required when TRACKING_ENABLED=true")
 	}
@@ -221,6 +252,30 @@ func Load() (Config, error) {
 	}
 	cfg.TenantContext.MaxTTL = tenantContextMaxTTL
 	return cfg, nil
+}
+
+func overlappingValues(left, right []string) []string {
+	leftValues := make(map[string]struct{}, len(left))
+	for _, value := range left {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value != "" {
+			leftValues[value] = struct{}{}
+		}
+	}
+	seen := make(map[string]struct{})
+	result := make([]string, 0)
+	for _, value := range right {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if _, exists := leftValues[value]; !exists || value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func envOr(key, fallback string) string {

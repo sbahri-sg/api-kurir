@@ -2,6 +2,7 @@ package rates
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -16,6 +17,9 @@ var ErrRateNotAvailable = errors.New("rate not available")
 
 type Service struct {
 	repository   Repository
+	policies     ServicePolicyRepository
+	policyCache  cache.Cache
+	policyTTL    time.Duration
 	queryTimeout time.Duration
 	group        singleflight.Group
 	provider     QuoteProvider
@@ -57,6 +61,15 @@ func WithResultPolicy(policy ResultPolicy) Option {
 	}
 }
 
+func WithServicePolicyCache(policyCache cache.Cache, ttl time.Duration) Option {
+	return func(service *Service) {
+		service.policyCache = policyCache
+		if ttl > 0 {
+			service.policyTTL = ttl
+		}
+	}
+}
+
 func NewService(repository Repository, queryTimeout time.Duration, options ...Option) *Service {
 	if queryTimeout <= 0 {
 		queryTimeout = 5 * time.Second
@@ -65,6 +78,10 @@ func NewService(repository Repository, queryTimeout time.Duration, options ...Op
 		repository:   repository,
 		queryTimeout: queryTimeout,
 		lockTTL:      10 * time.Second,
+		policyTTL:    5 * time.Minute,
+	}
+	if policies, ok := repository.(ServicePolicyRepository); ok {
+		service.policies = policies
 	}
 	for _, option := range options {
 		option(service)
@@ -103,6 +120,11 @@ func (s *Service) Calculate(ctx context.Context, request Request) ([]Result, err
 }
 
 func (s *Service) calculate(ctx context.Context, request Request, key string) ([]Result, error) {
+	policies, err := s.loadServicePolicies(ctx, request.Couriers)
+	if err != nil {
+		return nil, err
+	}
+
 	cards, err := s.repository.FindActiveRateCards(ctx, request)
 	if err != nil {
 		return nil, err
@@ -111,6 +133,15 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 	results := make([]Result, 0, len(cards))
 	coveredCouriers := make(map[string]struct{}, len(cards))
 	for _, card := range cards {
+		var evaluation *PolicyEvaluation
+		if policy, ok := policies.match(card); ok {
+			checked := evaluateServicePolicy(request, policy)
+			if !checked.Eligible {
+				continue
+			}
+			evaluation = &checked
+			card = applyPolicyToRateCard(card, policy)
+		}
 		result, err := Calculate(request, card)
 		if errors.Is(err, ErrWeightExceeded) {
 			continue
@@ -119,6 +150,9 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 			return nil, fmt.Errorf("calculate %s %s: %w", card.CourierCode, card.ServiceCode, err)
 		}
 		coveredCouriers[card.CourierCode] = struct{}{}
+		if evaluation != nil {
+			result = attachPolicyEvaluation(result, *evaluation)
+		}
 		results = append(results, result)
 	}
 
@@ -133,7 +167,16 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 		fallbackRequest.Couriers = missingCouriers
 		providerResults, providerErr := s.calculateProviderFallback(ctx, fallbackRequest, key)
 		if providerErr == nil {
-			results = append(results, providerResults...)
+			for _, result := range providerResults {
+				if policy, ok := policies.match(result.Card); ok {
+					evaluation := evaluateServicePolicy(request, policy)
+					if !evaluation.Eligible {
+						continue
+					}
+					result = attachPolicyEvaluation(result, evaluation)
+				}
+				results = append(results, result)
+			}
 		} else if len(results) == 0 || !errors.Is(providerErr, ErrRateNotAvailable) {
 			return nil, providerErr
 		}
@@ -148,6 +191,36 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 		}
 	}
 	return results, nil
+}
+
+func (s *Service) loadServicePolicies(
+	ctx context.Context,
+	courierCodes []string,
+) (policySet, error) {
+	if s.policies == nil {
+		return newPolicySet(nil), nil
+	}
+	cacheKey := "service-weight-policies:" + strings.Join(courierCodes, ":")
+	if s.policyCache != nil {
+		payload, found, err := s.policyCache.Get(ctx, cacheKey)
+		if err == nil && found {
+			var items []ServicePolicy
+			if json.Unmarshal(payload, &items) == nil {
+				return newPolicySet(items), nil
+			}
+		}
+	}
+
+	items, err := s.policies.FindActiveServicePolicies(ctx, courierCodes)
+	if err != nil {
+		return policySet{}, err
+	}
+	if s.policyCache != nil {
+		if payload, marshalErr := json.Marshal(items); marshalErr == nil {
+			_ = s.policyCache.Set(ctx, cacheKey, payload, s.policyTTL)
+		}
+	}
+	return newPolicySet(items), nil
 }
 
 func (s *Service) calculateProviderFallback(

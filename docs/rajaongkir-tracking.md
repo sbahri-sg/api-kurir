@@ -57,7 +57,7 @@ Konfigurasi worker:
 TRACKING_ENABLED=true
 TRACKING_ENCRYPTION_KEY=<base64 yang decode menjadi 32 byte>
 TRACKING_WORKER_CONCURRENCY=8
-RAJAONGKIR_TRACKING_COURIERS=jne,sap,ninja,jnt,tiki,wahana,pos,lion
+RAJAONGKIR_TRACKING_COURIERS=jne,sap,ninja,jnt,tiki,wahana,pos,lion,anteraja
 RAJAONGKIR_TIMEOUT=4s
 ```
 

@@ -135,6 +135,8 @@ Response utama:
         "code": "jne",
         "name": "JNE",
         "provider_code": "rajaongkir",
+        "rate_provider_code": "rajaongkir",
+        "tracking_provider_code": "rajaongkir",
         "supports_domestic_cost": true,
         "supports_international_cost": true,
         "supports_tracking": true,
@@ -232,6 +234,7 @@ Urutan efektif:
 ```text
 exact quote provider
 → normalisasi canonical service
+→ policy minimum/maksimum berat
 → preferensi merchant
 → hasil checkout
 ```
@@ -242,12 +245,16 @@ Syarat sebuah hasil tampil:
 kurir diminta
 AND layanan tersedia pada rute
 AND credential/provider aktif
+AND berat final Emisell memenuhi minimum/maksimum layanan
 AND layanan lolos preferensi merchant
 ```
 
 Provider dapat mengirim `REG23`, tetapi jika canonical-nya `REG`, pilihan
 `jne:REG` tetap meloloskan hasil tersebut. Bentuk response RajaOngkir V2 tidak
 berubah; hanya daftar opsi di dalam `data` yang difilter.
+
+Detail pemisahan minimum penerimaan dan minimum tagihan tersedia pada
+[`service-weight-eligibility.md`](service-weight-eligibility.md).
 
 ## 9. Error
 

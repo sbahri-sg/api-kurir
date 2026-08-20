@@ -17,13 +17,14 @@ master lokasi, tarif, aturan berat, dan histori tracking milik sendiri.
 
 ## Batas tanggung jawab
 
-Emisell bertanggung jawab menghitung berat aktual total barang dan dimensi
-paket. API Kurir bertanggung jawab menghitung:
+Emisell bertanggung jawab menghitung berat final paket, termasuk dimensi dan
+berat volumetrik. API Kurir menerima field `weight` yang sudah siap digunakan
+untuk cek ongkir dan bertanggung jawab menerapkan:
 
-- berat volumetrik;
-- chargeable weight;
+- minimum berat penerimaan layanan;
+- maksimum berat penerimaan layanan;
 - pembulatan berat;
-- minimum berat layanan;
+- minimum berat tagihan;
 - tarif bertingkat;
 - surcharge;
 - total ongkir;
@@ -45,6 +46,8 @@ Fondasi versi `0.9.0` sudah mencakup:
   `minimum_then_per_kg`;
 - minimum berat, volumetrik, pembulatan `ceil`, `floor`, dan threshold;
 - profile JNE JTR dengan minimum 10 kg dan boundary 300 gram;
+- filter kelayakan layanan berdasarkan minimum diterima, minimum tagihan, dan
+  maksimum berat sehingga cargo tidak tampil untuk paket ringan;
 - request coalescing dalam satu instance menggunakan `singleflight`;
 - memory cache dan PostgreSQL advisory lock untuk fase MVP;
 - adapter Redis yang baru aktif jika `REDIS_ENABLED=true`;

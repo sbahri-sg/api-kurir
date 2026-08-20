@@ -1,6 +1,6 @@
 # Register Sumber dan Verifikasi
 
-Tanggal peninjauan: **29 Juli 2026**.
+Tanggal peninjauan: **20 Agustus 2026**.
 
 Dokumen ini mencatat sumber publik yang dipakai untuk membangun katalog awal.
 Harga rute produksi tetap harus berasal dari API/rate sheet/kontrak yang masih
@@ -30,17 +30,28 @@ Partner Connector API dan menangani API native mereka sendiri.
 | RajaOngkir | [Pricing](https://rajaongkir.com/pricing) | Paket dan batas hit yang ditampilkan | Verifikasi kembali saat kontrak dibuat |
 | RajaOngkir | [Terms & Conditions](https://rajaongkir.com/terms-condition) | Batas penggunaan, layanan serupa, redistribusi | Wajib izin tertulis untuk model bisnis ini |
 | RajaOngkir | [Calculate Cost](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-form-base-calculate-cost/calculate-cost) | Bentuk endpoint dan multi-courier | Respons quote bukan otomatis rate per kg |
+| RajaOngkir | [Daftar paket dan kurir domestik](https://rajaongkir.com/) | Daftar 17 kode cek ongkir termasuk `anteraja`, `rpx`, `ncs`, `star`, dan `dse` | Lebih baru tetapi tidak konsisten dengan tabel Courier Availability; verifikasi quote per rute |
 | RajaOngkir V2 | [Endpoint](https://www.rajaongkir.com/docs/shipping-cost/getting_started/endpoint) | Base URL serta path rate, destination, dan tracking | Base URL aktif `rajaongkir.komerce.id/api/v1` |
 | RajaOngkir V2 | [Authorization](https://rajaongkir.com/docs/shipping-cost/getting_started/apikey) | Header autentikasi `key` dan keamanan credential | Key disimpan terenkripsi melalui lifecycle credential atau secret manager fallback |
 | RajaOngkir V2 | [Calculate Domestic](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-search-base/calculate-domestic-cost) | Form origin, destination, weight, courier; struktur quote | Endpoint publik tidak mendokumentasikan formula rate per kg |
 | RajaOngkir V2 | [Search Destination](https://rajaongkir.com/docs/shipping-cost/endpoint-rajaongkir-for-search-base/search-destination-rajaongkir) | Import lokasi on-demand dan provider ID | Tidak dipanggil saat customer mengetik |
 | RajaOngkir V2 | [Courier Availability](https://www.rajaongkir.com/docs/shipping-cost/getting_started/courier_availability) | Kode dan capability kurir | Capability dapat berubah; sinkronkan berkala secara terkontrol |
 | RajaOngkir V2 | [Tracking AWB](https://www.rajaongkir.com/docs/shipping-cost/tracking) | Parameter AWB, courier, validasi nomor telepon, struktur summary/manifest | Dipanggil sinkron saat snapshot miss/stale atau oleh worker; raw response tidak disimpan |
+| RajaOngkir Web | [Lacak Resi](https://rajaongkir.com/lacak-resi) | Daftar tracking aktual mencakup `anteraja` melalui endpoint katalog halaman publik | Dipakai karena tabel Courier Availability belum sinkron dengan daftar halaman publik |
+| Shopee Seller Centre | [Pengaturan Jasa Kirim](https://seller.shopee.co.id/portal/all-settings/shipping/shipping-channel) | Referensi pemisahan minimum diterima, minimum tagihan, maksimum berat, COD, dan metode pickup/drop-off per layanan | Referensi marketplace, bukan aturan authoritative Emisell; angka harus dikonfirmasi ke provider sebelum berstatus resmi |
+| AnterAja | [Layanan resmi](https://anteraja.id/id/services), [API service rates](https://developer.anteraja.id/) | Klasifikasi `DOK`, `ECO`, `MIC`, `ND`, `REG`, serta kode layanan lain yang diobservasi dari RajaOngkir | Data master diisi otomatis dari quote; sumber resmi menentukan grup service |
+| 21 Express / DSE | [Layanan resmi](https://www.21express.co.id/layanan-kami) | Katalog Regular, Over Night, Same Day, International, dan City Courier | Harga dan coverage tetap berasal dari quote RajaOngkir |
+| NCS | [Produk dan layanan resmi](https://ncskurir.com/ncskurir/product-service) | Katalog Regular, Overnight, Same Day, Regular Darat, NFD, dan International | Harga dan coverage tetap berasal dari quote RajaOngkir |
+| RPX | [Domestic Express](https://www.rpx.co.id/service/domestic-express-id) | Katalog SDP, MDP, NDP, RGP, HWP, ECP, dan HCP | Harga dan coverage tetap berasal dari quote RajaOngkir |
+| STAR Cargo | [Tentang dan moda resmi](https://starcargo.co.id/pages/index/tentang-kami) | Katalog cargo multimoda udara, darat, dan laut | Harga dan coverage tetap berasal dari quote RajaOngkir |
 | RajaOngkir Shipping Delivery | [Endpoint](https://rajaongkir.com/docs/delivery-order-api/getting_started/base-url), [Authorization](https://www.rajaongkir.com/docs/delivery-order-api/getting_started/api-key) | Pemisahan sandbox/live, produk, key, rate, order, pickup, cancel, detail, history, label, webhook | Produk/key berbeda dari Shipping Cost dan memerlukan Enterprise/live approval |
 | RajaOngkir Shipping Delivery | [Calculate](https://www.rajaongkir.com/docs/delivery-order-api/calculate), [Store Order](https://rajaongkir.com/docs/delivery-order-api/Store_order/store_order) | Rate booking regular/cargo/instant, pinpoint, order, COD/Bank Transfer | Quote Delivery dikunci; tidak memakai harga Shipping Cost untuk booking |
 | RajaOngkir Shipping Delivery | [Pickup](https://rajaongkir.com/docs/delivery-order-api/pickup_order), [Label](https://www.rajaongkir.com/docs/delivery-order-api/label_order) | Pickup batch parsial, AWB, label bulk dan layout | Retry per item; PDF/base64 tidak dicatat ke log |
 | RajaOngkir Shipping Delivery | [History AWB](https://www.rajaongkir.com/docs/delivery-order-api/history_awb), [Webhook](https://www.rajaongkir.com/docs/delivery-order-api/webhook) | Timeline order dan notifikasi status | Webhook publik belum mendokumentasikan HMAC/delivery ID; wajib rekonsiliasi |
 | RajaOngkir Shipping Delivery | [GoSend pricing](https://www.rajaongkir.com/docs/delivery-order-api/Store_order/gosend_pricing) | Dynamic pricing instant dan koreksi biaya | Simpan quoted/booked/actual cost terpisah |
+| Biteship | [Public Tracking](https://biteship.com/id/docs/api/trackings/status), [Overview](https://biteship.com/id/docs/api/trackings/overview) | Fallback tracking kurir yang tidak tersedia di RajaOngkir, terutama SiCepat | Endpoint public tracking berbayar per hit; snapshot dan refresh konservatif wajib dipakai |
+| Biteship | [Courier catalog](https://biteship.com/id/docs/api/couriers/overview) | Verifikasi kode kurir fallback; bukan sumber tarif API Kurir | Jangan memasukkan kode yang tidak tercantum tanpa uji kontrak/provider |
+| Biteship | [Authentication](https://biteship.com/id/docs/api/authentication), [biaya mode testing](https://help.biteship.com/hc/id/articles/58286997471513-Kebijakan-Biaya-Mode-Testing) | Validasi token dan model biaya | Token terenkripsi di database; validasi credential tidak memanggil endpoint tracking |
 | KiriminAja | [Mitra API](https://developer.kiriminaja.com/docs/introduction) | Referensi rate, order, pickup, cancel, tracking, COD, dan sandbox | Referensi capability; onboarding tetap melalui connector canonical milik partner |
 | KiriminAja | [Webhook Express](https://developer.kiriminaja.com/docs/webhook/event) | Event AWB/status, Bearer callback, dedup AWB + order ID | Belum mendokumentasikan HMAC/timestamp/nonce; perlu compensating controls |
 | KiriminAja | [Pricing Express](https://developer.kiriminaja.com/docs/pricing/express), [Courier Detail](https://developer.kiriminaja.com/docs/others/courier-detail) | Cost, COD/asuransi, discount, group, cut-off, volumetric, rounding | Metadata disinkronkan; harga authoritative tetap quote |
@@ -80,13 +91,13 @@ label “latest” di deployment produksi.
 | AnterAja | [Layanan](https://anteraja.id/id/services) | Produk, estimasi, Mini Cargo >4 kg | Divisor dan minimum charge perlu kontrak |
 | Pos Indonesia | [Pos Reguler](https://www.posindonesia.co.id/id/pages/pos-reguler), [syarat domestik](https://www.posindonesia.co.id/id/pages/syarat-dan-ketentuan-kiriman-domestik) | H+2–H+4, maks 50 kg, tracking/asuransi, dangerous/valuable goods | Kode aktual dikonfirmasi melalui quote provider |
 | Wahana | [Syarat](https://wahana.com/syarat-ketentuan), [Ekonomis](https://wahana.com/layanan/ekonomis) | Divisor 6.000/5.000, cargo min 10 kg | Pembulatan dan batas detail perlu kontrak |
-| RPX | [HWP](https://www.rpx.co.id/service/domestic-express-en/heavy-weight-package-hwp-en-en), [Big Helow](https://www.rpx.co.id/service/bighelow) | HWP min 20 kg, Big Helow divisor 4.000 | Rate sheet publik lama tidak boleh jadi harga produksi |
+| RPX | [Domestic Express](https://www.rpx.co.id/service/domestic-express-id), [HWP](https://www.rpx.co.id/service/domestic-express-en/heavy-weight-package-hwp-en-en), [Big Helow](https://www.rpx.co.id/service/bighelow) | SDP, MDP, NDP, RGP, HWP min 20 kg, ECP min 10 kg, HCP; Big Helow divisor 4.000 | Rate sheet publik lama tidak boleh jadi harga produksi |
 | Sentral Cargo | [Syarat dan ketentuan](https://sentralcargo.co.id/syarat-dan-ketentuan) | Divisor darat/laut 4.000, udara 6.000, minimum/surcharge | Scope mengikuti cabang/rute |
 | SAP Express | [Situs resmi SAPX](https://www.sapx.id/id), [laporan tahunan resmi](https://www.sap-express.id/assets/files/AR%20SAP%202020%20%28FINAL%29.pdf) | Regular, SDS, ODS, kargo, internasional, dedicated; alias `UDRREG`, `UDRONS`, `DRGREG` dari quote | Formula tetap perlu katalog merchant |
 | STAR Cargo | [Tentang perusahaan](https://starcargo.co.id/pages/index/tentang-kami) | Moda udara, darat, laut | Formula belum tersedia |
 | REX | [Layanan resmi](https://rex.co.id/en/services), [brosur resmi](https://www.rex.co.id/public/files/file/Brosur_REX.pdf) | REX-0, REX-1, express, regular, international, other; `REX-10` dari quote provider | REX-10 dipisahkan sebagai cargo; formula dan coverage tetap provider quote |
-| NCS | Belum memadai | — | Pastikan legal entity/domain carrier |
-| DSE | Belum memadai | — | Minta dokumentasi merchant |
+| NCS | [Produk dan layanan](https://ncskurir.com/ncskurir/product-service) | Regular, Overnight, Same Day, Regular Darat min 10 kg, NFD, International | Formula per layanan tetap provider quote/kontrak |
+| DSE / 21 Express | [Layanan resmi](https://www.21express.co.id/layanan-kami) | Regular, Over Night, Same Day, International, City Courier | Formula dan coverage tetap provider quote/kontrak |
 
 ## Sumber khusus pembulatan
 

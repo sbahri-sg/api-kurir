@@ -217,9 +217,16 @@ Query opsional:
 - `service_type`: `parcel`, `cargo`, `same_day`, atau `instant`;
 - `active`: default `true`.
 
-Respons memuat `code`, `name`, provider, kemampuan domestik/internasional/
-tracking, tanggal verifikasi katalog, layanan lokal aktif, dan mode
-kalkulasinya.
+Respons memuat `code`, `name`, provider utama, `rate_provider_code`,
+`tracking_provider_code`, kemampuan domestik/internasional/tracking, tanggal
+verifikasi katalog, layanan lokal aktif, dan mode kalkulasinya. Nilai provider
+dipisahkan agar Biteship fallback tracking tidak pernah dianggap sebagai
+sumber cek ongkir.
+
+Layanan baru yang dikembalikan provider akan diklasifikasikan dan dimasukkan
+ke master `courier_services` secara otomatis bila grup serta tipe servicenya
+dapat dikenali. Respons yang belum dapat diklasifikasikan tetap dicatat pada
+alias/snapshot untuk audit, tetapi tidak langsung dipublikasikan ke seller.
 
 ```json
 {
@@ -228,10 +235,13 @@ kalkulasinya.
       "code": "jne",
       "name": "JNE",
       "provider_code": "rajaongkir",
+      "rate_provider_code": "rajaongkir",
+      "tracking_provider_code": "rajaongkir",
       "supports_domestic_cost": true,
       "supports_international_cost": true,
       "supports_tracking": true,
       "catalog_source": "https://rajaongkir.com/docs/shipping-cost/getting_started/courier_availability",
+      "tracking_catalog_source": "https://www.rajaongkir.com/docs/shipping-cost/getting_started/courier_availability",
       "catalog_verified_at": "2026-07-28",
       "services": [
         {
@@ -320,9 +330,9 @@ Field:
 |---|---:|---|
 | `origin` | Ya | ID lokasi internal |
 | `destination` | Ya | ID lokasi internal |
-| `weight` | Ya | Berat aktual dari Emisell dalam gram, harus `> 0` |
+| `weight` | Ya | Berat final/chargeable dari Emisell dalam gram, harus `> 0` |
 | `courier` | Ya | Satu atau beberapa kode dipisah `:` |
-| `dimensions` | Tidak | Jika diisi, panjang/lebar/tinggi harus lengkap |
+| `dimensions` | Tidak | Field kompatibilitas; eligibility checkout tetap memakai `weight` final |
 | `item_value` | Tidak | Dibutuhkan jika asuransi dihitung |
 | `options` | Tidak | Kebijakan tambahan |
 
@@ -362,7 +372,21 @@ Respons:
         "rounded_grams": 11000,
         "billing_grams": 11000,
         "minimum_grams": 10000,
+        "minimum_accepted_grams": 10000,
+        "minimum_billable_grams": 10000,
+        "maximum_accepted_grams": null,
         "rounding_profile": "jne-jtr-public-2026"
+      },
+      "eligibility": {
+        "eligible": true,
+        "weight_basis": "provided",
+        "evaluated_weight_grams": 10800,
+        "minimum_accepted_weight_grams": 10000,
+        "minimum_billable_weight_grams": 10000,
+        "maximum_accepted_weight_grams": null,
+        "source_type": "official_public",
+        "verification_status": "official_public",
+        "verified_at": "2026-08-20"
       },
       "breakdown": {
         "shipping": 45000,
@@ -396,11 +420,11 @@ Catatan:
 - Jika layanan baru belum dikenali, API tidak menebak: `group` dan `type`
   bernilai `unknown`, kode mentah tetap dikembalikan, dan alias observasi
   disimpan untuk ditinjau.
-- Jika dimensi tidak dikirim, kalkulasi hanya dapat dianggap final untuk
-  layanan yang tidak memakai berat volumetrik atau bila Emisell sudah
-  memastikan berat input adalah chargeable weight.
-- Emisell mengirim berat aktual tanpa pembulatan. API Kurir menerapkan profile
-  service; tidak ada toleransi 300 gram global.
+- Emisell mengirim berat final/chargeable tanpa pembulatan provider. API Kurir
+  menerapkan minimum penerimaan, minimum tagihan, maksimum, dan profile
+  pembulatan service; tidak ada toleransi 300 gram global.
+- Layanan yang tidak memenuhi policy berat tidak dimasukkan ke `data`. Jika
+  seluruh layanan gagal, response menjadi `RATE_NOT_AVAILABLE`.
 - Layanan dengan aturan `needs_contract_confirmation` tidak ditampilkan
   kecuali `include_unverified=true`, dan hasilnya diberi warning.
 - Urutan default: total termurah, lalu estimasi tercepat.

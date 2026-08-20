@@ -132,7 +132,7 @@ func (r *PostgresRepository) Create(
 			$3,
 			(now() AT TIME ZONE 'Asia/Jakarta')::date,
 			$4,
-			1,
+			$5,
 			(
 				((now() AT TIME ZONE 'Asia/Jakarta')::date + 1)::timestamp
 				AT TIME ZONE 'Asia/Jakarta'
@@ -142,7 +142,7 @@ func (r *PostgresRepository) Create(
 		SET daily_limit = EXCLUDED.daily_limit,
 		    used_count = LEAST(
 				EXCLUDED.daily_limit,
-				provider_quota_ledger.used_count + 1
+				provider_quota_ledger.used_count + EXCLUDED.used_count
 			),
 		    reset_at = EXCLUDED.reset_at,
 		    updated_at = now()
@@ -151,6 +151,7 @@ func (r *PostgresRepository) Create(
 		input.ProviderCode,
 		input.CredentialAlias,
 		input.DailyLimit,
+		input.ValidationQuotaCost,
 	)
 	if err != nil {
 		return Credential{}, fmt.Errorf("record provider credential validation hit: %w", err)

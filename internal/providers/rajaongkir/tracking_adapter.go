@@ -21,6 +21,7 @@ var defaultTrackingCouriers = []string{
 	"wahana",
 	"pos",
 	"lion",
+	"anteraja",
 }
 
 type ProviderCallRecorder interface {

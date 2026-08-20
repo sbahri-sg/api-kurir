@@ -46,6 +46,46 @@ type rule struct {
 }
 
 var rulesByCourier = map[string][]rule{
+	"anteraja": {
+		newExactRule("DOK", GroupRegular, TypeParcel, anterajaSource, []string{"DOK"}, []string{"DOCUMENT", "DOKUMEN"}),
+		newExactRule("ECO", GroupEconomy, TypeParcel, anterajaSource, []string{"ECO"}, []string{"ECONOMY"}),
+		newExactRule("MIC", GroupCargo, TypeCargo, anterajaSource, []string{"MIC"}, []string{"MINICARGO"}),
+		newExactRule("ND", GroupNextDay, TypeParcel, anterajaSource, []string{"ND"}, []string{"NEXTDAY"}),
+		newExactRule("REG", GroupRegular, TypeParcel, anterajaSource, []string{"REG"}, []string{"REGULAR"}),
+		newExactRule("SD", GroupSameDay, TypeSameDay, anterajaSource, []string{"SD"}, []string{"SAMEDAY"}),
+		newExactRule("BIG", GroupCargo, TypeCargo, anterajaSource, []string{"BIG"}, []string{"ANTERAJACARGO"}),
+		newExactRule("ICE", GroupSpecial, TypeParcel, anterajaSource, []string{"ICE"}, []string{"FROZEN"}),
+	},
+	"dse": {
+		newRule("SDS", GroupSameDay, TypeSameDay, dseSource, []string{"SDS", "SAMEDAY"}, []string{"SAMEDAYSERVICE"}),
+		newRule("ONS", GroupNextDay, TypeParcel, dseSource, []string{"ONS", "OVERNIGHT"}, []string{"OVERNIGHTSERVICE"}),
+		newRule("INT", GroupInternational, TypeInternational, dseSource, []string{"INT"}, []string{"INTERNATIONAL"}),
+		newRule("CITY", GroupRegular, TypeParcel, dseSource, []string{"CITY"}, []string{"CITYCOURIER"}),
+		newRule("REG", GroupRegular, TypeParcel, dseSource, []string{"REG"}, []string{"REGULAR"}),
+	},
+	"ncs": {
+		newRule("SDS", GroupSameDay, TypeSameDay, ncsSource, []string{"SDS", "SAMEDAY"}, []string{"SAMEDAY"}),
+		newRule("ONS", GroupNextDay, TypeParcel, ncsSource, []string{"ONS", "OVERNIGHT"}, []string{"ONENIGHT", "OVERNIGHT"}),
+		newRule("DARAT", GroupCargo, TypeCargo, ncsSource, []string{"DARAT", "TRUCK", "LTL", "FCL"}, []string{"REGULARDARAT", "TRUCKING"}),
+		newRule("NFD", GroupSpecial, TypeParcel, ncsSource, []string{"NFD"}, []string{"NUSANTARAFOODDELIVERY"}),
+		newRule("INT", GroupInternational, TypeInternational, ncsSource, []string{"INT"}, []string{"INTERNATIONAL"}),
+		newRule("REG", GroupRegular, TypeParcel, ncsSource, []string{"REG"}, []string{"REGULAR"}),
+	},
+	"rpx": {
+		newExactRule("SDP", GroupSameDay, TypeSameDay, rpxSource, []string{"SDP"}, []string{"SAMEDAYPACKAGE"}),
+		newExactRule("MDP", GroupNextDay, TypeParcel, rpxSource, []string{"MDP"}, []string{"MIDDAYPACKAGE"}),
+		newExactRule("NDP", GroupNextDay, TypeParcel, rpxSource, []string{"NDP"}, []string{"NEXTDAYPACKAGE"}),
+		newExactRule("RGP", GroupRegular, TypeParcel, rpxSource, []string{"RGP"}, []string{"REGULARPACKAGE"}),
+		newExactRule("HWP", GroupCargo, TypeCargo, rpxSource, []string{"HWP"}, []string{"HEAVYWEIGHTPACKAGE"}),
+		newExactRule("ECP", GroupEconomy, TypeParcel, rpxSource, []string{"ECP", "PSC"}, []string{"ECONOMYPACKAGE", "PASECONOMY"}),
+		newExactRule("HCP", GroupNextDay, TypeParcel, rpxSource, []string{"HCP", "PHC"}, []string{"HANDCARRYPACKAGE", "PASHANDCARRY"}),
+	},
+	"star": {
+		newRule("UDARA", GroupCargo, TypeCargo, starSource, []string{"UDARA", "AIR"}, []string{"ANGKUTANUDARA"}),
+		newRule("LAUT", GroupCargo, TypeCargo, starSource, []string{"LAUT", "SEA"}, []string{"ANGKUTANLAUT"}),
+		newRule("DARAT", GroupCargo, TypeCargo, starSource, []string{"DARAT", "LAND"}, []string{"ANGKUTANDARAT"}),
+		newRule("CARGO", GroupCargo, TypeCargo, starSource, []string{"CARGO", "KARGO"}, []string{"STARCARGO"}),
+	},
 	"jne": {
 		newRule("YES", GroupNextDay, TypeParcel, jneSource, []string{"CTCYES"}, nil),
 		newRule("SPS", GroupExpress, TypeParcel, jneSource, []string{"CTCSPS"}, nil),
@@ -160,6 +200,11 @@ var rulesByCourier = map[string][]rule{
 }
 
 const (
+	anterajaSource        = "https://anteraja.id/id/services"
+	dseSource             = "https://www.21express.co.id/layanan-kami"
+	ncsSource             = "https://ncskurir.com/ncskurir/product-service"
+	rpxSource             = "https://www.rpx.co.id/service/domestic-express-id"
+	starSource            = "https://starcargo.co.id/pages/index/tentang-kami"
 	jneSource             = "https://www.jne.co.id/produk-dan-layanan"
 	tikiSource            = "https://www.tiki.id/id/produk"
 	sicepatSource         = "https://ekspres.sicepat.com/services/reguler"
@@ -232,12 +277,53 @@ func Classify(courierCode, rawCode, rawName string) Classification {
 			Matched:              true,
 		}
 	}
+	if serviceGroup, serviceType, matched := classifyGenericService(codeToken, nameToken); matched {
+		return Classification{
+			CanonicalCode:        strings.ToUpper(strings.TrimSpace(rawCode)),
+			ServiceGroup:         serviceGroup,
+			ServiceType:          serviceType,
+			ClassificationSource: "inferred_rule",
+			SourceReference:      rajaOngkirQuoteSource,
+			Matched:              true,
+		}
+	}
 	return Classification{
 		ServiceGroup:         GroupUnknown,
 		ServiceType:          TypeUnknown,
 		VariantCode:          strings.TrimSpace(rawCode),
 		ClassificationSource: "provider_observed",
 		Matched:              false,
+	}
+}
+
+func classifyGenericService(codeToken, nameToken string) (string, string, bool) {
+	combined := codeToken + " " + nameToken
+	containsAny := func(values ...string) bool {
+		for _, value := range values {
+			if strings.Contains(combined, value) {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case containsAny("CARGO", "KARGO", "TRUCK", "HEAVYWEIGHT", "MINICARGO"):
+		return GroupCargo, TypeCargo, true
+	case containsAny("SAMEDAY") || codeToken == "SD" || codeToken == "SDS":
+		return GroupSameDay, TypeSameDay, true
+	case containsAny("NEXTDAY", "ONEDAY", "OVERNIGHT") ||
+		codeToken == "ND" || codeToken == "NDP" || codeToken == "ONS":
+		return GroupNextDay, TypeParcel, true
+	case containsAny("ECONOMY", "ECONOMIC", "EKONOMI", "HEMAT") ||
+		codeToken == "ECO" || codeToken == "EKO" || codeToken == "ECP":
+		return GroupEconomy, TypeParcel, true
+	case containsAny("EXPRESS") || codeToken == "EXP":
+		return GroupExpress, TypeParcel, true
+	case containsAny("REGULAR", "REGULER", "STANDARD", "NORMAL", "DOCUMENT", "DOKUMEN") ||
+		codeToken == "REG" || codeToken == "RGP" || codeToken == "STD" || codeToken == "DOK":
+		return GroupRegular, TypeParcel, true
+	default:
+		return "", "", false
 	}
 }
 

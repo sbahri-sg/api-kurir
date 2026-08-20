@@ -215,6 +215,9 @@ export function App() {
     ProviderCredential[]
   >([]);
   const [showProviderKeyModal, setShowProviderKeyModal] = useState(false);
+  const [providerKeyCode, setProviderKeyCode] = useState<
+    "rajaongkir" | "biteship"
+  >("rajaongkir");
   const [providerKeySecret, setProviderKeySecret] = useState("");
   const [providerKeyLoading, setProviderKeyLoading] = useState(false);
   const [apiKeys, setAPIKeys] = useState<CustomerAPIKey[]>([]);
@@ -390,7 +393,7 @@ export function App() {
     setError("");
     try {
       await api.addProviderCredential(
-        "rajaongkir",
+        providerKeyCode,
         providerKeySecret.trim(),
       );
       const [credentialData, quotaData] = await Promise.all([
@@ -400,6 +403,7 @@ export function App() {
       setProviderCredentials(credentialData);
       setQuotas(quotaData);
       setProviderKeySecret("");
+      setProviderKeyCode("rajaongkir");
       setShowProviderKeyModal(false);
     } catch (credentialError) {
       setError(getErrorMessage(credentialError));
@@ -905,8 +909,9 @@ export function App() {
                     {!providerCredentials.length && (
                       <tr>
                         <td colSpan={7} className="empty-state">
-                          Belum ada key database. Tambahkan key RajaOngkir untuk
-                          mengaktifkan sinkronisasi otomatis.
+                          Belum ada key database. Tambahkan RajaOngkir untuk
+                          ongkir/tracking utama atau Biteship untuk fallback
+                          tracking.
                         </td>
                       </tr>
                     )}
@@ -987,11 +992,12 @@ export function App() {
                   <div className="modal-heading">
                     <div>
                       <p className="eyebrow">TAMBAH CREDENTIAL PLATFORM</p>
-                      <h2>Key RajaOngkir internal</h2>
+                      <h2>Credential provider internal</h2>
                     </div>
                     <button
                       onClick={() => {
                         setProviderKeySecret("");
+                        setProviderKeyCode("rajaongkir");
                         setShowProviderKeyModal(false);
                       }}
                     >
@@ -1004,7 +1010,20 @@ export function App() {
                   >
                     <label>
                       Provider
-                      <input value="RajaOngkir" disabled />
+                      <select
+                        value={providerKeyCode}
+                        onChange={(event) => {
+                          setProviderKeyCode(
+                            event.target.value as "rajaongkir" | "biteship",
+                          );
+                          setProviderKeySecret("");
+                        }}
+                      >
+                        <option value="rajaongkir">RajaOngkir</option>
+                        <option value="biteship">
+                          Biteship · tracking fallback
+                        </option>
+                      </select>
                     </label>
                     <label>
                       API key provider
@@ -1014,15 +1033,20 @@ export function App() {
                         onChange={(event) =>
                           setProviderKeySecret(event.target.value)
                         }
-                        placeholder="Tempel API key RajaOngkir"
+                        placeholder={
+                          providerKeyCode === "biteship"
+                            ? "Tempel token biteship_live atau biteship_test"
+                            : "Tempel API key RajaOngkir"
+                        }
                         autoComplete="new-password"
                         required
                       />
                     </label>
                     <div className="provider-key-note">
-                      Key platform akan diuji langsung ke RajaOngkir. Key seller
-                      tidak dimasukkan di sini; seller menghubungkannya melalui
-                      extension shipping Emisell Gateway.
+                      Key platform diuji langsung ke provider lalu disimpan
+                      terenkripsi. Biteship hanya dipakai untuk fallback
+                      tracking (misalnya SiCepat), bukan cek ongkir atau
+                      sinkronisasi katalog.
                     </div>
                     <div className="form-actions">
                       <button
@@ -1030,6 +1054,7 @@ export function App() {
                         className="button button-secondary"
                         onClick={() => {
                           setProviderKeySecret("");
+                          setProviderKeyCode("rajaongkir");
                           setShowProviderKeyModal(false);
                         }}
                       >
@@ -1102,6 +1127,8 @@ function CourierCatalog({
         courier.code,
         courier.name,
         courier.provider_code,
+        courier.rate_provider_code,
+        courier.tracking_provider_code,
         ...courier.services.flatMap((service) => [
           service.code,
           service.name,
@@ -1139,7 +1166,7 @@ function CourierCatalog({
         <div className="courier-summary-grid">
           <article>
             <strong>{formatNumber(couriers.length)}</strong>
-            <span>Ekspedisi domestik</span>
+            <span>Ekspedisi terdaftar</span>
           </article>
           <article>
             <strong>{formatNumber(trackingCount)}</strong>
@@ -1194,7 +1221,9 @@ function CourierCatalog({
                 </span>
                 <div>
                   <span className="courier-provider">
-                    {courier.provider_code}
+                    {courier.rate_provider_code
+                      ? `Ongkir · ${courier.rate_provider_code}`
+                      : "Tracking only"}
                   </span>
                   <h3>{courier.name}</h3>
                   <code>{courier.code}</code>
@@ -1206,7 +1235,9 @@ function CourierCatalog({
                   <span className="capability-on">Cek ongkir</span>
                 )}
                 {courier.supports_tracking ? (
-                  <span className="capability-on">Cek resi</span>
+                  <span className="capability-on">
+                    Cek resi · {courier.tracking_provider_code}
+                  </span>
                 ) : (
                   <span className="capability-off">Resi belum tersedia</span>
                 )}
@@ -1217,7 +1248,7 @@ function CourierCatalog({
 
               <div className="courier-services">
                 <div className="courier-section-title">
-                  <span>Layanan lokal terdaftar</span>
+                  <span>Layanan master tersedia</span>
                   <strong>{courier.services.length}</strong>
                 </div>
                 {courier.services.length ? (
@@ -1240,8 +1271,10 @@ function CourierCatalog({
                   </div>
                 ) : (
                   <p>
-                    Service tersedia akan mengikuti respons provider untuk
-                    rute, berat, dan coverage yang dipilih.
+                    {courier.supports_tracking &&
+                    !courier.supports_domestic_cost
+                      ? "Tracking tersedia melalui provider fallback. Cek ongkir belum diaktifkan."
+                      : "Provider belum pernah mengembalikan layanan pada rute yang dicek. Master akan terisi otomatis saat layanan pertama tersedia."}
                   </p>
                 )}
               </div>
@@ -1259,6 +1292,16 @@ function CourierCatalog({
                     Sumber katalog ↗
                   </a>
                 )}
+                {courier.tracking_catalog_source &&
+                  courier.tracking_catalog_source !== courier.catalog_source && (
+                    <a
+                      href={courier.tracking_catalog_source}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Sumber tracking ↗
+                    </a>
+                  )}
               </footer>
             </article>
           ))}
@@ -1396,7 +1439,7 @@ function ShippingCostTool({
 
           <div className="tool-details-grid">
             <label>
-              Berat paket
+              Berat final paket
               <div className="input-suffix">
                 <input
                   type="number"
@@ -1539,17 +1582,6 @@ function ShippingCostTool({
   );
 }
 
-const TRACKING_COURIERS = [
-  { code: "jne", name: "JNE" },
-  { code: "sap", name: "SAP Express" },
-  { code: "ninja", name: "Ninja Xpress" },
-  { code: "jnt", name: "J&T Express" },
-  { code: "tiki", name: "TIKI" },
-  { code: "wahana", name: "Wahana" },
-  { code: "pos", name: "POS Indonesia" },
-  { code: "lion", name: "Lion Parcel" },
-];
-
 function TrackingTool({
   api,
   couriers,
@@ -1564,10 +1596,22 @@ function TrackingTool({
   const [result, setResult] = useState<TrackingShipment | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const courierNames = useMemo(
-    () => new Map(couriers.map((item) => [item.code, item.name])),
+  const trackingCouriers = useMemo(
+    () =>
+      couriers
+        .filter((item) => item.supports_tracking)
+        .sort((left, right) => left.name.localeCompare(right.name, "id")),
     [couriers],
   );
+
+  useEffect(() => {
+    if (
+      trackingCouriers.length > 0 &&
+      !trackingCouriers.some((item) => item.code === courier)
+    ) {
+      setCourier(trackingCouriers[0].code);
+    }
+  }, [courier, trackingCouriers]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1656,9 +1700,9 @@ function TrackingTool({
                 setResult(null);
               }}
             >
-              {TRACKING_COURIERS.map((item) => (
+              {trackingCouriers.map((item) => (
                 <option key={item.code} value={item.code}>
-                  {courierNames.get(item.code) || item.name}
+                  {item.name}
                 </option>
               ))}
             </select>

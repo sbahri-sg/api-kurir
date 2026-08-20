@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/emisell/api-kurir/internal/tenancy"
@@ -197,6 +198,89 @@ func (r *PostgresRepository) SaveProviderQuotes(
 		}
 		if commandTag.RowsAffected() != 1 {
 			return ErrProviderLocationMapping
+		}
+
+		if quote.CanonicalServiceCode != "" &&
+			quote.ServiceGroup != "unknown" &&
+			quote.ServiceType != "unknown" {
+			serviceName := strings.TrimSpace(quote.ServiceName)
+			if serviceName == "" {
+				serviceName = strings.TrimSpace(quote.Description)
+			}
+			if serviceName == "" {
+				serviceName = quote.CanonicalServiceCode
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO courier_services (
+					courier_id,
+					code,
+					name,
+					service_type,
+					active,
+					service_group,
+					classification_source,
+					source_reference,
+					catalog_verified_at
+				)
+				SELECT
+					c.id,
+					$2,
+					$3,
+					$4,
+					true,
+					$5,
+					$6,
+					nullif($7, ''),
+					$8::timestamptz::date
+				FROM couriers c
+				WHERE c.code = $1
+				ON CONFLICT (courier_id, code) DO UPDATE
+				SET name = CASE
+				        WHEN courier_services.classification_source
+				             IN ('official_public', 'official_contract')
+				        THEN courier_services.name
+				        ELSE EXCLUDED.name
+				    END,
+				    service_type = CASE
+				        WHEN courier_services.classification_source
+				             IN ('official_public', 'official_contract')
+				        THEN courier_services.service_type
+				        ELSE EXCLUDED.service_type
+				    END,
+				    service_group = CASE
+				        WHEN courier_services.classification_source
+				             IN ('official_public', 'official_contract')
+				        THEN courier_services.service_group
+				        ELSE EXCLUDED.service_group
+				    END,
+				    classification_source = CASE
+				        WHEN courier_services.classification_source
+				             IN ('official_public', 'official_contract')
+				        THEN courier_services.classification_source
+				        ELSE EXCLUDED.classification_source
+				    END,
+				    source_reference = coalesce(
+				        courier_services.source_reference,
+				        EXCLUDED.source_reference
+				    ),
+				    catalog_verified_at = greatest(
+				        courier_services.catalog_verified_at,
+				        EXCLUDED.catalog_verified_at
+				    ),
+				    active = true,
+				    updated_at = now()
+			`,
+				quote.CourierCode,
+				quote.CanonicalServiceCode,
+				serviceName,
+				quote.ServiceType,
+				quote.ServiceGroup,
+				quote.ClassificationSource,
+				quote.ClassificationReference,
+				quote.FetchedAt,
+			); err != nil {
+				return fmt.Errorf("upsert observed courier service: %w", err)
+			}
 		}
 
 		if _, err := tx.Exec(ctx, `

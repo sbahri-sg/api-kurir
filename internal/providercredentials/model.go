@@ -26,15 +26,16 @@ type StoredCredential struct {
 }
 
 type CreateInput struct {
-	ID                string
-	TenantID          string
-	ProviderCode      string
-	CredentialAlias   string
-	KeyPrefix         string
-	KeyLastFour       string
-	SecretCiphertext  []byte
-	SecretFingerprint []byte
-	DailyLimit        int64
-	CreatedBy         string
-	RequestID         string
+	ID                  string
+	TenantID            string
+	ProviderCode        string
+	CredentialAlias     string
+	KeyPrefix           string
+	KeyLastFour         string
+	SecretCiphertext    []byte
+	SecretFingerprint   []byte
+	DailyLimit          int64
+	ValidationQuotaCost int64
+	CreatedBy           string
+	RequestID           string
 }

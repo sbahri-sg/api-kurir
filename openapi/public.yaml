@@ -348,7 +348,9 @@ paths:
       description: >
         Path /api/v1 selalu memakai kontrak sinkron RajaOngkir V2 untuk header
         key maupun Bearer. Hasil sinkron memakai snapshot PostgreSQL yang masih
-        fresh agar tidak selalu memakai hit provider.
+        fresh agar tidak selalu memakai hit provider. Provider aktual dapat
+        berupa Biteship fallback untuk kurir seperti SiCepat tanpa mengubah
+        bentuk respons kompatibilitas.
       parameters:
         - $ref: "#/components/parameters/TenantContextToken"
         - name: awb
@@ -584,7 +586,7 @@ paths:
         - name: weight
           in: query
           required: true
-          description: Berat aktual dalam gram
+          description: Berat final/chargeable dari Emisell dalam gram
           schema:
             type: integer
             minimum: 1
@@ -1810,10 +1812,13 @@ components:
         - code
         - name
         - provider_code
+        - rate_provider_code
+        - tracking_provider_code
         - supports_domestic_cost
         - supports_international_cost
         - supports_tracking
         - catalog_source
+        - tracking_catalog_source
         - catalog_verified_at
         - services
       properties:
@@ -1823,6 +1828,13 @@ components:
           type: string
         provider_code:
           type: string
+          description: Provider utama yang memasok capability kurir ke katalog.
+        rate_provider_code:
+          type: string
+          description: Provider cek ongkir; kosong untuk kurir tracking-only.
+        tracking_provider_code:
+          type: string
+          description: Provider cek resi; kosong bila tracking belum tersedia.
         supports_domestic_cost:
           type: boolean
         supports_international_cost:
@@ -1831,7 +1843,8 @@ components:
           type: boolean
         catalog_source:
           type: string
-          format: uri
+        tracking_catalog_source:
+          type: string
         catalog_verified_at:
           type: string
           format: date
@@ -1964,6 +1977,8 @@ components:
         - code
         - name
         - provider_code
+        - rate_provider_code
+        - tracking_provider_code
         - supports_domestic_cost
         - supports_international_cost
         - supports_tracking
@@ -1977,6 +1992,10 @@ components:
         name:
           type: string
         provider_code:
+          type: string
+        rate_provider_code:
+          type: string
+        tracking_provider_code:
           type: string
         supports_domestic_cost:
           type: boolean
@@ -2041,7 +2060,7 @@ components:
           type: integer
           minimum: 1
           maximum: 100000000
-          description: Berat aktual dalam gram
+          description: Berat final/chargeable yang sudah dihitung Emisell dalam gram
         courier:
           type: string
           pattern: "^[a-zA-Z0-9_-]+(:[a-zA-Z0-9_-]+)*$"
@@ -2091,6 +2110,9 @@ components:
 
     Dimensions:
       type: object
+      description: >
+        Field kompatibilitas opsional. Eligibility minimum/maksimum layanan
+        memakai field weight final dari Emisell.
       additionalProperties: false
       required: [length, width, height, unit]
       properties:
@@ -2240,7 +2262,7 @@ components:
 
     RateResult:
       type: object
-      required: [courier, service, cost, etd, weight, breakdown, source]
+      required: [courier, service, cost, etd, weight, breakdown, source, eligibility]
       properties:
         courier:
           type: object
@@ -2311,6 +2333,10 @@ components:
           $ref: "#/components/schemas/CostBreakdown"
         source:
           $ref: "#/components/schemas/RateSource"
+        eligibility:
+          oneOf:
+            - $ref: "#/components/schemas/ServiceWeightEligibility"
+            - type: "null"
 
     WeightBreakdown:
       type: object
@@ -2321,6 +2347,9 @@ components:
         - rounded_grams
         - billing_grams
         - minimum_grams
+        - minimum_accepted_grams
+        - minimum_billable_grams
+        - maximum_accepted_grams
         - rounding_profile
       properties:
         actual_grams:
@@ -2335,8 +2364,54 @@ components:
           type: integer
         minimum_grams:
           type: integer
+        minimum_accepted_grams:
+          type: integer
+        minimum_billable_grams:
+          type: integer
+        maximum_accepted_grams:
+          type: [integer, "null"]
         rounding_profile:
           type: string
+
+    ServiceWeightEligibility:
+      type: object
+      required:
+        - eligible
+        - weight_basis
+        - evaluated_weight_grams
+        - minimum_accepted_weight_grams
+        - minimum_billable_weight_grams
+        - maximum_accepted_weight_grams
+        - source_type
+        - source_reference
+        - verification_status
+        - verified_at
+      properties:
+        eligible:
+          type: boolean
+          const: true
+        weight_basis:
+          type: string
+          const: provided
+        evaluated_weight_grams:
+          type: integer
+          minimum: 1
+        minimum_accepted_weight_grams:
+          type: integer
+          minimum: 1
+        minimum_billable_weight_grams:
+          type: [integer, "null"]
+        maximum_accepted_weight_grams:
+          type: [integer, "null"]
+        source_type:
+          type: string
+        source_reference:
+          type: string
+        verification_status:
+          type: string
+        verified_at:
+          type: string
+          format: date
 
     CostBreakdown:
       type: object
@@ -2791,7 +2866,8 @@ components:
           description: Kosong untuk credential platform; terisi untuk BYOK seller.
         provider_code:
           type: string
-          enum: [rajaongkir]
+          enum: [rajaongkir, biteship]
+          description: Biteship hanya digunakan untuk fallback tracking.
         credential_alias:
           type: string
         display_key:
@@ -2824,7 +2900,8 @@ components:
       properties:
         provider_code:
           type: string
-          enum: [rajaongkir]
+          enum: [rajaongkir, biteship]
+          description: Biteship hanya digunakan untuk fallback tracking.
         api_key:
           type: string
           minLength: 8

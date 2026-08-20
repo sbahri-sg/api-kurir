@@ -19,6 +19,11 @@ var (
 	ErrInvalidDailyLimit   = errors.New("provider daily limit is invalid")
 )
 
+var supportedProviderCodes = map[string]struct{}{
+	"rajaongkir": {},
+	"biteship":   {},
+}
+
 type Validator interface {
 	Validate(ctx context.Context, providerCode, secret string) error
 }
@@ -86,7 +91,7 @@ func (s *Service) add(
 ) (Credential, error) {
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	secret = strings.TrimSpace(secret)
-	if providerCode != "rajaongkir" {
+	if _, supported := supportedProviderCodes[providerCode]; !supported {
 		return Credential{}, ErrUnsupportedProvider
 	}
 	if len(secret) < 8 || len(secret) > 512 {
@@ -119,18 +124,26 @@ func (s *Service) add(
 		return Credential{}, err
 	}
 	return s.repository.Create(ctx, CreateInput{
-		ID:                id,
-		TenantID:          tenantID,
-		ProviderCode:      providerCode,
-		CredentialAlias:   alias,
-		KeyPrefix:         secret[:prefixLength],
-		KeyLastFour:       secret[len(secret)-4:],
-		SecretCiphertext:  ciphertext,
-		SecretFingerprint: fingerprint[:],
-		DailyLimit:        dailyLimit,
-		CreatedBy:         actor,
-		RequestID:         requestID,
+		ID:                  id,
+		TenantID:            tenantID,
+		ProviderCode:        providerCode,
+		CredentialAlias:     alias,
+		KeyPrefix:           secret[:prefixLength],
+		KeyLastFour:         secret[len(secret)-4:],
+		SecretCiphertext:    ciphertext,
+		SecretFingerprint:   fingerprint[:],
+		DailyLimit:          dailyLimit,
+		ValidationQuotaCost: providerValidationQuotaCost(providerCode),
+		CreatedBy:           actor,
+		RequestID:           requestID,
 	})
+}
+
+func providerValidationQuotaCost(providerCode string) int64 {
+	if providerCode == "rajaongkir" {
+		return 1
+	}
+	return 0
 }
 
 func (s *Service) Disable(ctx context.Context, id, actor, requestID string) error {

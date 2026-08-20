@@ -63,10 +63,13 @@ export type Courier = {
   code: string;
   name: string;
   provider_code: string;
+  rate_provider_code: string;
+  tracking_provider_code: string;
   supports_domestic_cost: boolean;
   supports_international_cost: boolean;
   supports_tracking: boolean;
   catalog_source: string;
+  tracking_catalog_source: string;
   catalog_verified_at: string;
   services: CourierService[];
 };
@@ -97,6 +100,9 @@ export type RateResult = {
     rounded_grams: number;
     billing_grams: number;
     minimum_grams: number;
+    minimum_accepted_grams: number;
+    minimum_billable_grams: number;
+    maximum_accepted_grams: number | null;
     rounding_profile: string;
   };
   breakdown: {
@@ -114,6 +120,18 @@ export type RateResult = {
     fetched_at: string;
     is_stale: boolean;
   };
+  eligibility: {
+    eligible: boolean;
+    weight_basis: "provided";
+    evaluated_weight_grams: number;
+    minimum_accepted_weight_grams: number;
+    minimum_billable_weight_grams: number | null;
+    maximum_accepted_weight_grams: number | null;
+    source_type: string;
+    source_reference: string;
+    verification_status: string;
+    verified_at: string;
+  } | null;
 };
 
 export type TrackingEvent = {

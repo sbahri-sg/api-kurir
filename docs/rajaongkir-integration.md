@@ -100,7 +100,7 @@ Master enkripsi aplikasi:
 
 ```text
 PROVIDER_CREDENTIAL_ENCRYPTION_KEY=<base64 yang decode menjadi 32 byte>
-RAJAONGKIR_TRACKING_COURIERS=jne,sap,ninja,jnt,tiki,wahana,pos,lion
+RAJAONGKIR_TRACKING_COURIERS=jne,sap,ninja,jnt,tiki,wahana,pos,lion,anteraja
 RAJAONGKIR_BASE_URL=https://rajaongkir.komerce.id/api/v1/
 RAJAONGKIR_TIMEOUT=4s
 RAJAONGKIR_SNAPSHOT_TTL=336h

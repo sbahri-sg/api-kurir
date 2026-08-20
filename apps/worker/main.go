@@ -10,6 +10,7 @@ import (
 	"github.com/emisell/api-kurir/internal/config"
 	"github.com/emisell/api-kurir/internal/database"
 	"github.com/emisell/api-kurir/internal/providercredentials"
+	"github.com/emisell/api-kurir/internal/providers/biteship"
 	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tracking"
@@ -64,7 +65,7 @@ func main() {
 			fallbacks,
 		)
 		providerRepository := rates.NewPostgresRepository(pool)
-		adapters := []tracking.Adapter{rajaongkir.NewDynamicTrackingAdapter(
+		rajaOngkirTrackingAdapter := rajaongkir.NewDynamicTrackingAdapter(
 			providerResolver,
 			cfg.RajaOngkir.BaseURL,
 			cfg.RajaOngkir.Timeout,
@@ -72,10 +73,24 @@ func main() {
 			providerRepository,
 			providerRepository,
 			cfg.RajaOngkir.TrackingCouriers,
-		)}
+		)
+		biteshipTrackingAdapter := biteship.NewDynamicTrackingAdapter(
+			providerResolver,
+			cfg.Biteship.BaseURL,
+			cfg.Biteship.Timeout,
+			providerRepository,
+			providerRepository,
+			cfg.Biteship.TrackingCouriers,
+		)
+		fallbackTrackingAdapter := tracking.NewFallbackAdapter(
+			rajaOngkirTrackingAdapter,
+			biteshipTrackingAdapter,
+		)
+		adapters := []tracking.Adapter{fallbackTrackingAdapter}
 		logger.Info(
-			"dynamic RajaOngkir tracking credential resolver enabled",
-			"courier_count", len(cfg.RajaOngkir.TrackingCouriers),
+			"dynamic tracking credential resolver enabled",
+			"rajaongkir_couriers", len(cfg.RajaOngkir.TrackingCouriers),
+			"biteship_fallback_couriers", len(cfg.Biteship.TrackingCouriers),
 		)
 		runner := tracking.NewRunner(
 			tracking.NewPostgresRepository(pool),

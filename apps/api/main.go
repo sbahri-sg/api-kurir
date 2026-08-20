@@ -18,6 +18,7 @@ import (
 	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/platform/cache"
 	"github.com/emisell/api-kurir/internal/providercredentials"
+	"github.com/emisell/api-kurir/internal/providers/biteship"
 	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tenancy"
@@ -76,7 +77,6 @@ func run(logger *slog.Logger) error {
 	} else {
 		logger.Info("Redis disabled; using memory cache and PostgreSQL locks")
 	}
-	_ = runtimeCache
 	locationRepository := locations.NewPostgresRepository(pool)
 	rateRepository := rates.NewPostgresRepository(pool)
 	courierRepository := couriers.NewPostgresRepository(pool)
@@ -93,11 +93,17 @@ func run(logger *slog.Logger) error {
 	providerCredentialService := providercredentials.NewService(
 		providercredentials.NewPostgresRepository(pool),
 		providerCredentialCipher,
-		rajaongkir.NewCredentialValidator(
-			cfg.RajaOngkir.BaseURL,
-			cfg.RajaOngkir.Timeout,
-			cfg.RajaOngkir.MinRequestInterval,
-		),
+		providercredentials.NewValidatorRegistry(map[string]providercredentials.Validator{
+			"rajaongkir": rajaongkir.NewCredentialValidator(
+				cfg.RajaOngkir.BaseURL,
+				cfg.RajaOngkir.Timeout,
+				cfg.RajaOngkir.MinRequestInterval,
+			),
+			"biteship": biteship.NewCredentialValidator(
+				cfg.Biteship.BaseURL,
+				cfg.Biteship.Timeout,
+			),
+		}),
 	)
 	tenantVerifier, err := tenancy.NewVerifier(
 		cfg.TenantContext.PublicKey,
@@ -139,7 +145,10 @@ func run(logger *slog.Logger) error {
 		rateRepository,
 		runtimeLocker,
 		cfg.RajaOngkir.Timeout+2*time.Second,
-	), rates.WithResultPolicy(merchantShippingService)}
+	), rates.WithResultPolicy(merchantShippingService), rates.WithServicePolicyCache(
+		runtimeCache,
+		5*time.Minute,
+	)}
 	operationTimeout := cfg.RajaOngkir.Timeout + 2*time.Second
 	logger.Info("runtime RajaOngkir credential resolver enabled")
 	rateService := rates.NewService(rateRepository, operationTimeout, rateOptions...)
@@ -152,12 +161,7 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		trackingService = tracking.NewService(
-			tracking.NewPostgresRepository(pool),
-			trackingCipher,
-			cfg.RajaOngkir.TrackingCouriers...,
-		)
-		immediateTrackingAdapter = rajaongkir.NewDynamicTrackingAdapter(
+		rajaOngkirTrackingAdapter := rajaongkir.NewDynamicTrackingAdapter(
 			providerResolver,
 			cfg.RajaOngkir.BaseURL,
 			cfg.RajaOngkir.Timeout,
@@ -166,7 +170,28 @@ func run(logger *slog.Logger) error {
 			rateRepository,
 			cfg.RajaOngkir.TrackingCouriers,
 		)
-		logger.Info("tracking registration enabled; waybills encrypted at application layer")
+		biteshipTrackingAdapter := biteship.NewDynamicTrackingAdapter(
+			providerResolver,
+			cfg.Biteship.BaseURL,
+			cfg.Biteship.Timeout,
+			rateRepository,
+			rateRepository,
+			cfg.Biteship.TrackingCouriers,
+		)
+		immediateTrackingAdapter = tracking.NewFallbackAdapter(
+			rajaOngkirTrackingAdapter,
+			biteshipTrackingAdapter,
+		)
+		trackingService = tracking.NewService(
+			tracking.NewPostgresRepository(pool),
+			trackingCipher,
+			immediateTrackingAdapter.CourierCodes()...,
+		)
+		logger.Info(
+			"tracking registration enabled; waybills encrypted at application layer",
+			"rajaongkir_couriers", len(cfg.RajaOngkir.TrackingCouriers),
+			"biteship_fallback_couriers", len(cfg.Biteship.TrackingCouriers),
+		)
 	}
 
 	server := httpapi.New(

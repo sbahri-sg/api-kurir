@@ -31,7 +31,9 @@ Mulai dari dokumen berikut:
    layanan, dan kelompok canonical.
 4. [Model tarif dan aturan berat](rate-and-weight-engine.md) serta
    [matriks pembulatan berat](weight-rounding-matrix.md).
-5. [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) untuk
+5. [Kelayakan berat layanan checkout](service-weight-eligibility.md) untuk
+   minimum diterima, minimum tagihan, maksimum, dan filter cargo.
+6. [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) untuk
    tenant authentication, credential seller, kuota, dan multi-domain.
 
 Postman Collection pada dashboard memakai placeholder. Isi nilai secret hanya
@@ -61,6 +63,7 @@ dipublikasikan.
 - [Peta kontrak dan arah komunikasi](api-surface-map.md)
 - [Dashboard admin dan tracking](admin-dashboard-and-tracking.md)
 - [Operasional adapter tracking RajaOngkir](rajaongkir-tracking.md)
+- [Biteship sebagai fallback tracking](biteship-tracking-fallback.md)
 - [Operasional, kuota, dan compliance](operations-and-compliance.md)
 - [Stack teknologi dan concurrency](technology-stack.md)
 - [Register sumber resmi](source-register.md)

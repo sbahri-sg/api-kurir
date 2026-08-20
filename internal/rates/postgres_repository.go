@@ -15,6 +15,63 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+func (r *PostgresRepository) FindActiveServicePolicies(
+	ctx context.Context,
+	courierCodes []string,
+) ([]ServicePolicy, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			coalesce(c.code, ''),
+			coalesce(cs.code, ''),
+			coalesce(policy.service_group, ''),
+			policy.weight_basis,
+			policy.minimum_accepted_weight_grams,
+			policy.minimum_billable_weight_grams,
+			policy.maximum_accepted_weight_grams,
+			policy.source_type,
+			coalesce(policy.source_reference, ''),
+			policy.verification_status,
+			policy.verified_at
+		FROM courier_service_shipping_policies policy
+		LEFT JOIN courier_services cs ON cs.id = policy.courier_service_id
+		LEFT JOIN couriers c ON c.id = cs.courier_id
+		WHERE policy.active
+		  AND policy.effective_from <= now()
+		  AND (policy.effective_until IS NULL OR policy.effective_until > now())
+		  AND (policy.courier_service_id IS NULL OR c.code = ANY($1::text[]))
+		ORDER BY policy.courier_service_id NULLS LAST, policy.effective_from DESC
+	`, courierCodes)
+	if err != nil {
+		return nil, fmt.Errorf("query active service shipping policies: %w", err)
+	}
+	defer rows.Close()
+
+	policies := make([]ServicePolicy, 0)
+	for rows.Next() {
+		var policy ServicePolicy
+		if err := rows.Scan(
+			&policy.CourierCode,
+			&policy.ServiceCode,
+			&policy.ServiceGroup,
+			&policy.WeightBasis,
+			&policy.MinimumAcceptedWeightGrams,
+			&policy.MinimumBillableWeightGrams,
+			&policy.MaximumAcceptedWeightGrams,
+			&policy.SourceType,
+			&policy.SourceReference,
+			&policy.VerificationStatus,
+			&policy.VerifiedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan active service shipping policy: %w", err)
+		}
+		policies = append(policies, policy)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active service shipping policies: %w", err)
+	}
+	return policies, nil
+}
+
 func (r *PostgresRepository) FindActiveRateCards(
 	ctx context.Context,
 	request Request,

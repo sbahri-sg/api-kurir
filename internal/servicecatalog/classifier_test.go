@@ -40,6 +40,17 @@ func TestClassifyProviderServices(t *testing.T) {
 		{"sap provider cargo", "sap", "DRGREG", "Cargo", "CARGO", GroupCargo, TypeCargo, "DRGREG"},
 		{"rex same day alias", "rex", "REX-0", "", "REX0", GroupSameDay, TypeSameDay, ""},
 		{"rex cargo ten", "rex", "REX-10", "Rex-10 ( Harga Ekonomis Mulai 10 Kg )", "REX10", GroupCargo, TypeCargo, ""},
+		{"anteraja document", "anteraja", "DOK", "Anteraja Document", "DOK", GroupRegular, TypeParcel, ""},
+		{"anteraja economy", "anteraja", "ECO", "Anteraja Economy", "ECO", GroupEconomy, TypeParcel, ""},
+		{"anteraja mini cargo", "anteraja", "MIC", "Anteraja Mini Cargo", "MIC", GroupCargo, TypeCargo, ""},
+		{"anteraja next day", "anteraja", "ND", "Anteraja Next Day", "ND", GroupNextDay, TypeParcel, ""},
+		{"dse overnight", "dse", "ONS", "Over Night Service", "ONS", GroupNextDay, TypeParcel, ""},
+		{"ncs regular land", "ncs", "DARAT", "Regular Darat", "DARAT", GroupCargo, TypeCargo, ""},
+		{"rpx economy", "rpx", "ECP", "Economy Package", "ECP", GroupEconomy, TypeParcel, ""},
+		{"rpx pas economy alias", "rpx", "PSC", "PAS Economy", "ECP", GroupEconomy, TypeParcel, "PSC"},
+		{"star air cargo", "star", "AIR", "Angkutan Udara", "UDARA", GroupCargo, TypeCargo, "AIR"},
+		{"generic standard", "newcourier", "STD", "Standard Service", "STD", GroupRegular, TypeParcel, ""},
+		{"generic cargo", "newcourier", "TRUCK", "Heavy Weight", "TRUCK", GroupCargo, TypeCargo, ""},
 	}
 
 	for _, test := range tests {

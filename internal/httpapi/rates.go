@@ -633,13 +633,16 @@ func rateResponse(result rates.Result, calculatedAt time.Time) map[string]any {
 			"text":     etdText,
 		},
 		"weight": map[string]any{
-			"actual_grams":     result.Weight.ActualGrams,
-			"volumetric_grams": result.Weight.VolumetricGrams,
-			"chargeable_grams": result.Weight.ChargeableGrams,
-			"rounded_grams":    result.Weight.RoundedGrams,
-			"billing_grams":    result.Weight.BillingGrams,
-			"minimum_grams":    result.Weight.MinimumGrams,
-			"rounding_profile": result.Weight.RoundingProfile,
+			"actual_grams":           result.Weight.ActualGrams,
+			"volumetric_grams":       result.Weight.VolumetricGrams,
+			"chargeable_grams":       result.Weight.ChargeableGrams,
+			"rounded_grams":          result.Weight.RoundedGrams,
+			"billing_grams":          result.Weight.BillingGrams,
+			"minimum_grams":          result.Weight.MinimumGrams,
+			"minimum_accepted_grams": result.Weight.MinimumAcceptedGrams,
+			"minimum_billable_grams": result.Weight.MinimumBillableGrams,
+			"maximum_accepted_grams": result.Weight.MaximumAcceptedGrams,
+			"rounding_profile":       result.Weight.RoundingProfile,
 		},
 		"breakdown": map[string]any{
 			"shipping":  result.Cost.Shipping,
@@ -656,5 +659,24 @@ func rateResponse(result rates.Result, calculatedAt time.Time) map[string]any {
 			"fetched_at":          result.Card.FetchedAt.Format(time.RFC3339),
 			"is_stale":            isStale,
 		},
+		"eligibility": eligibilityResponse(result.Eligibility),
+	}
+}
+
+func eligibilityResponse(evaluation *rates.PolicyEvaluation) any {
+	if evaluation == nil {
+		return nil
+	}
+	return map[string]any{
+		"eligible":                      evaluation.Eligible,
+		"weight_basis":                  evaluation.WeightBasis,
+		"evaluated_weight_grams":        evaluation.EvaluatedWeightGrams,
+		"minimum_accepted_weight_grams": evaluation.MinimumAcceptedWeightGrams,
+		"minimum_billable_weight_grams": evaluation.MinimumBillableWeightGrams,
+		"maximum_accepted_weight_grams": evaluation.MaximumAcceptedWeightGrams,
+		"source_type":                   evaluation.SourceType,
+		"source_reference":              evaluation.SourceReference,
+		"verification_status":           evaluation.VerificationStatus,
+		"verified_at":                   evaluation.VerifiedAt.Format("2006-01-02"),
 	}
 }

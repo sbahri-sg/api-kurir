@@ -1229,6 +1229,56 @@
           "response": []
         },
         {
+          "name": "Add Biteship Tracking Fallback Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Biteship token berhasil divalidasi dan disimpan', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data && payload.data.id) {",
+                  "  pm.environment.set('provider_credential_id', payload.data.id);",
+                  "}",
+                  "console.warn('Hapus Current Value biteship_api_token dari Postman setelah request berhasil.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_code\": \"biteship\",\n  \"api_key\": \"{{biteship_api_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/provider-credentials",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "admin", "provider-credentials"]
+            },
+            "description": "Token diuji melalui katalog kurir lalu disimpan terenkripsi. Token ini hanya dipakai untuk fallback tracking seperti SiCepat, bukan cek ongkir."
+          },
+          "response": []
+        },
+        {
           "name": "Disable Provider Key",
           "request": {
             "method": "POST",

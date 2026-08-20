@@ -560,7 +560,7 @@ key: {{api_key}}`,
     path: "/v1/couriers",
     title: "Daftar kurir",
     description:
-      "Membaca katalog kurir, kemampuan domestik/internasional/tracking, layanan lokal aktif, dan mode kalkulasi.",
+      "Membaca katalog kurir, provider ongkir dan tracking yang terpisah, kemampuan aktif, layanan lokal, dan mode kalkulasi.",
     authentication: "Header key atau Bearer customer API key",
     response: `{
   "data": [
@@ -568,10 +568,13 @@ key: {{api_key}}`,
       "code": "jne",
       "name": "JNE",
       "provider_code": "rajaongkir",
+      "rate_provider_code": "rajaongkir",
+      "tracking_provider_code": "rajaongkir",
       "supports_domestic_cost": true,
       "supports_international_cost": true,
       "supports_tracking": true,
       "catalog_source": "https://rajaongkir.com/docs/shipping-cost/getting_started/courier_availability",
+      "tracking_catalog_source": "https://www.rajaongkir.com/docs/shipping-cost/getting_started/courier_availability",
       "catalog_verified_at": "2026-07-28",
       "services": [
         {
@@ -596,9 +599,10 @@ key: {{api_key}}`,
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID lokasi lokal dari endpoint pencarian",
-      "weight — berat yang ditangani Emisell dalam gram",
+      "weight — berat final/chargeable yang sudah dihitung Emisell dalam gram",
       "courier — satu kode atau beberapa kode dipisahkan tanda titik dua",
-      "dimensions, item_value, dan options — opsional",
+      "dimensions — field kompatibilitas opsional; filter layanan memakai weight final",
+      "item_value dan options — opsional",
     ],
     request: `{
   "origin": "{{origin_id}}",
@@ -643,6 +647,14 @@ key: {{api_key}}`,
         "max_days": 2,
         "text": "1-2 hari"
       },
+      "weight": {
+        "actual_grams": 1200,
+        "billing_grams": 1200,
+        "minimum_accepted_grams": 0,
+        "minimum_billable_grams": 0,
+        "maximum_accepted_grams": null
+      },
+      "eligibility": null,
       "source": {
         "type": "provider_quote",
         "provider": "rajaongkir",
@@ -664,7 +676,7 @@ key: {{api_key}}`,
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint sub-district atau domestic-destination",
-      "weight — berat gram",
+      "weight — berat final/chargeable dari Emisell dalam gram; layanan di luar batas berat otomatis tidak dikembalikan",
       "courier — kode kurir dipisahkan titik dua",
       "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
       "include_group — true menambahkan canonical_service, service_group, dan service_type; default false agar tetap 1:1 RajaOngkir V2",
@@ -705,7 +717,7 @@ origin=4911&destination=25976&weight=1000&courier=jne&price=lowest&include_group
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint district",
-      "weight — berat gram",
+      "weight — berat final/chargeable dari Emisell dalam gram; layanan di luar batas berat otomatis tidak dikembalikan",
       "courier — kode kurir dipisahkan titik dua",
       "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
       "include_group — true menambahkan canonical_service, service_group, dan service_type; default false agar tetap 1:1 RajaOngkir V2",
@@ -866,7 +878,7 @@ key: {{api_key}}`,
     path: "/v1/admin/couriers",
     title: "Kurir untuk alat operasional",
     description:
-      "Membaca katalog kemampuan dan layanan untuk menu Daftar Ekspedisi serta pilihan pada alat operasional.",
+      "Membaca katalog kemampuan, sumber tarif RajaOngkir, dan provider tracking untuk menu Ekspedisi & Service.",
     authentication: "Bearer admin API key",
     response: `{
   "data": [
@@ -874,10 +886,13 @@ key: {{api_key}}`,
       "code": "jne",
       "name": "JNE",
       "provider_code": "rajaongkir",
+      "rate_provider_code": "rajaongkir",
+      "tracking_provider_code": "rajaongkir",
       "supports_domestic_cost": true,
       "supports_international_cost": true,
       "supports_tracking": true,
       "catalog_source": "https://rajaongkir.com/docs/shipping-cost/getting_started/courier_availability",
+      "tracking_catalog_source": "https://www.rajaongkir.com/docs/shipping-cost/getting_started/courier_availability",
       "catalog_verified_at": "2026-07-28",
       "services": [
         {
@@ -1000,10 +1015,10 @@ key: {{api_key}}`,
     path: "/v1/admin/provider-credentials",
     title: "Tambah key provider",
     description:
-      "Memvalidasi key ke RajaOngkir, mengenkripsinya, dan langsung mengaktifkannya untuk resolver runtime tanpa restart.",
+      "Memvalidasi key ke RajaOngkir atau Biteship, mengenkripsinya, dan langsung mengaktifkannya tanpa restart. Biteship hanya digunakan untuk fallback tracking.",
     authentication: "Bearer admin API key",
     parameters: [
-      "provider_code — saat ini rajaongkir",
+      "provider_code — rajaongkir atau biteship",
       "api_key — secret provider; tidak pernah dikembalikan",
     ],
     request: `{
@@ -1016,6 +1031,37 @@ key: {{api_key}}`,
     "provider_code": "rajaongkir",
     "credential_alias": "rajaongkir-6c8f212a",
     "display_key": "rk_d••••2026",
+    "daily_limit": 50000,
+    "active": true,
+    "validation_status": "valid"
+  },
+  "meta": {
+    "request_id": "req_example"
+  }
+}`,
+  },
+  {
+    scope: "admin",
+    method: "POST",
+    path: "/v1/admin/provider-credentials",
+    title: "Tambah token fallback Biteship",
+    description:
+      "Menyimpan token Biteship terenkripsi untuk tracking kurir fallback seperti SiCepat. Token tidak digunakan untuk cek ongkir atau sinkronisasi katalog.",
+    authentication: "Bearer admin API key",
+    parameters: [
+      "provider_code — biteship",
+      "api_key — token biteship_live.* atau biteship_test.*",
+    ],
+    request: `{
+  "provider_code": "biteship",
+  "api_key": "{{biteship_api_token}}"
+}`,
+    response: `{
+  "data": {
+    "id": "be4c62aa-a700-4e23-bfc0-02072791b59e",
+    "provider_code": "biteship",
+    "credential_alias": "biteship-6c8f212a",
+    "display_key": "bite••••2026",
     "daily_limit": 50000,
     "active": true,
     "validation_status": "valid"
@@ -1347,6 +1393,9 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
       {
         "code": "jne",
         "name": "JNE",
+        "provider_code": "rajaongkir",
+        "rate_provider_code": "rajaongkir",
+        "tracking_provider_code": "rajaongkir",
         "selection_state": "partial",
         "selected_service_count": 2,
         "total_service_count": 9,
@@ -1448,7 +1497,7 @@ origin=442&destination=1354&weight=1200&courier=jne`,
     path: "/api/v1/track/waybill",
     title: "Tracking dengan key seller",
     description:
-      "Tracking sinkron dan refresh worker mempertahankan tenant_id serta credential integration_id milik order.",
+      "Tracking sinkron dan refresh worker mempertahankan tenant_id serta credential integration_id milik order. Kurir fallback seperti SiCepat dapat dijawab Biteship tanpa mengubah kontrak respons.",
     authentication:
       "Customer API key + tenant token dengan scope tracking:read",
     request: `POST {{base_url}}/api/v1/track/waybill
@@ -1456,7 +1505,7 @@ key: {{api_key}}
 X-Emisell-Tenant-Token: {{tenant_token}}
 Content-Type: application/x-www-form-urlencoded
 
-awb=TEST123456789&courier=jne`,
-    response: `Respons tracking RajaOngkir V2. Hit dicatat pada ledger credential merchant yang terautentikasi.`,
+awb=TEST123456789&courier=sicepat`,
+    response: `Respons tetap memakai envelope kompatibel RajaOngkir V2 tanpa field tambahan. Provider aktual dan hit dapat diaudit dari ledger admin serta snapshot tracking internal.`,
   },
 ];

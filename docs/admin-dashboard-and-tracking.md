@@ -112,7 +112,8 @@ lain tetap mengikuti respons provider pada rute yang benar-benar dicek.
 
 ### 3.1 Keamanan provider credential
 
-- form saat ini menerima `provider_code=rajaongkir` dan `api_key`;
+- form menerima `provider_code=rajaongkir|biteship` dan `api_key`;
+- credential Biteship hanya dipakai sebagai fallback tracking, bukan tarif;
 - key diuji ke endpoint resmi sebelum disimpan; satu request validasi ikut
   dicatat pada quota ledger;
 - secret dienkripsi AES-256-GCM dengan
@@ -284,8 +285,12 @@ membocorkan respons provider.
 
 - `TRACKING_ENABLED=false` merupakan default aman.
 - Kurir AWB default: `jne,sap,ninja,jnt,tiki,wahana,pos,lion`.
-- SiCepat, IDExpress, Sentral Cargo, dan REX tidak diaktifkan karena matriks
-  resmi RajaOngkir saat ini tidak menandai capability AWB mereka.
+- SiCepat, IDExpress, dan Sentral Cargo memakai Biteship fallback karena
+  matriks resmi RajaOngkir saat ini tidak menandai capability AWB mereka.
+- AnterAja dan RPX tetap memakai RajaOngkir untuk tarif, tetapi tracking-nya
+  memakai Biteship fallback. Paxel tersedia sebagai tracking-only.
+- REX, NCS, STAR, dan DSE tetap rate-only sampai ada adapter tracking yang
+  terverifikasi.
 - Worker memakai pool credential RajaOngkir database ketika
   `TRACKING_ENABLED=true`; tambahkan setidaknya satu key valid sebelum
   mengaktifkan tracking.

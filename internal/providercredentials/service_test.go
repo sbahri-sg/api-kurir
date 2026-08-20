@@ -129,6 +129,33 @@ func TestAddEncryptsProviderSecretAndResolverDecryptsIt(t *testing.T) {
 	}
 }
 
+func TestBiteshipCredentialValidationDoesNotConsumeTrackingQuota(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryRepository{}
+	service := NewService(repository, cipher, &acceptingValidator{})
+	_, err = service.Add(
+		context.Background(),
+		"biteship",
+		"biteship_test.provider-secret",
+		"operator",
+		"req_test",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.input.ValidationQuotaCost != 0 {
+		t.Fatalf(
+			"Biteship catalog validation must not consume paid tracking quota: %d",
+			repository.input.ValidationQuotaCost,
+		)
+	}
+}
+
 func TestAddRejectsCredentialWhenProviderValidationFails(t *testing.T) {
 	t.Parallel()
 

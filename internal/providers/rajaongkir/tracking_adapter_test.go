@@ -135,3 +135,11 @@ func TestNormalizeTrackingResultMarksDeliveredFinal(t *testing.T) {
 		t.Fatalf("unexpected delivered result: %#v", result)
 	}
 }
+
+func TestDefaultTrackingCouriersIncludeAnterAja(t *testing.T) {
+	t.Parallel()
+	adapter := NewTrackingAdapter(nil, nil, nil, "test", 100, nil)
+	if !adapter.supports("anteraja") {
+		t.Fatal("AnterAja must be enabled in the default RajaOngkir tracking adapter")
+	}
+}

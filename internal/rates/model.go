@@ -56,13 +56,16 @@ type RateCard struct {
 }
 
 type WeightBreakdown struct {
-	ActualGrams     int64
-	VolumetricGrams int64
-	ChargeableGrams int64
-	RoundedGrams    int64
-	BillingGrams    int64
-	MinimumGrams    int64
-	RoundingProfile string
+	ActualGrams          int64
+	VolumetricGrams      int64
+	ChargeableGrams      int64
+	RoundedGrams         int64
+	BillingGrams         int64
+	MinimumGrams         int64
+	MinimumAcceptedGrams int64
+	MinimumBillableGrams int64
+	MaximumAcceptedGrams *int64
+	RoundingProfile      string
 }
 
 type CostBreakdown struct {
@@ -74,8 +77,9 @@ type CostBreakdown struct {
 }
 
 type Result struct {
-	Card       RateCard
-	Weight     WeightBreakdown
-	Cost       CostBreakdown
-	SourceType string
+	Card        RateCard
+	Weight      WeightBreakdown
+	Cost        CostBreakdown
+	Eligibility *PolicyEvaluation
+	SourceType  string
 }
