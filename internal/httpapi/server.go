@@ -118,33 +118,23 @@ func New(
 		tenantVerifier,
 		apiKeys,
 	)
-	integrationGroup := e.Group("/v1/integrations")
-	integrationGroup.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
-	integrationGroup.Use(tenantContextMiddleware(tenantVerifier, true))
-	integrationGroup.GET(
-		"/provider-credentials",
-		tenantProviderCredentialListHandler(providerCredentialService),
-		tenantScopeMiddleware("provider-credentials:read"),
+	registerTenantIntegrationRoutes(
+		e.Group("/api/v1/integrations"),
+		customerAPIKeyService,
+		providerCredentialService,
+		merchantShippingService,
+		tenantVerifier,
+		apiKeys,
 	)
-	integrationGroup.POST(
-		"/provider-credentials",
-		tenantProviderCredentialCreateHandler(providerCredentialService),
-		tenantScopeMiddleware("provider-credentials:write"),
-	)
-	integrationGroup.POST(
-		"/provider-credentials/:id/disable",
-		tenantProviderCredentialDisableHandler(providerCredentialService),
-		tenantScopeMiddleware("provider-credentials:write"),
-	)
-	integrationGroup.GET(
-		"/shipping-services",
-		tenantShippingServiceCatalogHandler(merchantShippingService),
-		tenantScopeMiddleware("shipping:read"),
-	)
-	integrationGroup.PUT(
-		"/shipping-services",
-		tenantShippingServiceUpdateHandler(merchantShippingService),
-		tenantScopeMiddleware("shipping:write"),
+	// Compatibility alias for Emisell clients deployed before the API prefix
+	// was standardized. New integrations must use /api/v1/integrations.
+	registerTenantIntegrationRoutes(
+		e.Group("/v1/integrations"),
+		customerAPIKeyService,
+		providerCredentialService,
+		merchantShippingService,
+		tenantVerifier,
+		apiKeys,
 	)
 	if legacyRepository, ok := locationRepository.(legacyRegionStore); ok {
 		registerLegacyRegionRoutes(
@@ -185,6 +175,43 @@ func New(
 	)
 
 	return &Server{Echo: e}
+}
+
+func registerTenantIntegrationRoutes(
+	integrationGroup *echo.Group,
+	customerAPIKeyService *apikeys.Service,
+	providerCredentialService *providercredentials.Service,
+	merchantShippingService *merchantshipping.Service,
+	tenantVerifier *tenancy.Verifier,
+	apiKeys []string,
+) {
+	integrationGroup.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
+	integrationGroup.Use(tenantContextMiddleware(tenantVerifier, true))
+	integrationGroup.GET(
+		"/provider-credentials",
+		tenantProviderCredentialListHandler(providerCredentialService),
+		tenantScopeMiddleware("provider-credentials:read"),
+	)
+	integrationGroup.POST(
+		"/provider-credentials",
+		tenantProviderCredentialCreateHandler(providerCredentialService),
+		tenantScopeMiddleware("provider-credentials:write"),
+	)
+	integrationGroup.POST(
+		"/provider-credentials/:id/disable",
+		tenantProviderCredentialDisableHandler(providerCredentialService),
+		tenantScopeMiddleware("provider-credentials:write"),
+	)
+	integrationGroup.GET(
+		"/shipping-services",
+		tenantShippingServiceCatalogHandler(merchantShippingService),
+		tenantScopeMiddleware("shipping:read"),
+	)
+	integrationGroup.PUT(
+		"/shipping-services",
+		tenantShippingServiceUpdateHandler(merchantShippingService),
+		tenantScopeMiddleware("shipping:write"),
+	)
 }
 
 func registerCustomerRoutes(

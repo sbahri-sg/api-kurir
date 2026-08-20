@@ -10,9 +10,9 @@ provider yang sedang aktif atau jenis header autentikasi.
 |---|---|---|---|---|---|
 | RajaOngkir V2 compatible | Emisell/SDK RajaOngkir | `/api/v1` | Integer snapshot RajaOngkir lokal | Stable | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Emisell Legacy | Modul region-service lama | `/regions`, `/shipping` | Integer dump region-service | Compatibility | [`openapi/public.yaml`](../openapi/public.yaml) |
-| Pilihan layanan merchant | Extension Kurir Emisell | `/v1/integrations/shipping-services` | `courier_code:canonical_service_code` | Stable | [`merchant-shipping-services.md`](merchant-shipping-services.md) |
+| Pilihan layanan merchant | Extension Kurir Emisell | `/api/v1/integrations/shipping-services` | `courier_code:canonical_service_code` | Stable | [`merchant-shipping-services.md`](merchant-shipping-services.md) |
 | Canonical/Internal | Dashboard dan service internal | `/v1` | `loc_idn_*` | Internal | [Kontrak API publik](api-contract.md) |
-| Emisell Merchant Gateway | Backend Emisell | `/v1/integrations`, `/api/v1` | `merchant_id` + UUID credential | Internal | [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) |
+| Emisell Merchant Gateway | Backend Emisell | `/api/v1` | `merchant_id` + UUID credential | Internal | [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) |
 | Admin | Operator API Kurir | `/v1/admin` | Canonical ID dan UUID | Restricted | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Partner Connector | API Kurir ke sistem vendor | `/partner/v1` pada host partner | String canonical partner | Draft | [`openapi/partner-v1.yaml`](../openapi/partner-v1.yaml) |
 

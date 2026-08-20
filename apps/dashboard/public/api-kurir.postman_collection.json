@@ -815,9 +815,9 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/integrations/provider-credentials",
+              "raw": "{{base_url}}/api/v1/integrations/provider-credentials",
               "host": ["{{base_url}}"],
-              "path": ["v1", "integrations", "provider-credentials"]
+              "path": ["api", "v1", "integrations", "provider-credentials"]
             },
             "description": "Memerlukan scope provider-credentials:read dan hanya mengembalikan key milik merchant pada claim sub."
           },
@@ -862,9 +862,9 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/v1/integrations/provider-credentials",
+              "raw": "{{base_url}}/api/v1/integrations/provider-credentials",
               "host": ["{{base_url}}"],
-              "path": ["v1", "integrations", "provider-credentials"]
+              "path": ["api", "v1", "integrations", "provider-credentials"]
             },
             "description": "Memerlukan scope provider-credentials:write. Validasi memakai satu hit RajaOngkir seller."
           },
@@ -882,9 +882,10 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/integrations/provider-credentials/{{seller_provider_credential_id}}/disable",
+              "raw": "{{base_url}}/api/v1/integrations/provider-credentials/{{seller_provider_credential_id}}/disable",
               "host": ["{{base_url}}"],
               "path": [
+                "api",
                 "v1",
                 "integrations",
                 "provider-credentials",
@@ -908,9 +909,9 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/v1/integrations/shipping-services",
+              "raw": "{{base_url}}/api/v1/integrations/shipping-services",
               "host": ["{{base_url}}"],
-              "path": ["v1", "integrations", "shipping-services"]
+              "path": ["api", "v1", "integrations", "shipping-services"]
             },
             "description": "Memerlukan scope shipping:read. Mengembalikan katalog canonical, grup, capability, dan status checkbox none/partial/all milik merchant."
           },
@@ -953,9 +954,9 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/v1/integrations/shipping-services",
+              "raw": "{{base_url}}/api/v1/integrations/shipping-services",
               "host": ["{{base_url}}"],
-              "path": ["v1", "integrations", "shipping-services"]
+              "path": ["api", "v1", "integrations", "shipping-services"]
             },
             "description": "Memerlukan scope shipping:write. PUT mengganti seluruh pilihan merchant secara atomik; merchant_id selalu berasal dari claim sub."
           },

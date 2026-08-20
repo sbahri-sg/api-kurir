@@ -106,7 +106,7 @@ menerbitkan token dari browser seller.
 ## 5. Membaca katalog dan status pilihan
 
 ```http
-GET /v1/integrations/shipping-services
+GET /api/v1/integrations/shipping-services
 ```
 
 Response utama:
@@ -177,7 +177,7 @@ Response utama:
 ## 6. Menyimpan pilihan
 
 ```http
-PUT /v1/integrations/shipping-services
+PUT /api/v1/integrations/shipping-services
 Content-Type: application/json
 ```
 

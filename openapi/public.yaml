@@ -817,7 +817,7 @@ paths:
         "503":
           $ref: "#/components/responses/ProviderError"
 
-  /v1/integrations/provider-credentials:
+  /api/v1/integrations/provider-credentials:
     get:
       tags: [Emisell Gateway]
       operationId: listTenantProviderCredentials
@@ -891,7 +891,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /v1/integrations/provider-credentials/{id}/disable:
+  /api/v1/integrations/provider-credentials/{id}/disable:
     post:
       tags: [Emisell Gateway]
       operationId: disableTenantProviderCredential
@@ -924,7 +924,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /v1/integrations/shipping-services:
+  /api/v1/integrations/shipping-services:
     get:
       tags: [Emisell Gateway]
       operationId: getTenantShippingServices

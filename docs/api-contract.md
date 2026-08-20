@@ -20,7 +20,7 @@ Base path dan klasifikasi:
 | RajaOngkir V2 compatible | `/api/v1` | Emisell/SDK RajaOngkir | Integer snapshot RajaOngkir | Public, stable |
 | Emisell Legacy | `/regions`, `/shipping` | Modul region-service lama | Integer dump region-service | Legacy compatibility |
 | Canonical/Internal | `/v1` | Dashboard dan service internal | `loc_idn_*` | Internal, stable |
-| Emisell Gateway | `/v1/integrations` | Backend Emisell bertenant | Merchant ID dari signed token | Internal, stable |
+| Emisell Gateway | `/api/v1/integrations` | Backend Emisell bertenant | Merchant ID dari signed token | Internal, stable |
 | Admin | `/v1/admin` | Operator API Kurir | Canonical ID/UUID | Restricted |
 
 Partner Connector tidak berada pada base path di atas. Vendor menyediakan
@@ -453,7 +453,7 @@ asynchronous. Default tetap mencoba memberi hasil sinkron dalam batas timeout.
 ### Filter layanan checkout per merchant
 
 Request bertenant dapat mengatur layanan yang boleh muncul melalui
-`GET/PUT /v1/integrations/shipping-services`. Rate engine menormalisasi kode
+`GET/PUT /api/v1/integrations/shipping-services`. Rate engine menormalisasi kode
 mentah provider ke canonical service terlebih dahulu, lalu menerapkan pilihan
 merchant tanpa mengubah envelope RajaOngkir V2. Merchant lama yang belum
 menyimpan preference tetap memakai perilaku lama agar rollout kompatibel.

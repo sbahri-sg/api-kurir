@@ -75,7 +75,7 @@ export const API_DOCUMENTATION_CONTRACTS: ApiDocumentationContractDefinition[] =
     classification: "Internal",
     status: "Stable",
     audience: "Backend Emisell yang membawa konteks merchant terverifikasi",
-    basePath: "/v1/integrations dan /api/v1",
+    basePath: "/api/v1",
     idFormat: "merchant_id Emisell + UUID credential provider",
     authentication:
       "Customer API key + X-Emisell-Tenant-Token bertanda tangan Ed25519",
@@ -1285,13 +1285,13 @@ key: {{api_key}}`,
     contract: "gateway",
     scope: "customer",
     method: "GET",
-    path: "/v1/integrations/provider-credentials",
+    path: "/api/v1/integrations/provider-credentials",
     title: "Daftar credential provider milik merchant",
     description:
       "Hanya mengembalikan credential yang tenant_id-nya sama dengan claim sub. Secret asli tidak pernah dikembalikan.",
     authentication:
       "Customer API key + tenant token dengan scope provider-credentials:read",
-    request: `GET {{base_url}}/v1/integrations/provider-credentials
+    request: `GET {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
 X-Emisell-Tenant-Token: {{tenant_token}}`,
     response: `{
@@ -1313,13 +1313,13 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     contract: "gateway",
     scope: "customer",
     method: "POST",
-    path: "/v1/integrations/provider-credentials",
+    path: "/api/v1/integrations/provider-credentials",
     title: "Hubungkan key RajaOngkir seller",
     description:
       "Memvalidasi key ke provider, mengenkripsinya dengan AES-256-GCM, dan mengikat credential ke merchant dari tenant token. Validasi menggunakan satu hit provider.",
     authentication:
       "Customer API key + tenant token dengan scope provider-credentials:write",
-    request: `POST {{base_url}}/v1/integrations/provider-credentials
+    request: `POST {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
 X-Emisell-Tenant-Token: {{tenant_token}}
 Content-Type: application/json
@@ -1346,14 +1346,14 @@ Content-Type: application/json
     contract: "gateway",
     scope: "customer",
     method: "POST",
-    path: "/v1/integrations/provider-credentials/{id}/disable",
+    path: "/api/v1/integrations/provider-credentials/{id}/disable",
     title: "Putuskan credential seller",
     description:
       "Menonaktifkan credential hanya bila UUID tersebut dimiliki merchant pada tenant token.",
     authentication:
       "Customer API key + tenant token dengan scope provider-credentials:write",
     parameters: ["id — UUID credential milik merchant aktif"],
-    request: `POST {{base_url}}/v1/integrations/provider-credentials/{{credential_id}}/disable
+    request: `POST {{base_url}}/api/v1/integrations/provider-credentials/{{credential_id}}/disable
 key: {{api_key}}
 X-Emisell-Tenant-Token: {{tenant_token}}`,
     response: `HTTP 204 No Content`,
@@ -1362,13 +1362,13 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     contract: "gateway",
     scope: "customer",
     method: "GET",
-    path: "/v1/integrations/shipping-services",
+    path: "/api/v1/integrations/shipping-services",
     title: "Katalog dan pilihan layanan checkout",
     description:
       "Mengembalikan kurir canonical, grup layanan, capability yang tersedia, serta status none/partial/all berdasarkan preferensi merchant. Merchant lama yang belum menyimpan preferensi tetap memakai perilaku allow-all.",
     authentication:
       "Customer API key + tenant token dengan scope shipping:read",
-    request: `GET {{base_url}}/v1/integrations/shipping-services
+    request: `GET {{base_url}}/api/v1/integrations/shipping-services
 key: {{api_key}}
 X-Emisell-Tenant-Token: {{tenant_token}}`,
     response: `{
@@ -1430,7 +1430,7 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     contract: "gateway",
     scope: "customer",
     method: "PUT",
-    path: "/v1/integrations/shipping-services",
+    path: "/api/v1/integrations/shipping-services",
     title: "Simpan layanan yang tampil di checkout",
     description:
       "Mengganti preferensi merchant secara atomik. Gunakan custom untuk checkbox per layanan seperti Tokopedia, groups untuk aktivasi otomatis berdasarkan kategori, atau all untuk seluruh layanan canonical yang sudah dikenali.",
@@ -1442,7 +1442,7 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
       "services — pasangan courier_code + canonical service_code, dipakai hanya pada mode custom",
       "merchant_id tidak boleh dikirim; tenant selalu diambil dari claim sub",
     ],
-    request: `PUT {{base_url}}/v1/integrations/shipping-services
+    request: `PUT {{base_url}}/api/v1/integrations/shipping-services
 key: {{api_key}}
 X-Emisell-Tenant-Token: {{tenant_token}}
 Content-Type: application/json

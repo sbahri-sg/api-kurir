@@ -54,11 +54,15 @@ memakai credential berbayar milik seller maupun platform secara implisit.
 2. Seller memasukkan API key RajaOngkir dan batas harian paketnya.
 3. Backend Emisell membuat tenant token dengan scope
    `provider-credentials:write`.
-4. Backend memanggil `POST /v1/integrations/provider-credentials`.
+4. Backend memanggil `POST /api/v1/integrations/provider-credentials`.
 5. API Kurir memvalidasi key ke RajaOngkir, mengenkripsi secret, mencatat satu
    hit validasi, dan mengembalikan UUID credential sebagai `integration_id`.
 6. Emisell menyimpan UUID tersebut pada konfigurasi extension seller. Secret
    provider tidak disimpan di browser atau log Emisell.
+
+Seluruh endpoint Emisell Gateway memakai base path canonical `/api/v1`.
+Path lama `/v1/integrations` dipertahankan sementara sebagai alias kompatibilitas,
+tetapi integrasi baru wajib menggunakan `/api/v1/integrations`.
 
 ## Multi-domain
 

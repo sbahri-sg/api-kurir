@@ -57,16 +57,16 @@ func TestTenantShippingServicesPutAndGet(t *testing.T) {
 	repository := &shippingPreferenceRepository{}
 	service := merchantshipping.NewService(repository, shippingCourierRepository{})
 	e := echo.New()
-	e.PUT("/v1/integrations/shipping-services", withTenantIdentity(
+	e.PUT("/api/v1/integrations/shipping-services", withTenantIdentity(
 		tenantShippingServiceUpdateHandler(service),
 	))
-	e.GET("/v1/integrations/shipping-services", withTenantIdentity(
+	e.GET("/api/v1/integrations/shipping-services", withTenantIdentity(
 		tenantShippingServiceCatalogHandler(service),
 	))
 
 	request := httptest.NewRequest(
 		http.MethodPut,
-		"/v1/integrations/shipping-services",
+		"/api/v1/integrations/shipping-services",
 		bytes.NewBufferString(`{
 			"mode":"custom",
 			"enabled_groups":[],
@@ -80,7 +80,7 @@ func TestTenantShippingServicesPutAndGet(t *testing.T) {
 		t.Fatalf("PUT status=%d body=%s", response.Code, response.Body.String())
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "/v1/integrations/shipping-services", nil)
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/integrations/shipping-services", nil)
 	response = httptest.NewRecorder()
 	e.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -99,12 +99,12 @@ func TestTenantShippingServicesRejectsUnknownService(t *testing.T) {
 		shippingCourierRepository{},
 	)
 	e := echo.New()
-	e.PUT("/v1/integrations/shipping-services", withTenantIdentity(
+	e.PUT("/api/v1/integrations/shipping-services", withTenantIdentity(
 		tenantShippingServiceUpdateHandler(service),
 	))
 	request := httptest.NewRequest(
 		http.MethodPut,
-		"/v1/integrations/shipping-services",
+		"/api/v1/integrations/shipping-services",
 		bytes.NewBufferString(`{
 			"mode":"custom",
 			"enabled_groups":[],
@@ -116,6 +116,44 @@ func TestTenantShippingServicesRejectsUnknownService(t *testing.T) {
 	e.ServeHTTP(response, request)
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestRegisterTenantIntegrationRoutesUsesCanonicalAPIPath(t *testing.T) {
+	t.Parallel()
+	e := echo.New()
+	registerTenantIntegrationRoutes(
+		e.Group("/api/v1/integrations"),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	registerTenantIntegrationRoutes(
+		e.Group("/v1/integrations"),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	routes := make(map[string]bool)
+	for _, route := range e.Router().Routes() {
+		routes[route.Method+" "+route.Path] = true
+	}
+	for _, expected := range []string{
+		"GET /api/v1/integrations/provider-credentials",
+		"POST /api/v1/integrations/provider-credentials",
+		"POST /api/v1/integrations/provider-credentials/:id/disable",
+		"GET /api/v1/integrations/shipping-services",
+		"PUT /api/v1/integrations/shipping-services",
+		"GET /v1/integrations/provider-credentials",
+	} {
+		if !routes[expected] {
+			t.Fatalf("route %q is not registered", expected)
+		}
 	}
 }
 
