@@ -9,6 +9,7 @@ import (
 
 	"github.com/emisell/api-kurir/internal/config"
 	"github.com/emisell/api-kurir/internal/database"
+	"github.com/emisell/api-kurir/internal/merchantproviders"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/providers/biteship"
 	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
@@ -65,6 +66,9 @@ func main() {
 		providerResolver := providercredentials.NewStaticFallbackResolver(
 			providerCredentialService,
 			fallbacks,
+			merchantproviders.NewService(
+				merchantproviders.NewPostgresRepository(pool),
+			),
 		)
 		providerRepository := rates.NewPostgresRepository(pool)
 		rajaOngkirTrackingAdapter := rajaongkir.NewDynamicTrackingAdapter(

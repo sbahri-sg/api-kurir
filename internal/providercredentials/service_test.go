@@ -330,6 +330,67 @@ func TestStaticFallbackResolverDoesNotLendPlatformKeyToTenant(t *testing.T) {
 	}
 }
 
+func TestStaticFallbackResolverAllowsBuiltInTenantToUsePlatformPool(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewStaticFallbackResolver(
+		tenantAwareResolver{},
+		map[string]StaticCredential{
+			"rajaongkir": {
+				Secret: "environment", CredentialAlias: "env-key", DailyLimit: 50_000,
+			},
+		},
+		platformAuthorizerStub{allowed: true},
+	)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant_123"})
+	secret, alias, limit, err := resolver.ResolveProviderCredential(ctx, "rajaongkir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret != "platform-database" || alias != "platform-db" || limit != 50_000 {
+		t.Fatalf("unexpected platform credential: secret=%q alias=%q limit=%d", secret, alias, limit)
+	}
+}
+
+func TestStaticFallbackResolverKeepsBYOKTenantIsolated(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewStaticFallbackResolver(
+		tenantAwareResolver{},
+		map[string]StaticCredential{},
+		platformAuthorizerStub{allowed: false},
+	)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant_123"})
+	_, _, _, err := resolver.ResolveProviderCredential(ctx, "rajaongkir")
+	if !errors.Is(err, ErrNoActiveCredential) {
+		t.Fatalf("BYOK tenant must remain isolated: %v", err)
+	}
+}
+
+type platformAuthorizerStub struct {
+	allowed bool
+	err     error
+}
+
+func (s platformAuthorizerStub) AllowsPlatformCredential(
+	context.Context,
+	string,
+) (bool, error) {
+	return s.allowed, s.err
+}
+
+type tenantAwareResolver struct{}
+
+func (tenantAwareResolver) ResolveProviderCredential(
+	ctx context.Context,
+	_ string,
+) (string, string, int64, error) {
+	if _, tenantRequest := tenancy.FromContext(ctx); tenantRequest {
+		return "", "", 0, ErrNoActiveCredential
+	}
+	return "platform-database", "platform-db", 50_000, nil
+}
+
 type resolverStub struct {
 	secret string
 	alias  string

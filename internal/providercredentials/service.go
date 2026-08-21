@@ -264,8 +264,13 @@ func validTenantID(value string) bool {
 }
 
 type StaticFallbackResolver struct {
-	primary   Resolver
-	fallbacks map[string]StaticCredential
+	primary            Resolver
+	fallbacks          map[string]StaticCredential
+	platformAuthorizer PlatformCredentialAuthorizer
+}
+
+type PlatformCredentialAuthorizer interface {
+	AllowsPlatformCredential(ctx context.Context, tenantID string) (bool, error)
 }
 
 type StaticCredential struct {
@@ -277,8 +282,13 @@ type StaticCredential struct {
 func NewStaticFallbackResolver(
 	primary Resolver,
 	fallbacks map[string]StaticCredential,
+	platformAuthorizers ...PlatformCredentialAuthorizer,
 ) *StaticFallbackResolver {
-	return &StaticFallbackResolver{primary: primary, fallbacks: fallbacks}
+	resolver := &StaticFallbackResolver{primary: primary, fallbacks: fallbacks}
+	if len(platformAuthorizers) > 0 {
+		resolver.platformAuthorizer = platformAuthorizers[0]
+	}
+	return resolver
 }
 
 func (r *StaticFallbackResolver) ResolveProviderCredential(
@@ -292,9 +302,32 @@ func (r *StaticFallbackResolver) ResolveProviderCredential(
 	if !errors.Is(err, ErrNoActiveCredential) {
 		return "", "", 0, err
 	}
-	// A tenant request must never borrow a platform or another seller's key.
-	if _, tenantRequest := tenancy.FromContext(ctx); tenantRequest {
-		return "", "", 0, ErrNoActiveCredential
+	// A tenant can use the shared platform pool only when it explicitly selected
+	// the built-in Emisell provider. BYOK providers remain strictly isolated.
+	if identity, tenantRequest := tenancy.FromContext(ctx); tenantRequest {
+		if identity.ProviderCredentialID != "" || r.platformAuthorizer == nil {
+			return "", "", 0, ErrNoActiveCredential
+		}
+		allowed, authorizeErr := r.platformAuthorizer.AllowsPlatformCredential(
+			ctx,
+			identity.TenantID,
+		)
+		if authorizeErr != nil {
+			return "", "", 0, authorizeErr
+		}
+		if !allowed {
+			return "", "", 0, ErrNoActiveCredential
+		}
+		secret, alias, limit, err = r.primary.ResolveProviderCredential(
+			tenancy.WithoutIdentity(ctx),
+			providerCode,
+		)
+		if err == nil {
+			return secret, alias, limit, nil
+		}
+		if !errors.Is(err, ErrNoActiveCredential) {
+			return "", "", 0, err
+		}
 	}
 	fallback, ok := r.fallbacks[providerCode]
 	if !ok || strings.TrimSpace(fallback.Secret) == "" {

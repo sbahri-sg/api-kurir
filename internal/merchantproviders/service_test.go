@@ -95,6 +95,30 @@ func TestHasActiveProvider(t *testing.T) {
 	}
 }
 
+func TestAllowsPlatformCredentialOnlyForEmisell(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		active  *string
+		allowed bool
+	}{
+		{name: "inactive", active: nil, allowed: false},
+		{name: "built in", active: stringPointer("emisell"), allowed: true},
+		{name: "byok", active: stringPointer("rajaongkir"), allowed: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewService(&memoryRepository{catalog: Catalog{ActiveProviderCode: test.active}})
+			allowed, err := service.AllowsPlatformCredential(context.Background(), "merchant_123")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if allowed != test.allowed {
+				t.Fatalf("allowed=%v want=%v", allowed, test.allowed)
+			}
+		})
+	}
+}
+
 func stringPointer(value string) *string { return &value }
 
 func TestChangeRejectsInvalidTenantAndProvider(t *testing.T) {

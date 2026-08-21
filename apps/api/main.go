@@ -134,6 +134,7 @@ func run(logger *slog.Logger) error {
 	providerResolver := providercredentials.NewStaticFallbackResolver(
 		providerCredentialService,
 		fallbacks,
+		merchantProviderService,
 	)
 	rajaOngkirProvider := rajaongkir.NewDynamicProvider(
 		providerResolver,

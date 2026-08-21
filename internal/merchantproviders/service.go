@@ -50,6 +50,25 @@ func (s *Service) HasActiveProvider(ctx context.Context, tenantID string) (bool,
 	return catalog.ActiveProviderCode != nil, nil
 }
 
+// AllowsPlatformCredential reports whether a merchant explicitly selected the
+// built-in Emisell integration. External/BYOK providers must always resolve a
+// credential owned by the merchant and are never allowed to borrow this pool.
+func (s *Service) AllowsPlatformCredential(
+	ctx context.Context,
+	tenantID string,
+) (bool, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if !validTenantID(tenantID) {
+		return false, ErrInvalidTenant
+	}
+	catalog, err := s.repository.Catalog(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	return catalog.ActiveProviderCode != nil &&
+		*catalog.ActiveProviderCode == EmisellProviderCode, nil
+}
+
 func (s *Service) Activate(
 	ctx context.Context,
 	tenantID string,
