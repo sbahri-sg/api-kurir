@@ -7,7 +7,7 @@ layanan canonical.
 
 ## 1. Kepemilikan konfigurasi
 
-- Preferensi dimiliki `merchant_id` Emisell dari claim `sub` tenant token.
+- Preferensi dimiliki `merchant_id` dari header backend Emisell.
 - Browser, body, query, dan domain tidak boleh menentukan `merchant_id`.
 - Semua domain dalam merchant yang sama memakai preferensi yang sama.
 - Credential/provider account tetap dikelola terpisah. Seller memilih layanan
@@ -90,18 +90,11 @@ Semua endpoint memakai dua header:
 
 ```http
 key: <customer-api-key>
-X-Emisell-Tenant-Token: <jwt-eddsa>
+X-Emisell-Merchant-ID: merchant_123
 ```
 
-Scope:
-
-| Scope | Operasi |
-|---|---|
-| `shipping:read` | membaca katalog/pilihan dan mengambil tarif |
-| `shipping:write` | mengganti pilihan layanan checkout |
-
-Tenant token harus berumur pendek dan ditandatangani backend Emisell. Jangan
-menerbitkan token dari browser seller.
+Gunakan dedicated service API key milik Main Service. Merchant ID berasal dari
+database Emisell dan header maupun API key tidak pernah dikirim ke browser.
 
 ## 5. Membaca katalog dan status pilihan
 
@@ -205,12 +198,11 @@ diaktifkan kembali.
 
 ## 7. Alur UI Extension Kurir
 
-1. Backend Emisell membuat tenant token dengan `shipping:read`.
-2. UI memanggil GET melalui backend Emisell, bukan langsung membuat tenant
-   token di browser.
+1. Backend Emisell membaca merchant ID dari sesi seller.
+2. UI memanggil GET melalui backend Emisell, bukan langsung ke API Kurir.
 3. Filter grup hanya menyaring tampilan atau melakukan bulk select.
 4. Checkbox induk memilih/melepas semua layanan canonical pada kurir tersebut.
-5. UI mengirim seluruh konfigurasi dengan tenant token `shipping:write`.
+5. Backend mengirim seluruh konfigurasi dengan service key dan merchant ID.
 6. Setelah sukses, UI memakai response server sebagai state baru.
 
 Badge seperti tracking, domestic cost, atau international cost berasal dari
@@ -261,8 +253,9 @@ Detail pemisahan minimum penerimaan dan minimum tagihan tersedia pada
 | HTTP | Kode | Arti |
 |---|---|---|
 | 400 | `INVALID_SHIPPING_SERVICE_PREFERENCE` | kombinasi mode, groups, atau services tidak valid |
-| 401 | `TENANT_CONTEXT_REQUIRED` / `INVALID_TENANT_CONTEXT` | tenant token hilang atau tidak valid |
-| 403 | `INSUFFICIENT_TENANT_SCOPE` | scope read/write tidak tersedia |
+| 400 | `MERCHANT_ID_REQUIRED` / `INVALID_MERCHANT_ID` | header merchant hilang atau tidak valid |
+| 403 | `MERCHANT_CONTEXT_FORBIDDEN` | customer key mencoba membawa konteks merchant |
+| 401 | `UNAUTHORIZED` | service API key tidak valid |
 | 422 | `SHIPPING_SERVICE_NOT_FOUND` | pasangan courier/service tidak ada pada katalog aktif |
 | 400/422 | `RATE_NOT_AVAILABLE` | tidak ada hasil rute yang lolos konfigurasi |
 
@@ -272,6 +265,6 @@ Detail pemisahan minimum penerimaan dan minimum tagihan tersedia pada
 - Update disimpan dalam satu transaksi database.
 - Service `unknown` tidak dapat dipilih pada konfigurasi baru.
 - Secret provider tidak pernah menjadi bagian preference atau response katalog.
-- `domain_id` tidak mengubah kepemilikan preference.
-- Hasil exact quote tetap terisolasi berdasarkan `tenant_id` dan
-  `integration_id`.
+- Domain tidak mengubah kepemilikan preference dan diselesaikan oleh Emisell.
+- Hasil exact quote tetap terisolasi berdasarkan merchant dan credential
+  internal yang dipilih API Kurir.

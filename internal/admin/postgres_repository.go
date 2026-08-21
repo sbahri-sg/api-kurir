@@ -93,7 +93,6 @@ func (r *PostgresRepository) ListTrackingOperations(
 		WITH operations AS (
 			SELECT shipment.id::text,
 			       shipment.tenant_id,
-			       coalesce(subscription.domain_id, '') AS domain_id,
 			       coalesce(subscription.order_reference, '') AS order_reference,
 			       coalesce(subscription.fulfillment_reference, '') AS fulfillment_reference,
 			       coalesce(subscription.revision, 0) AS subscription_revision,
@@ -169,7 +168,7 @@ func (r *PostgresRepository) ListTrackingOperations(
 		var item TrackingOperation
 		var total int64
 		if err := rows.Scan(
-			&item.ID, &item.TenantID, &item.DomainID, &item.OrderReference,
+			&item.ID, &item.TenantID, &item.OrderReference,
 			&item.FulfillmentReference, &item.SubscriptionRevision,
 			&item.RevisionHistoryCount, &item.CourierCode, &item.WaybillMasked,
 			&item.WaybillCiphertext,
@@ -295,7 +294,7 @@ func (r *PostgresRepository) ListRateSnapshots(
 		if err := rows.Scan(
 			&item.ID,
 			&item.TenantID,
-			&item.IntegrationID,
+			&item.ProviderCredentialID,
 			&item.OriginPublicID,
 			&item.OriginLabel,
 			&item.DestinationPublicID,

@@ -17,6 +17,10 @@ type Repository interface {
 	ListForTenant(ctx context.Context, tenantID string) ([]Credential, error)
 	Create(ctx context.Context, input CreateInput) (Credential, error)
 	Disable(ctx context.Context, id, actor, requestID string) error
-	DisableForTenant(ctx context.Context, tenantID, id, actor, requestID string) error
+	DisableForTenantProvider(
+		ctx context.Context,
+		tenantID, providerCode, actor, requestID string,
+	) error
+	ActiveCredentialID(ctx context.Context, tenantID, providerCode string) (string, error)
 	ResolveActive(ctx context.Context, providerCode string) (StoredCredential, error)
 }

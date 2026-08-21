@@ -27,6 +27,14 @@ type Service struct {
 	locker       cache.Locker
 	lockTTL      time.Duration
 	resultPolicy ResultPolicy
+	credentials  CredentialSelector
+}
+
+type CredentialSelector interface {
+	SelectedCredentialID(
+		ctx context.Context,
+		tenantID, providerCode string,
+	) (string, error)
 }
 
 type ResultPolicy interface {
@@ -58,6 +66,12 @@ func WithProviderFallback(
 func WithResultPolicy(policy ResultPolicy) Option {
 	return func(service *Service) {
 		service.resultPolicy = policy
+	}
+}
+
+func WithCredentialSelector(selector CredentialSelector) Option {
+	return func(service *Service) {
+		service.credentials = selector
 	}
 }
 
@@ -226,11 +240,26 @@ func (s *Service) loadServicePolicies(
 func (s *Service) calculateProviderFallback(
 	ctx context.Context,
 	request Request,
-	key string,
+	_ string,
 ) ([]Result, error) {
 	if s.provider == nil || s.snapshots == nil {
 		return nil, ErrRateNotAvailable
 	}
+	if request.TenantID != "" && s.credentials != nil {
+		credentialID, err := s.credentials.SelectedCredentialID(
+			ctx,
+			request.TenantID,
+			s.provider.Code(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if credentialID == "" {
+			return nil, ErrRateNotAvailable
+		}
+		request.ProviderCredentialID = credentialID
+	}
+	key := requestKey(request)
 
 	quotes, err := s.snapshots.FindFreshProviderQuotes(ctx, request, s.provider.Code())
 	if err != nil {
@@ -332,7 +361,7 @@ func requestKey(request Request) string {
 	return fmt.Sprintf(
 		"%s:%s:%s:%s:%s:%s:%d:%s:%s:%d:%t",
 		request.TenantID,
-		request.IntegrationID,
+		request.ProviderCredentialID,
 		request.Origin,
 		request.Destination,
 		request.Granularity,

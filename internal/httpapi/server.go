@@ -31,6 +31,7 @@ import (
 var validRequestID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
 const rajaOngkirV2CompatibilityContextKey = "rajaongkir_v2_compatibility"
+const serviceAPIKeyContextKey = "emisell_service_api_key"
 
 type Server struct {
 	Echo *echo.Echo
@@ -49,7 +50,6 @@ func New(
 	webhookSettingsService *webhooksettings.Service,
 	merchantProviderService *merchantproviders.Service,
 	merchantShippingService *merchantshipping.Service,
-	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
 	adminAPIKeys []string,
 	logger *slog.Logger,
@@ -106,7 +106,6 @@ func New(
 		trackingService,
 		immediateTrackingAdapter,
 		customerAPIKeyService,
-		tenantVerifier,
 		apiKeys,
 	)
 	rajaOngkirGroup := e.Group("/api/v1")
@@ -119,17 +118,14 @@ func New(
 		trackingService,
 		immediateTrackingAdapter,
 		customerAPIKeyService,
-		tenantVerifier,
 		apiKeys,
 	)
 	registerTenantIntegrationRoutes(
 		e.Group("/api/v1/integrations"),
-		customerAPIKeyService,
 		providerCredentialService,
 		merchantProviderService,
 		merchantShippingService,
 		trackingService,
-		tenantVerifier,
 		apiKeys,
 		immediateTrackingAdapter,
 	)
@@ -137,12 +133,10 @@ func New(
 	// was standardized. New integrations must use /api/v1/integrations.
 	registerTenantIntegrationRoutes(
 		e.Group("/v1/integrations"),
-		customerAPIKeyService,
 		providerCredentialService,
 		merchantProviderService,
 		merchantShippingService,
 		trackingService,
-		tenantVerifier,
 		apiKeys,
 		immediateTrackingAdapter,
 	)
@@ -152,7 +146,6 @@ func New(
 			rateService,
 			legacyRepository,
 			customerAPIKeyService,
-			tenantVerifier,
 			apiKeys,
 		)
 	}
@@ -210,12 +203,10 @@ func New(
 
 func registerTenantIntegrationRoutes(
 	integrationGroup *echo.Group,
-	customerAPIKeyService *apikeys.Service,
 	providerCredentialService *providercredentials.Service,
 	merchantProviderService *merchantproviders.Service,
 	merchantShippingService *merchantshipping.Service,
 	trackingService *tracking.Service,
-	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
 	immediateTrackingAdapters ...tracking.Adapter,
 ) {
@@ -223,62 +214,51 @@ func registerTenantIntegrationRoutes(
 	if len(immediateTrackingAdapters) > 0 {
 		immediateTrackingAdapter = immediateTrackingAdapters[0]
 	}
-	integrationGroup.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
-	integrationGroup.Use(tenantContextMiddleware(tenantVerifier, true))
+	integrationGroup.Use(serviceAPIKeyMiddleware(apiKeys))
+	integrationGroup.Use(merchantContextMiddleware(true))
 	integrationGroup.GET(
 		"/provider-credentials",
 		tenantProviderCredentialListHandler(providerCredentialService),
-		tenantScopeMiddleware("provider-credentials:read"),
 	)
 	integrationGroup.PUT(
 		"/tracking/subscriptions/:fulfillment_id",
 		trackingSubscriptionReplaceHandler(trackingService, immediateTrackingAdapter),
-		tenantScopeMiddleware("tracking:write"),
 	)
 	integrationGroup.POST(
 		"/provider-credentials",
 		tenantProviderCredentialCreateHandler(providerCredentialService),
-		tenantScopeMiddleware("provider-credentials:write"),
 	)
 	integrationGroup.POST(
-		"/provider-credentials/:id/disable",
+		"/provider-credentials/:provider_code/disable",
 		tenantProviderCredentialDisableHandler(providerCredentialService),
-		tenantScopeMiddleware("provider-credentials:write"),
 	)
 	integrationGroup.GET(
 		"/providers",
 		tenantShippingProviderCatalogHandler(merchantProviderService),
-		tenantScopeMiddleware("shipping:read"),
 	)
 	integrationGroup.POST(
 		"/providers/:provider_code/activate",
 		tenantShippingProviderActivateHandler(merchantProviderService),
-		tenantScopeMiddleware("shipping:write"),
 	)
 	integrationGroup.POST(
 		"/providers/:provider_code/deactivate",
 		tenantShippingProviderDeactivateHandler(merchantProviderService),
-		tenantScopeMiddleware("shipping:write"),
 	)
 	integrationGroup.GET(
 		"/shipping-services",
 		tenantShippingServiceCatalogHandler(merchantShippingService),
-		tenantScopeMiddleware("shipping:read"),
 	)
 	integrationGroup.PUT(
 		"/shipping-services",
 		tenantShippingServiceUpdateHandler(merchantShippingService),
-		tenantScopeMiddleware("shipping:write"),
 	)
 	integrationGroup.POST(
 		"/tracking/subscriptions",
 		trackingSubscriptionCreateHandler(trackingService),
-		tenantScopeMiddleware("tracking:write"),
 	)
 	integrationGroup.GET(
 		"/tracking/subscriptions/:fulfillment_id",
 		trackingSubscriptionGetHandler(trackingService),
-		tenantScopeMiddleware("tracking:read"),
 	)
 }
 
@@ -290,11 +270,10 @@ func registerCustomerRoutes(
 	trackingService *tracking.Service,
 	immediateTrackingAdapter tracking.Adapter,
 	customerAPIKeyService customerKeyAuthenticator,
-	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
 ) {
 	group.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
-	group.Use(tenantContextMiddleware(tenantVerifier, false))
+	group.Use(merchantContextMiddleware(false))
 	group.GET("/destination/domestic-destination", locationSearchHandler(locationRepository))
 	group.GET(
 		"/destination/province",
@@ -404,9 +383,7 @@ func requestLogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 			if identity, ok := tenancy.FromContext(c.Request().Context()); ok {
 				attributes = append(
 					attributes,
-					"tenant_id", identity.TenantID,
-					"integration_id", identity.IntegrationID,
-					"domain_id", identity.DomainID,
+					"merchant_id", identity.TenantID,
 				)
 			}
 			logger.Info("http request", attributes...)
@@ -445,6 +422,7 @@ func customerAPIKeyMiddleware(
 				return writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "API key tidak valid.", nil)
 			}
 			if matchesAnyKey(token, staticKeys) {
+				c.Set(serviceAPIKeyContextKey, true)
 				return next(c)
 			}
 			if authenticator == nil {
@@ -457,6 +435,28 @@ func customerAPIKeyMiddleware(
 			if !valid {
 				return writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "API key tidak valid.", nil)
 			}
+			return next(c)
+		}
+	}
+}
+
+func serviceAPIKeyMiddleware(staticKeys []string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			token := strings.TrimSpace(c.Request().Header.Get("key"))
+			if token == "" {
+				token = bearerToken(c.Request().Header.Get("Authorization"))
+			}
+			if token == "" || !matchesAnyKey(token, staticKeys) {
+				return writeError(
+					c,
+					http.StatusUnauthorized,
+					"UNAUTHORIZED",
+					"Dedicated service API key tidak valid.",
+					nil,
+				)
+			}
+			c.Set(serviceAPIKeyContextKey, true)
 			return next(c)
 		}
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/rates"
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/emisell/api-kurir/internal/tracking"
 )
 
@@ -92,7 +93,11 @@ func (a *DynamicTrackingAdapter) Track(
 	if !supportsTrackingCourier(a.courierCodes, request.CourierCode) {
 		return tracking.Result{}, tracking.ErrUnsupportedCourier
 	}
-	secret, alias, limit, err := a.resolver.ResolveProviderCredential(ctx, a.Code())
+	// Biteship is an internal platform fallback, not a merchant-selectable
+	// provider. Resolve and charge its credential globally while preserving the
+	// original merchant context for shipment storage and API-call audit.
+	platformCtx := tenancy.WithIdentity(ctx, tenancy.Identity{})
+	secret, alias, limit, err := a.resolver.ResolveProviderCredential(platformCtx, a.Code())
 	if errors.Is(err, providercredentials.ErrNoActiveCredential) {
 		return tracking.Result{}, tracking.ErrProviderUnavailable
 	}
@@ -106,7 +111,7 @@ func (a *DynamicTrackingAdapter) Track(
 		return tracking.Result{}, tracking.ErrProviderUnavailable
 	}
 	fingerprint := biteshipTrackingFingerprint(request.CourierCode, request.Waybill)
-	if err := a.quota.ConsumeProviderHit(ctx, a.Code(), alias, limit); err != nil {
+	if err := a.quota.ConsumeProviderHit(platformCtx, a.Code(), alias, limit); err != nil {
 		if errors.Is(err, rates.ErrProviderQuotaExhausted) {
 			a.record(ctx, alias, fingerprint, 0, "client_error", 0, 0, "LOCAL_QUOTA_EXHAUSTED")
 			return tracking.Result{}, tracking.ErrProviderQuota

@@ -96,7 +96,7 @@ func TestPostgresTrackingSubscriptionCreatesWebhookOutbox(t *testing.T) {
 	repository := NewPostgresRepository(pool)
 	tenantID := "merchant-integration-" + time.Now().UTC().Format("150405000000")
 	tenantCtx := tenancy.WithIdentity(ctx, tenancy.Identity{
-		TenantID: tenantID, DomainID: "domain-integration",
+		TenantID: tenantID,
 	})
 	hash := "subscription-" + time.Now().UTC().Format("20060102150405.000000000")
 	shipment, err := repository.Register(
@@ -169,7 +169,7 @@ func TestPostgresTrackingSubscriptionReplacementRequiresRevision(t *testing.T) {
 	repository := NewPostgresRepository(pool)
 	suffix := time.Now().UTC().Format("150405000000")
 	tenantCtx := tenancy.WithIdentity(ctx, tenancy.Identity{
-		TenantID: "merchant-revision-" + suffix, DomainID: "domain-revision",
+		TenantID: "merchant-revision-" + suffix,
 	})
 	first, err := repository.RegisterImmediate(
 		tenantCtx, "jne", "revision-first-"+suffix,

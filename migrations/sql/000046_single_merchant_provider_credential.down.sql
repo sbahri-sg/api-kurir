@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS provider_credentials_one_active_per_merchant_provider_idx;

@@ -25,9 +25,6 @@ func trackingVerifyHandler(
 	immediateAdapter tracking.Adapter,
 ) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		if err := requireTenantScopeIfPresent(c, "tracking:read"); err != nil {
-			return err
-		}
 		if service == nil || immediateAdapter == nil {
 			return writeError(c, http.StatusServiceUnavailable, "TRACKING_NOT_CONFIGURED", "Tracking belum dikonfigurasi.", nil)
 		}
@@ -76,9 +73,6 @@ func trackingRajaOngkirV2Handler(
 	immediateAdapter tracking.Adapter,
 ) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		if err := requireTenantScopeIfPresent(c, "tracking:read"); err != nil {
-			return err
-		}
 		if service == nil || immediateAdapter == nil {
 			return writeError(
 				c,
@@ -301,9 +295,6 @@ func firstString(values ...string) string {
 
 func trackingHandler(service *tracking.Service) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		if err := requireTenantScopeIfPresent(c, "tracking:read"); err != nil {
-			return err
-		}
 		if service == nil {
 			return writeError(
 				c,

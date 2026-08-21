@@ -235,7 +235,7 @@ paths:
         - bearerAuth: []
         - rajaOngkirKeyAuth: []
       parameters:
-        - $ref: "#/components/parameters/TenantContextToken"
+        - $ref: "#/components/parameters/MerchantIDHeader"
       requestBody:
         required: true
         content:
@@ -290,7 +290,7 @@ paths:
         - bearerAuth: []
         - rajaOngkirKeyAuth: []
       parameters:
-        - $ref: "#/components/parameters/TenantContextToken"
+        - $ref: "#/components/parameters/MerchantIDHeader"
       requestBody:
         required: true
         content:
@@ -352,7 +352,7 @@ paths:
         berupa Biteship fallback untuk kurir seperti SiCepat tanpa mengubah
         bentuk respons kompatibilitas.
       parameters:
-        - $ref: "#/components/parameters/TenantContextToken"
+        - $ref: "#/components/parameters/MerchantIDHeader"
         - name: awb
           in: query
           description: Wajib pada mode RajaOngkir V2
@@ -822,62 +822,51 @@ paths:
       tags: [Emisell Gateway]
       operationId: listTenantProviderCredentials
       summary: Membaca credential provider milik merchant terautentikasi
-      description: Secret asli tidak pernah dikembalikan.
+      description: Secret, tenant_id, dan UUID credential internal tidak pernah dikembalikan.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       responses:
         "200":
-          description: Daftar credential yang tenant_id-nya sama dengan claim sub
+          description: Daftar metadata credential milik merchant pada header
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProviderCredentialListResponse"
+                $ref: "#/components/schemas/TenantProviderCredentialListResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope provider-credentials:read
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
     post:
       tags: [Emisell Gateway]
       operationId: addTenantProviderCredential
       summary: Memvalidasi dan menyimpan key provider milik seller
       description: >
-        Merchant ditentukan hanya dari claim sub tenant token. Validasi key
-        memakai satu hit provider lalu secret dienkripsi AES-256-GCM.
+        Merchant ditentukan dari X-Emisell-Merchant-ID. Validasi key memakai
+        satu hit provider lalu secret dienkripsi AES-256-GCM. Key baru
+        menggantikan key aktif lama untuk merchant dan provider yang sama.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateProviderCredentialRequest"
+              $ref: "#/components/schemas/CreateTenantProviderCredentialRequest"
       responses:
         "201":
           description: Credential seller valid dan aktif
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProviderCredentialResponse"
+                $ref: "#/components/schemas/TenantProviderCredentialResponse"
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope provider-credentials:write
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Credential sudah tersimpan
           content:
@@ -891,19 +880,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/v1/integrations/provider-credentials/{id}/disable:
+  /api/v1/integrations/provider-credentials/{provider_code}/disable:
     post:
       tags: [Emisell Gateway]
       operationId: disableTenantProviderCredential
       summary: Menonaktifkan credential provider milik seller
-      description: UUID milik tenant lain selalu diperlakukan sebagai tidak ditemukan.
+      description: Emisell tidak perlu menyimpan UUID credential internal.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       parameters:
-        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/ShippingProviderCode"
       responses:
         "204":
           description: Credential dinonaktifkan
@@ -911,14 +900,8 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Scope tenant tidak memadai
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Credential tidak ditemukan atau bukan milik merchant
+          description: Merchant tidak mempunyai credential aktif untuk provider
           content:
             application/json:
               schema:
@@ -935,10 +918,10 @@ paths:
         dan valid. Tepat satu provider efektif aktif; tenant tanpa konfigurasi
         eksplisit menggunakan Emisell Kurir dengan version 0.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       responses:
         "200":
           description: Katalog provider dan pilihan aktif merchant
@@ -948,12 +931,6 @@ paths:
                 $ref: "#/components/schemas/TenantShippingProviderCatalogResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope shipping:read
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/integrations/providers/{provider_code}/activate:
     post:
@@ -961,14 +938,14 @@ paths:
       operationId: activateTenantShippingProvider
       summary: Mengaktifkan satu extension provider untuk checkout merchant
       description: >
-        Operasi atomik dan idempotent. Aktivasi provider eksternal memerlukan
-        UUID credential aktif milik merchant yang sama. expected_version
-        mencegah dua perubahan dashboard saling menimpa.
+        Operasi atomik dan idempotent. API Kurir memilih credential aktif dan
+        valid milik merchant untuk provider tersebut secara otomatis.
+        expected_version mencegah dua perubahan dashboard saling menimpa.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       parameters:
         - $ref: "#/components/parameters/ShippingProviderCode"
       requestBody:
@@ -988,12 +965,6 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope shipping:write
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Provider tidak ditemukan
           content:
@@ -1007,7 +978,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
-          description: Credential wajib, tidak valid, atau bukan milik merchant
+          description: Merchant belum mempunyai credential aktif dan valid
           content:
             application/json:
               schema:
@@ -1024,10 +995,10 @@ paths:
         aktif bersifat idempotent. Emisell Kurir sendiri tidak dapat
         dinonaktifkan tanpa provider pengganti.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       parameters:
         - $ref: "#/components/parameters/ShippingProviderCode"
       requestBody:
@@ -1047,12 +1018,6 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope shipping:write
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Emisell Kurir wajib aktif atau version sudah berubah
           content:
@@ -1070,10 +1035,10 @@ paths:
         untuk membangun checkbox kurir bertingkat. Tenant lama tanpa preference
         tersimpan tetap menggunakan perilaku allow-all.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       responses:
         "200":
           description: Katalog dan preference merchant
@@ -1083,12 +1048,6 @@ paths:
                 $ref: "#/components/schemas/TenantShippingCatalogResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope shipping:read
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
     put:
       tags: [Emisell Gateway]
       operationId: replaceTenantShippingServices
@@ -1097,12 +1056,12 @@ paths:
         Update atomik. Mode custom menyimpan pasangan courier_code dan canonical
         service_code; mode groups memilih kategori; mode all mengaktifkan semua
         layanan canonical yang sudah dikenali. Merchant selalu berasal dari
-        claim sub dan tidak diterima dari body.
+        header dan tidak diterima dari body.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       requestBody:
         required: true
         content:
@@ -1120,12 +1079,6 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope shipping:write
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "422":
           description: Layanan tidak tersedia pada katalog canonical aktif
           content:
@@ -1174,14 +1127,14 @@ paths:
       operationId: createTenantTrackingSubscription
       summary: Mendaftarkan AWB fulfillment untuk checkpoint tracking
       description: >
-        Merchant berasal dari claim sub. Request idempotent berdasarkan
+        Merchant berasal dari X-Emisell-Merchant-ID. Request idempotent berdasarkan
         merchant_id dan fulfillment_id. Worker memperbarui snapshot terjadwal;
         pembacaan snapshot tidak memakai hit provider.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       requestBody:
         required: true
         content:
@@ -1205,12 +1158,6 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope tracking:write
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "422":
           $ref: "#/components/responses/InvalidRequest"
 
@@ -1220,10 +1167,10 @@ paths:
       operationId: getTenantTrackingSubscription
       summary: Membaca snapshot tracking fulfillment tanpa hit provider
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       parameters:
         - name: fulfillment_id
           in: path
@@ -1241,12 +1188,6 @@ paths:
                 $ref: "#/components/schemas/TrackingSubscriptionResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Tenant token tidak memiliki scope tracking:read
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Subscription tidak ditemukan pada merchant
           content:
@@ -1262,10 +1203,10 @@ paths:
         overwrite bersamaan; revisi lama disimpan sebagai audit dan webhook
         berikutnya membawa tracking_revision terbaru.
       security:
-        - bearerAuth: []
-          tenantContextAuth: []
-        - rajaOngkirKeyAuth: []
-          tenantContextAuth: []
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
       parameters:
         - name: fulfillment_id
           in: path
@@ -1864,13 +1805,23 @@ components:
       in: header
       name: key
       description: Alternatif pengiriman customer API key; tidak mengubah kontrak path
-    tenantContextAuth:
+    serviceBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Dedicated Emisell service API key
+      description: Salah satu secret statis dari API_KEYS; bukan customer key hasil generate.
+    serviceKeyAuth:
       type: apiKey
       in: header
-      name: X-Emisell-Tenant-Token
+      name: key
+      description: Salah satu secret statis dari API_KEYS; hanya disimpan pada backend Emisell.
+    merchantContextAuth:
+      type: apiKey
+      in: header
+      name: X-Emisell-Merchant-ID
       description: >
-        JWT EdDSA maksimal lima menit. Claim sub adalah merchant_id Emisell;
-        integration_id opsional mengunci request ke satu credential provider.
+        Merchant ID stabil yang ditentukan backend Emisell. Wajib untuk semua
+        endpoint /api/v1/integrations dan tidak diterima dari browser.
     adminBearerAuth:
       type: http
       scheme: bearer
@@ -1885,16 +1836,18 @@ components:
       schema:
         type: string
         pattern: "^[a-z0-9_-]{2,48}$"
-    TenantContextToken:
-      name: X-Emisell-Tenant-Token
+    MerchantIDHeader:
+      name: X-Emisell-Merchant-ID
       in: header
       required: false
       description: >
-        Wajib untuk BYOK seller. JWT EdDSA berisi sub merchant_id, optional
-        domain_id, integration_id wajib untuk provider berbayar, serta scope
-        sesuai operasi. Tanpa integration_id request tetap pada mode gratis.
+        Merchant ID stabil dari backend Emisell. Wajib pada endpoint gateway;
+        opsional pada endpoint kompatibilitas RajaOngkir V2 agar snapshot dan
+        credential tetap terisolasi per merchant. Hanya diterima bersama
+        dedicated service key dari API_KEYS, bukan customer key hasil generate.
       schema:
         type: string
+        pattern: "^[A-Za-z0-9._:-]{1,128}$"
     Search:
       name: search
       in: query
@@ -1993,6 +1946,12 @@ components:
             oneOf:
               - $ref: "#/components/schemas/ErrorResponse"
               - $ref: "#/components/schemas/RajaOngkirErrorResponse"
+    NotFound:
+      description: Resource tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     RajaOngkirUnsupportedMediaType:
       description: Kalkulasi RajaOngkir V2 hanya menerima form-urlencoded atau multipart form
       content:
@@ -2388,10 +2347,6 @@ components:
           description: Provider bawaan selalu true; eksternal true jika mempunyai credential valid.
         active:
           type: boolean
-        credential_id:
-          type: string
-          format: uuid
-          description: Hanya muncul pada provider eksternal yang sedang aktif.
 
     TenantShippingProviderCatalog:
       type: object
@@ -2400,10 +2355,6 @@ components:
         active_provider_code:
           type: string
           examples: [emisell]
-        active_credential_id:
-          type: string
-          format: uuid
-          description: Diisi hanya saat provider eksternal aktif.
         version:
           type: integer
           minimum: 0
@@ -2426,10 +2377,6 @@ components:
       type: object
       additionalProperties: false
       properties:
-        credential_id:
-          type: string
-          format: uuid
-          description: Wajib saat mengaktifkan provider eksternal; kosong untuk Emisell Kurir.
         expected_version:
           type: integer
           minimum: 0
@@ -3391,8 +3338,6 @@ components:
           type: string
         fulfillment_id:
           type: string
-        domain_id:
-          type: string
         active:
           type: boolean
         revision:
@@ -3592,6 +3537,85 @@ components:
         disabled_at:
           type: [string, "null"]
           format: date-time
+
+    TenantProviderCredential:
+      type: object
+      required:
+        - provider_code
+        - credential_alias
+        - display_key
+        - daily_limit
+        - active
+        - validation_status
+        - last_validated_at
+        - created_at
+      properties:
+        provider_code:
+          type: string
+          enum: [rajaongkir]
+        credential_alias:
+          type: string
+        display_key:
+          type: string
+          description: Bentuk termasking; secret asli tidak dikembalikan.
+        daily_limit:
+          type: integer
+        active:
+          type: boolean
+        validation_status:
+          type: string
+          enum: [valid, invalid]
+        last_validated_at:
+          type: string
+          format: date-time
+        last_selected_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        disabled_at:
+          type: [string, "null"]
+          format: date-time
+
+    CreateTenantProviderCredentialRequest:
+      type: object
+      additionalProperties: false
+      required: [provider_code, api_key]
+      properties:
+        provider_code:
+          type: string
+          enum: [rajaongkir]
+        api_key:
+          type: string
+          minLength: 8
+          maxLength: 512
+          writeOnly: true
+        daily_limit:
+          type: integer
+          minimum: 1
+          maximum: 100000000
+          default: 50000
+
+    TenantProviderCredentialResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TenantProviderCredential"
+
+    TenantProviderCredentialListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantProviderCredential"
 
     CreateProviderCredentialRequest:
       type: object

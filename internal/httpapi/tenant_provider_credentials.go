@@ -4,11 +4,40 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/labstack/echo/v5"
 )
+
+type tenantProviderCredentialResponse struct {
+	ProviderCode     string     `json:"provider_code"`
+	CredentialAlias  string     `json:"credential_alias"`
+	DisplayKey       string     `json:"display_key"`
+	DailyLimit       int64      `json:"daily_limit"`
+	Active           bool       `json:"active"`
+	ValidationStatus string     `json:"validation_status"`
+	LastValidatedAt  time.Time  `json:"last_validated_at"`
+	LastSelectedAt   *time.Time `json:"last_selected_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	DisabledAt       *time.Time `json:"disabled_at"`
+}
+
+func tenantProviderCredential(item providercredentials.Credential) tenantProviderCredentialResponse {
+	return tenantProviderCredentialResponse{
+		ProviderCode:     item.ProviderCode,
+		CredentialAlias:  item.CredentialAlias,
+		DisplayKey:       item.DisplayKey,
+		DailyLimit:       item.DailyLimit,
+		Active:           item.Active,
+		ValidationStatus: item.ValidationStatus,
+		LastValidatedAt:  item.LastValidatedAt,
+		LastSelectedAt:   item.LastSelectedAt,
+		CreatedAt:        item.CreatedAt,
+		DisabledAt:       item.DisabledAt,
+	}
+}
 
 func tenantProviderCredentialListHandler(
 	service *providercredentials.Service,
@@ -19,7 +48,11 @@ func tenantProviderCredentialListHandler(
 		if err != nil {
 			return err
 		}
-		return c.JSON(http.StatusOK, adminResponse(c, result))
+		response := make([]tenantProviderCredentialResponse, 0, len(result))
+		for _, item := range result {
+			response = append(response, tenantProviderCredential(item))
+		}
+		return c.JSON(http.StatusOK, adminResponse(c, response))
 	}
 }
 
@@ -44,7 +77,10 @@ func tenantProviderCredentialCreateHandler(
 		if response := writeTenantProviderCredentialError(c, err); response != nil {
 			return response
 		}
-		return c.JSON(http.StatusCreated, adminResponse(c, result))
+		return c.JSON(
+			http.StatusCreated,
+			adminResponse(c, tenantProviderCredential(result)),
+		)
 	}
 }
 
@@ -53,20 +89,20 @@ func tenantProviderCredentialDisableHandler(
 ) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		identity, _ := tenancy.FromContext(c.Request().Context())
-		id := strings.TrimSpace(c.Param("id"))
-		if !validUUID.MatchString(id) {
+		providerCode := strings.ToLower(strings.TrimSpace(c.Param("provider_code")))
+		if providerCode == "" {
 			return writeError(
 				c,
 				http.StatusBadRequest,
 				"INVALID_REQUEST",
-				"ID credential provider tidak valid.",
+				"Kode provider wajib diisi.",
 				nil,
 			)
 		}
-		err := service.DisableForTenant(
+		err := service.DisableForTenantProvider(
 			c.Request().Context(),
 			identity.TenantID,
-			id,
+			providerCode,
 			"tenant:"+identity.TenantID,
 			requestID(c),
 		)
@@ -79,8 +115,8 @@ func tenantProviderCredentialDisableHandler(
 				nil,
 			)
 		}
-		if err != nil {
-			return err
+		if response := writeTenantProviderCredentialError(c, err); response != nil {
+			return response
 		}
 		return c.NoContent(http.StatusNoContent)
 	}

@@ -82,6 +82,37 @@ func (r *PostgresRepository) Create(
 		return Credential{}, fmt.Errorf("begin provider credential create: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	wasSelected := false
+	if input.TenantID != "" {
+		if _, err := tx.Exec(ctx, `
+			SELECT pg_advisory_xact_lock(
+				hashtextextended('merchant-provider-credential:' || $1 || ':' || $2, 0)
+			)
+		`, input.TenantID, input.ProviderCode); err != nil {
+			return Credential{}, fmt.Errorf("lock merchant provider credential: %w", err)
+		}
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM tenant_active_shipping_providers
+				WHERE tenant_id = $1
+				  AND provider_code = $2
+			)
+		`, input.TenantID, input.ProviderCode).Scan(&wasSelected); err != nil {
+			return Credential{}, fmt.Errorf("inspect active merchant provider: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE provider_credentials
+			SET active = false,
+			    disabled_at = coalesce(disabled_at, now()),
+			    updated_at = now()
+			WHERE tenant_id = $1
+			  AND provider_code = $2
+			  AND active
+		`, input.TenantID, input.ProviderCode); err != nil {
+			return Credential{}, fmt.Errorf("replace merchant provider credential: %w", err)
+		}
+	}
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO provider_credentials (
@@ -115,6 +146,19 @@ func (r *PostgresRepository) Create(
 			return Credential{}, ErrDuplicate
 		}
 		return Credential{}, fmt.Errorf("insert provider credential: %w", err)
+	}
+	if wasSelected {
+		if _, err := tx.Exec(ctx, `
+			UPDATE tenant_active_shipping_providers
+			SET provider_code = $2,
+			    credential_id = $3::uuid,
+			    version = version + 1,
+			    updated_by = $4,
+			    updated_at = now()
+			WHERE tenant_id = $1
+		`, input.TenantID, input.ProviderCode, input.ID, input.CreatedBy); err != nil {
+			return Credential{}, fmt.Errorf("select replacement merchant credential: %w", err)
+		}
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO provider_quota_ledger (
@@ -185,11 +229,68 @@ func (r *PostgresRepository) Disable(
 	return r.disable(ctx, "", id, actor, requestID, false)
 }
 
-func (r *PostgresRepository) DisableForTenant(
+func (r *PostgresRepository) DisableForTenantProvider(
 	ctx context.Context,
-	tenantID, id, actor, requestID string,
+	tenantID, providerCode, actor, requestID string,
 ) error {
-	return r.disable(ctx, tenantID, id, actor, requestID, true)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin merchant provider credential disable: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `
+		SELECT pg_advisory_xact_lock(
+			hashtextextended('merchant-provider-credential:' || $1 || ':' || $2, 0)
+		)
+	`, tenantID, providerCode); err != nil {
+		return fmt.Errorf("lock merchant provider credential: %w", err)
+	}
+
+	var id string
+	err = tx.QueryRow(ctx, `
+		SELECT id::text
+		FROM provider_credentials
+		WHERE tenant_id = $1
+		  AND provider_code = $2
+		  AND active
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE
+	`, tenantID, providerCode).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("find merchant provider credential: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE provider_credentials
+		SET active = false,
+		    disabled_by = $2,
+		    disabled_at = now(),
+		    updated_at = now()
+		WHERE id = $1::uuid
+	`, id, actor); err != nil {
+		return fmt.Errorf("disable merchant provider credential: %w", err)
+	}
+	if err := insertCredentialAudit(
+		ctx,
+		tx,
+		actor,
+		"disable",
+		id,
+		requestID,
+		map[string]any{
+			"tenant_id":     tenantID,
+			"provider_code": providerCode,
+		},
+	); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit merchant provider credential disable: %w", err)
+	}
+	return nil
 }
 
 func (r *PostgresRepository) disable(
@@ -241,7 +342,7 @@ func (r *PostgresRepository) ResolveActive(
 	providerCode string,
 ) (StoredCredential, error) {
 	tenantID := tenancy.TenantID(ctx)
-	integrationID := tenancy.IntegrationID(ctx)
+	providerCredentialID := tenancy.ProviderCredentialID(ctx)
 	var item StoredCredential
 	err := r.pool.QueryRow(ctx, `
 		WITH candidate AS (
@@ -296,7 +397,7 @@ func (r *PostgresRepository) ResolveActive(
 			credential.disabled_at,
 			credential.secret_ciphertext,
 			credential.secret_fingerprint
-	`, providerCode, tenantID, integrationID).Scan(
+	`, providerCode, tenantID, providerCredentialID).Scan(
 		&item.ID,
 		&item.TenantID,
 		&item.ProviderCode,
@@ -333,7 +434,7 @@ func (r *PostgresRepository) ResolveActive(
 				  AND active
 				  AND validation_status = 'valid'
 			)
-		`, providerCode, tenantID, integrationID).Scan(&hasActiveCredential)
+		`, providerCode, tenantID, providerCredentialID).Scan(&hasActiveCredential)
 		if existsErr != nil {
 			return StoredCredential{}, fmt.Errorf(
 				"check active provider credential: %w",
@@ -349,6 +450,32 @@ func (r *PostgresRepository) ResolveActive(
 		return StoredCredential{}, fmt.Errorf("resolve active provider credential: %w", err)
 	}
 	return item, nil
+}
+
+func (r *PostgresRepository) ActiveCredentialID(
+	ctx context.Context,
+	tenantID, providerCode string,
+) (string, error) {
+	var credentialID string
+	err := r.pool.QueryRow(ctx, `
+		SELECT credential.id::text
+		FROM tenant_active_shipping_providers selection
+		JOIN provider_credentials credential
+		  ON credential.id = selection.credential_id
+		WHERE selection.tenant_id = $1
+		  AND selection.provider_code = $2
+		  AND credential.tenant_id = selection.tenant_id
+		  AND credential.provider_code = selection.provider_code
+		  AND credential.active
+		  AND credential.validation_status = 'valid'
+	`, tenantID, providerCode).Scan(&credentialID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNoActiveCredential
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve active merchant provider credential ID: %w", err)
+	}
+	return credentialID, nil
 }
 
 func (r *PostgresRepository) get(ctx context.Context, id string) (Credential, error) {

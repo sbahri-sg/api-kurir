@@ -138,8 +138,8 @@ func (r *Runner) processOneAs(ctx context.Context, workerID string) error {
 	providerCtx := ctx
 	if job.TenantID != "" {
 		providerCtx = tenancy.WithIdentity(ctx, tenancy.Identity{
-			TenantID:      job.TenantID,
-			IntegrationID: job.ProviderCredentialID,
+			TenantID:             job.TenantID,
+			ProviderCredentialID: job.ProviderCredentialID,
 		})
 	}
 	result, err := adapter.Track(providerCtx, request)

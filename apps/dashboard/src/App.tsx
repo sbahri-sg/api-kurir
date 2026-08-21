@@ -2819,49 +2819,35 @@ function GatewayTenantDocumentation() {
   return (
     <section className="panel docs-guide">
       <div>
-        <p className="eyebrow">TENANT AUTHENTICATION</p>
-        <h2>Satu merchant, banyak domain, satu pemilik credential</h2>
+        <p className="eyebrow">MERCHANT CONTEXT</p>
+        <h2>Satu merchant, satu konteks backend yang sederhana</h2>
         <p>
-          API service Emisell menentukan merchant dari sesi seller atau domain
-          checkout, lalu menandatangani JWT Ed25519 berumur maksimal lima menit.
-          Merchant ID dari body dan query tidak pernah dipercaya.
+          Backend Emisell menentukan merchant dari database lalu mengirim
+          dedicated service API key dan header merchant pada setiap request.
+          Browser tidak memanggil endpoint gateway secara langsung.
         </p>
       </div>
       <pre>
-        <code>{`{
-  "iss": "emisell-api",
-  "aud": "api-kurir",
-  "sub": "merchant_123",
-  "integration_id": "<credential-uuid>",
-  "domain_id": "domain_abc",
-  "scope": [
-    "shipping:read",
-    "shipping:write",
-    "tracking:read",
-    "provider-credentials:read",
-    "provider-credentials:write"
-  ],
-  "iat": 1787112000,
-  "exp": 1787112060,
-  "jti": "request_unique_id"
-}`}</code>
+        <code>{`GET /api/v1/integrations/shipping-services
+key: <dedicated-emisell-service-key>
+X-Emisell-Merchant-ID: merchant_123`}</code>
       </pre>
       <ol>
         <li>
-          Semua domain milik merchant yang sama memakai claim <code>sub</code>
-          yang sama.
+          Semua domain milik merchant yang sama memakai
+          <code>X-Emisell-Merchant-ID</code> yang sama.
         </li>
         <li>
-          <code>domain_id</code> hanya metadata untuk pemilihan gudang atau
-          konfigurasi domain; bukan pemilik key.
+          Domain dan gudang diselesaikan oleh Emisell sebelum request; keduanya
+          bukan bagian dari kontrak autentikasi API Kurir.
         </li>
         <li>
-          <code>integration_id</code> wajib untuk RajaOngkir BYOK. Tanpa claim
-          tersebut request tetap pada mode Emisell Kurir gratis.
+          Emisell tidak menyimpan atau mengirim credential ID. API Kurir
+          memilih key aktif berdasarkan merchant dan provider code.
         </li>
         <li>
-          API Kurir memverifikasi signature dengan public key dari
-          <code>TENANT_CONTEXT_PUBLIC_KEY</code>.
+          Satu merchant dapat memasang beberapa provider, tetapi hanya satu
+          provider shipping yang efektif aktif.
         </li>
         <li>
           Request tenant tidak pernah fallback ke credential platform atau

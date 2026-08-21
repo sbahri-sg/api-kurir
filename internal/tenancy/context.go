@@ -5,14 +5,12 @@ import "context"
 type contextKey struct{}
 
 // Identity is the trusted merchant context carried from Emisell to API Kurir.
-// TenantID is the stable Emisell merchant ID. IntegrationID optionally pins a
-// request to one provider credential; DomainID is routing metadata only.
+// TenantID comes from the server-to-server X-Emisell-Merchant-ID header after
+// the caller API key has been authenticated. ProviderCredentialID is internal
+// only: workers use it to keep an existing shipment pinned to its credential.
 type Identity struct {
-	TenantID      string
-	IntegrationID string
-	DomainID      string
-	Scopes        []string
-	TokenID       string
+	TenantID             string
+	ProviderCredentialID string
 }
 
 func WithIdentity(ctx context.Context, identity Identity) context.Context {
@@ -29,16 +27,7 @@ func TenantID(ctx context.Context) string {
 	return identity.TenantID
 }
 
-func IntegrationID(ctx context.Context) string {
+func ProviderCredentialID(ctx context.Context) string {
 	identity, _ := FromContext(ctx)
-	return identity.IntegrationID
-}
-
-func HasScope(identity Identity, required string) bool {
-	for _, scope := range identity.Scopes {
-		if scope == "*" || scope == required {
-			return true
-		}
-	}
-	return false
+	return identity.ProviderCredentialID
 }

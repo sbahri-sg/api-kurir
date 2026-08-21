@@ -2,98 +2,59 @@ package httpapi
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/labstack/echo/v5"
 )
 
-const tenantContextHeader = "X-Emisell-Tenant-Token"
+const merchantIDHeader = "X-Emisell-Merchant-ID"
 
-func tenantContextMiddleware(
-	verifier *tenancy.Verifier,
-	required bool,
-) echo.MiddlewareFunc {
+var validMerchantID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+func merchantContextMiddleware(required bool) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			token := strings.TrimSpace(c.Request().Header.Get(tenantContextHeader))
-			if token == "" {
+			merchantID := strings.TrimSpace(c.Request().Header.Get(merchantIDHeader))
+			if merchantID == "" {
 				if required {
 					return writeError(
 						c,
-						http.StatusUnauthorized,
-						"TENANT_CONTEXT_REQUIRED",
-						"Konteks merchant Emisell wajib dikirim.",
+						http.StatusBadRequest,
+						"MERCHANT_ID_REQUIRED",
+						"Header X-Emisell-Merchant-ID wajib dikirim.",
 						nil,
 					)
 				}
 				return next(c)
 			}
-			if verifier == nil {
+			serviceCaller, _ := c.Get(serviceAPIKeyContextKey).(bool)
+			if !serviceCaller {
 				return writeError(
 					c,
-					http.StatusServiceUnavailable,
-					"TENANT_AUTH_NOT_CONFIGURED",
-					"Verifikasi konteks merchant belum dikonfigurasi.",
+					http.StatusForbidden,
+					"MERCHANT_CONTEXT_FORBIDDEN",
+					"Header merchant hanya boleh digunakan oleh Main Service Emisell.",
 					nil,
 				)
 			}
-			identity, err := verifier.Verify(token)
-			if err != nil {
+			if !validMerchantID.MatchString(merchantID) {
 				return writeError(
 					c,
-					http.StatusUnauthorized,
-					"INVALID_TENANT_CONTEXT",
-					"Konteks merchant tidak valid atau sudah kedaluwarsa.",
+					http.StatusBadRequest,
+					"INVALID_MERCHANT_ID",
+					"Format merchant ID tidak valid.",
 					nil,
 				)
 			}
 			request := c.Request().WithContext(
-				tenancy.WithIdentity(c.Request().Context(), identity),
+				tenancy.WithIdentity(c.Request().Context(), tenancy.Identity{
+					TenantID: merchantID,
+				}),
 			)
 			c.SetRequest(request)
 			return next(c)
 		}
 	}
-}
-
-func tenantScopeMiddleware(required string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			identity, ok := tenancy.FromContext(c.Request().Context())
-			if !ok {
-				return writeError(
-					c,
-					http.StatusUnauthorized,
-					"TENANT_CONTEXT_REQUIRED",
-					"Konteks merchant Emisell wajib dikirim.",
-					nil,
-				)
-			}
-			if !tenancy.HasScope(identity, required) {
-				return writeError(
-					c,
-					http.StatusForbidden,
-					"INSUFFICIENT_TENANT_SCOPE",
-					"Konteks merchant tidak memiliki scope yang diperlukan.",
-					map[string]any{"required_scope": required},
-				)
-			}
-			return next(c)
-		}
-	}
-}
-
-func requireTenantScopeIfPresent(c *echo.Context, required string) error {
-	identity, ok := tenancy.FromContext(c.Request().Context())
-	if !ok || tenancy.HasScope(identity, required) {
-		return nil
-	}
-	return writeError(
-		c,
-		http.StatusForbidden,
-		"INSUFFICIENT_TENANT_SCOPE",
-		"Konteks merchant tidak memiliki scope yang diperlukan.",
-		map[string]any{"required_scope": required},
-	)
 }

@@ -25,7 +25,6 @@ type Config struct {
 	RajaOngkir          RajaOngkirConfig
 	Biteship            BiteshipConfig
 	ProviderCredentials ProviderCredentialConfig
-	TenantContext       TenantContextConfig
 	Tracking            TrackingConfig
 }
 
@@ -70,13 +69,6 @@ type TrackingConfig struct {
 
 type ProviderCredentialConfig struct {
 	EncryptionKey string
-}
-
-type TenantContextConfig struct {
-	PublicKey string
-	Issuer    string
-	Audience  string
-	MaxTTL    time.Duration
 }
 
 func Load() (Config, error) {
@@ -196,12 +188,6 @@ func Load() (Config, error) {
 		ProviderCredentials: ProviderCredentialConfig{
 			EncryptionKey: strings.TrimSpace(os.Getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY")),
 		},
-		TenantContext: TenantContextConfig{
-			PublicKey: strings.TrimSpace(os.Getenv("TENANT_CONTEXT_PUBLIC_KEY")),
-			Issuer:    envOr("TENANT_CONTEXT_ISSUER", "emisell-api"),
-			Audience:  envOr("TENANT_CONTEXT_AUDIENCE", "api-kurir"),
-			MaxTTL:    5 * time.Minute,
-		},
 		Tracking: TrackingConfig{
 			Enabled:             trackingEnabled,
 			EncryptionKey:       strings.TrimSpace(os.Getenv("TRACKING_ENCRYPTION_KEY")),
@@ -296,14 +282,6 @@ func Load() (Config, error) {
 	if cfg.Tracking.WebhookConcurrency < 1 || cfg.Tracking.WebhookConcurrency > 32 {
 		return Config{}, errors.New("TRACKING_WEBHOOK_CONCURRENCY must be between 1 and 32")
 	}
-	tenantContextMaxTTL, err := durationEnv("TENANT_CONTEXT_MAX_TTL", cfg.TenantContext.MaxTTL)
-	if err != nil {
-		return Config{}, err
-	}
-	if tenantContextMaxTTL <= 0 || tenantContextMaxTTL > 15*time.Minute {
-		return Config{}, errors.New("TENANT_CONTEXT_MAX_TTL must be between 1ns and 15m")
-	}
-	cfg.TenantContext.MaxTTL = tenantContextMaxTTL
 	return cfg, nil
 }
 

@@ -73,6 +73,17 @@ func (r *PostgresRepository) register(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	identity, _ := tenancy.FromContext(ctx)
+	providerCredentialID := identity.ProviderCredentialID
+	if identity.TenantID != "" && providerCredentialID == "" {
+		err := tx.QueryRow(ctx, `
+			SELECT coalesce(credential_id::text, '')
+			FROM tenant_active_shipping_providers
+			WHERE tenant_id = $1
+		`, identity.TenantID).Scan(&providerCredentialID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return Shipment{}, fmt.Errorf("resolve tracking provider credential: %w", err)
+		}
+	}
 
 	var shipmentID string
 	err = tx.QueryRow(ctx, `
@@ -102,7 +113,7 @@ func (r *PostgresRepository) register(
 		RETURNING id::text
 	`,
 		identity.TenantID,
-		identity.IntegrationID,
+		providerCredentialID,
 		courierCode,
 		waybillHash,
 		waybillMasked,
@@ -741,6 +752,7 @@ func (r *PostgresRepository) UpsertSubscription(
 	defer func() { _ = tx.Rollback(ctx) }()
 	var subscription Subscription
 	var currentShipmentID string
+	var legacyDomainID string
 	err = tx.QueryRow(ctx, `
 		SELECT id::text, order_reference, fulfillment_reference, domain_id,
 		       active, revision, shipment_id::text
@@ -749,7 +761,7 @@ func (r *PostgresRepository) UpsertSubscription(
 		FOR UPDATE
 	`, identity.TenantID, fulfillmentReference).Scan(
 		&subscription.ID, &subscription.OrderReference,
-		&subscription.FulfillmentReference, &subscription.DomainID,
+		&subscription.FulfillmentReference, &legacyDomainID,
 		&subscription.Active, &subscription.Revision, &currentShipmentID,
 	)
 	switch {
@@ -764,11 +776,11 @@ func (r *PostgresRepository) UpsertSubscription(
 			)
 			VALUES ($1, $2, $3, $4, $5::uuid, 1)
 			RETURNING id::text, order_reference, fulfillment_reference,
-			          domain_id, active, revision
-		`, identity.TenantID, identity.DomainID, orderReference,
+			          active, revision
+		`, identity.TenantID, "", orderReference,
 			fulfillmentReference, shipmentID).Scan(
 			&subscription.ID, &subscription.OrderReference,
-			&subscription.FulfillmentReference, &subscription.DomainID,
+			&subscription.FulfillmentReference,
 			&subscription.Active, &subscription.Revision,
 		)
 		if err != nil {
@@ -782,12 +794,11 @@ func (r *PostgresRepository) UpsertSubscription(
 		}
 		err = tx.QueryRow(ctx, `
 			UPDATE tracking_subscriptions
-			SET domain_id = $2, order_reference = $3, active = true, updated_at = now()
+			SET domain_id = '', order_reference = $2, active = true, updated_at = now()
 			WHERE id = $1::uuid
-			RETURNING order_reference, domain_id, active, revision
-		`, subscription.ID, identity.DomainID, orderReference).Scan(
-			&subscription.OrderReference, &subscription.DomainID,
-			&subscription.Active, &subscription.Revision,
+			RETURNING order_reference, active, revision
+		`, subscription.ID, orderReference).Scan(
+			&subscription.OrderReference, &subscription.Active, &subscription.Revision,
 		)
 		if err != nil {
 			return Subscription{}, fmt.Errorf("refresh tracking subscription: %w", err)
@@ -804,20 +815,19 @@ func (r *PostgresRepository) UpsertSubscription(
 				fulfillment_reference, shipment_id, revision
 			)
 			VALUES ($1::uuid, $2, $3, $4, $5, $6::uuid, $7)
-		`, subscription.ID, identity.TenantID, subscription.DomainID,
+		`, subscription.ID, identity.TenantID, legacyDomainID,
 			subscription.OrderReference, subscription.FulfillmentReference,
 			currentShipmentID, subscription.Revision); err != nil {
 			return Subscription{}, fmt.Errorf("archive tracking subscription revision: %w", err)
 		}
 		err = tx.QueryRow(ctx, `
 			UPDATE tracking_subscriptions
-			SET domain_id = $2, order_reference = $3, shipment_id = $4::uuid,
+			SET domain_id = '', order_reference = $2, shipment_id = $3::uuid,
 			    active = true, revision = revision + 1, updated_at = now()
 			WHERE id = $1::uuid
-			RETURNING order_reference, domain_id, active, revision
-		`, subscription.ID, identity.DomainID, orderReference, shipmentID).Scan(
-			&subscription.OrderReference, &subscription.DomainID,
-			&subscription.Active, &subscription.Revision,
+			RETURNING order_reference, active, revision
+		`, subscription.ID, orderReference, shipmentID).Scan(
+			&subscription.OrderReference, &subscription.Active, &subscription.Revision,
 		)
 		if err != nil {
 			return Subscription{}, fmt.Errorf("replace tracking subscription: %w", err)
@@ -875,7 +885,7 @@ func (r *PostgresRepository) GetSubscription(
 	var shipmentID string
 	err := r.pool.QueryRow(ctx, `
 		SELECT id::text, order_reference, fulfillment_reference,
-		       domain_id, active, revision, shipment_id::text
+		       active, revision, shipment_id::text
 		FROM tracking_subscriptions
 		WHERE tenant_id = $1
 		  AND fulfillment_reference = $2
@@ -883,7 +893,6 @@ func (r *PostgresRepository) GetSubscription(
 		&subscription.ID,
 		&subscription.OrderReference,
 		&subscription.FulfillmentReference,
-		&subscription.DomainID,
 		&subscription.Active,
 		&subscription.Revision,
 		&shipmentID,
@@ -937,7 +946,6 @@ func enqueueTrackingWebhook(
 			),
 			jsonb_build_object(
 				'merchant_id', subscription.tenant_id,
-				'domain_id', subscription.domain_id,
 				'order_id', subscription.order_reference,
 				'fulfillment_id', subscription.fulfillment_reference,
 				'tracking_revision', subscription.revision,

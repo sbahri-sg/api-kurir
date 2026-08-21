@@ -130,11 +130,9 @@ func TestRegisterTenantIntegrationRoutesUsesCanonicalAPIPath(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		nil,
 	)
 	registerTenantIntegrationRoutes(
 		e.Group("/v1/integrations"),
-		nil,
 		nil,
 		nil,
 		nil,
@@ -150,7 +148,7 @@ func TestRegisterTenantIntegrationRoutesUsesCanonicalAPIPath(t *testing.T) {
 	for _, expected := range []string{
 		"GET /api/v1/integrations/provider-credentials",
 		"POST /api/v1/integrations/provider-credentials",
-		"POST /api/v1/integrations/provider-credentials/:id/disable",
+		"POST /api/v1/integrations/provider-credentials/:provider_code/disable",
 		"GET /api/v1/integrations/providers",
 		"POST /api/v1/integrations/providers/:provider_code/activate",
 		"POST /api/v1/integrations/providers/:provider_code/deactivate",

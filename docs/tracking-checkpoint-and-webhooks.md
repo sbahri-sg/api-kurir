@@ -75,11 +75,9 @@ provider sudah diperiksa tetapi AWB belum ditemukan; ini berbeda dari
 ```http
 POST /api/v1/integrations/tracking/subscriptions
 key: <customer-api-key>
-X-Emisell-Tenant-Token: <tenant-jwt>
+X-Emisell-Merchant-ID: merchant_123
 Content-Type: application/json
 ```
-
-Tenant token memerlukan scope `tracking:write`.
 
 ```json
 {
@@ -90,9 +88,9 @@ Tenant token memerlukan scope `tracking:write`.
 }
 ```
 
-Merchant tidak diterima dari body. `merchant_id` selalu berasal dari claim
-`sub`, sedangkan `domain_id` menjadi metadata dari tenant token. Upsert memakai
-`merchant_id + fulfillment_id`, sehingga retry dari Emisell idempotent.
+Merchant tidak diterima dari body. `merchant_id` selalu berasal dari header
+backend. Upsert memakai `merchant_id + fulfillment_id`, sehingga retry dari
+Emisell idempotent.
 
 Respons `202` berarti validasi/refresh sedang antre. Respons `200` berarti
 snapshot sudah tersedia.
@@ -105,7 +103,7 @@ memanggil:
 ```http
 PUT /api/v1/integrations/tracking/subscriptions/{fulfillment_id}
 key: <customer-api-key>
-X-Emisell-Tenant-Token: <tenant-jwt>
+X-Emisell-Merchant-ID: merchant_123
 Content-Type: application/json
 
 {
@@ -128,11 +126,10 @@ idempotent untuk AWB yang sama, tetapi tidak dapat mengganti AWB diam-diam.
 ```http
 GET /api/v1/integrations/tracking/subscriptions/{fulfillment_id}
 key: <customer-api-key>
-X-Emisell-Tenant-Token: <tenant-jwt>
+X-Emisell-Merchant-ID: merchant_123
 ```
 
-Tenant token memerlukan scope `tracking:read`. Endpoint hanya membaca
-PostgreSQL dan tidak memanggil provider.
+Endpoint hanya membaca PostgreSQL dan tidak memanggil provider.
 
 Field penting pada `shipment`:
 
@@ -173,7 +170,6 @@ Payload:
   "occurred_at": "2026-08-20T10:00:00Z",
   "data": {
     "merchant_id": "merchant_123",
-    "domain_id": "domain_abc",
     "order_id": "order_123",
     "fulfillment_id": "fulfillment_123",
 	"tracking_revision": 2,

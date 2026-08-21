@@ -82,7 +82,6 @@ type Subscription struct {
 	ID                   string   `json:"id"`
 	OrderReference       string   `json:"order_id"`
 	FulfillmentReference string   `json:"fulfillment_id"`
-	DomainID             string   `json:"domain_id,omitempty"`
 	Active               bool     `json:"active"`
 	Revision             int      `json:"revision"`
 	Shipment             Shipment `json:"shipment"`

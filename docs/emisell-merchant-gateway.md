@@ -1,149 +1,111 @@
-# Emisell Merchant Gateway dan RajaOngkir BYOK
+# Emisell Merchant Gateway
 
-Dokumen ini menjelaskan cara API Kurir bertindak sebagai gateway saja ketika
-seller Emisell mengaktifkan RajaOngkir dengan API key miliknya sendiri.
+Dokumen ini adalah kontrak komunikasi backend-to-backend antara Main Service
+Emisell dan API Kurir. Main Service tidak perlu membuat JWT tenant, menyimpan
+credential ID, atau meneruskan domain storefront.
 
-## Prinsip kepemilikan
+## Kontrak autentikasi
 
-- Tenant utama adalah `merchant_id` Emisell, bukan domain.
-- Satu merchant boleh mempunyai banyak domain dan tetap memakai credential serta
-  ledger kuota yang sama.
-- `domain_id` hanya menjadi metadata untuk memilih gudang atau konfigurasi
-  storefront khusus.
-- API key RajaOngkir seller disimpan terenkripsi di API Kurir dan tidak pernah
-  dikembalikan setelah request pembuatan.
-- Request tenant tidak pernah meminjam credential platform atau seller lain.
+Setiap request gateway mengirim dua header:
 
-## Dua lapisan autentikasi
-
-Setiap request Emisell menggunakan dua bukti:
-
-1. Header `key` atau Bearer customer API key membuktikan pemanggil adalah
-   service Emisell yang diizinkan.
-2. Header `X-Emisell-Tenant-Token` membuktikan merchant pemilik request.
-
-Tenant token adalah JWT EdDSA yang ditandatangani private key Ed25519 milik
-`api-service`. API Kurir hanya menyimpan public key pada
-`TENANT_CONTEXT_PUBLIC_KEY`.
-
-Claim minimum:
-
-```json
-{
-  "iss": "emisell-api",
-  "aud": "api-kurir",
-  "sub": "merchant_123",
-  "integration_id": "11111111-2222-4333-8444-555555555555",
-  "domain_id": "domain_abc",
-  "scope": ["shipping:read", "tracking:read"],
-  "iat": 1787112000,
-  "exp": 1787112060,
-  "jti": "request_unique_id"
-}
+```http
+key: <dedicated-emisell-service-key>
+X-Emisell-Merchant-ID: merchant_123
 ```
 
-`exp - iat` tidak boleh melebihi `TENANT_CONTEXT_MAX_TTL`. Nilai default adalah
-lima menit. `integration_id` wajib diisi untuk memakai RajaOngkir BYOK. Jika
-dikosongkan, request berada pada jalur Emisell Kurir gratis dan tidak boleh
-memakai credential berbayar milik seller maupun platform secara implisit.
+- `key` mengautentikasi Main Service Emisell.
+- `X-Emisell-Merchant-ID` menentukan pemilik data dan isolasi kuota.
+- Merchant ID harus stabil, 1–128 karakter, dan hanya boleh berisi huruf,
+  angka, titik, garis bawah, titik dua, atau tanda hubung.
+- Merchant ID berasal dari database Main Service, bukan body/query browser.
+- Dedicated service key hanya disimpan pada secret backend dan tidak boleh
+  dikirim ke frontend.
 
-## Aktivasi seller
-
-1. Dashboard Emisell memvalidasi sesi seller dan menentukan `merchant_id` dari
-   database, bukan dari body browser.
-2. Seller memasukkan API key RajaOngkir dan batas harian paketnya.
-3. Backend Emisell membuat tenant token dengan scope
-   `provider-credentials:write`.
-4. Backend memanggil `POST /api/v1/integrations/provider-credentials`.
-5. API Kurir memvalidasi key ke RajaOngkir, mengenkripsi secret, mencatat satu
-   hit validasi, dan mengembalikan UUID credential sebagai `integration_id`.
-6. Emisell menyimpan UUID tersebut pada konfigurasi extension seller. Secret
-   provider tidak disimpan di browser atau log Emisell.
-7. Backend membaca `GET /api/v1/integrations/providers`, lalu mengaktifkan
-   RajaOngkir melalui `POST /api/v1/integrations/providers/rajaongkir/activate`
-   dengan UUID credential dan `expected_version` terbaru.
-
-Lifecycle install dan active adalah dua state berbeda. Merchant boleh mempunyai
-banyak provider terpasang, tetapi API Kurir hanya menyimpan satu provider
-shipping aktif. Kontrak lengkap tersedia pada
-[`merchant-shipping-providers.md`](merchant-shipping-providers.md).
-
-Seluruh endpoint Emisell Gateway memakai base path canonical `/api/v1`.
-Path lama `/v1/integrations` dipertahankan sementara sebagai alias kompatibilitas,
-tetapi integrasi baru wajib menggunakan `/api/v1/integrations`.
+API Kurir tidak lagi memerlukan `TENANT_CONTEXT_PUBLIC_KEY`, JWT, scope tenant,
+`domain_id`, atau `integration_id`. API key tetap menjadi pengaman utama;
+merchant header adalah konteks kepemilikan, bukan secret kedua.
 
 ## Multi-domain
 
-Semua domain berikut memakai claim `sub` yang sama:
+Satu merchant dapat memiliki banyak domain. Main Service menyelesaikan domain,
+gudang, dan origin sebelum memanggil API Kurir. Semua domain memakai merchant
+ID yang sama sehingga provider, credential, preferensi service, kuota, dan
+tracking tidak diduplikasi per domain.
 
 ```text
 domain-a.com ─┐
-domain-b.com ─┼─> merchant_123 ─> credential RajaOngkir merchant_123
+domain-b.com ─┼─> merchant_123 ─> API Kurir
 domain-c.com ─┘
 ```
 
-Jika satu domain memakai gudang berbeda, Emisell menentukan lokasi asal sebelum
-memanggil rate API dan mengirim `domain_id` sebagai metadata audit. Credential
-tetap dimiliki merchant dan tidak diduplikasi per domain.
+## Lifecycle credential dan provider
+
+1. Main Service mengirim key seller ke
+   `POST /api/v1/integrations/provider-credentials`.
+2. API Kurir memvalidasi key langsung ke provider dan menyimpannya terenkripsi.
+3. Response hanya berisi metadata termasking; UUID credential internal tidak
+   dikembalikan.
+4. Satu merchant hanya mempunyai satu credential aktif per provider. Key baru
+   menggantikan key lama secara atomik.
+5. Main Service membaca `GET /api/v1/integrations/providers`.
+6. Aktivasi dilakukan dengan provider code dan `expected_version`; API Kurir
+   memilih credential aktif secara otomatis.
+
+Merchant dapat memasang beberapa provider, tetapi tepat satu provider shipping
+efektif aktif. Biteship tidak menjadi extension seller dan tetap digunakan
+sebagai fallback tracking internal.
+
+## Endpoint utama
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /api/v1/integrations/provider-credentials` | Metadata key merchant tanpa secret/UUID internal |
+| `POST /api/v1/integrations/provider-credentials` | Validasi dan simpan/ganti key provider |
+| `POST /api/v1/integrations/provider-credentials/{provider_code}/disable` | Putuskan key berdasarkan provider code |
+| `GET /api/v1/integrations/providers` | Katalog provider dan provider efektif aktif |
+| `POST /api/v1/integrations/providers/{provider_code}/activate` | Aktifkan provider; credential dipilih internal |
+| `POST /api/v1/integrations/providers/{provider_code}/deactivate` | Kembali ke Emisell Kurir |
+| `GET/PUT /api/v1/integrations/shipping-services` | Baca/simpan layanan checkout merchant |
+| `POST /api/v1/integrations/tracking/subscriptions` | Daftarkan AWB fulfillment |
+| `GET /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Baca snapshot tanpa hit provider |
+
+Semua integrasi baru menggunakan base path `/api/v1`. Alias `/v1` tetap ada
+sementara untuk kompatibilitas.
 
 ## Rate dan tracking
 
-Rate memakai kontrak kompatibel RajaOngkir V2:
+Rate kompatibel RajaOngkir V2 tetap menggunakan form-urlencoded:
 
 ```http
 POST /api/v1/calculate/district/domestic-cost
-key: <customer-api-key>
-X-Emisell-Tenant-Token: <signed-tenant-jwt>
+key: <dedicated-emisell-service-key>
+X-Emisell-Merchant-ID: merchant_123
 Content-Type: application/x-www-form-urlencoded
 ```
 
-Tracking memakai header yang sama pada `POST /api/v1/track/waybill`. Tenant dan
-credential disimpan bersama shipment tracking sehingga worker lanjutan tetap
-menggunakan credential merchant yang benar.
+API Kurir membaca provider aktif merchant lalu memilih credential internal.
+Snapshot dan ledger dipisahkan berdasarkan merchant serta credential internal,
+tetapi ID credential tidak menjadi bagian kontrak Main Service.
 
-Snapshot exact quote dipisahkan berdasarkan `tenant_id` dan `integration_id`.
-Hal ini mencegah tarif kontrak atau diskon akun seller A terbaca oleh seller B.
-Ledger kuota juga menyimpan tenant owner dan hanya bertambah ketika benar-benar
-terjadi hit provider.
-
-## Scope
-
-| Scope | Kegunaan |
-|---|---|
-| `provider-credentials:read` | Membaca metadata key milik merchant |
-| `provider-credentials:write` | Menambah atau menonaktifkan key merchant |
-| `shipping:read` | Mengambil tarif dengan credential merchant |
-| `shipping:write` | Memilih provider aktif serta mengatur kurir dan layanan checkout |
-| `tracking:read` | Melacak AWB dengan credential merchant |
-| `tracking:write` | Mendaftarkan fulfillment untuk checkpoint tracking |
-
-Untuk order fulfillment, backend Emisell mendaftarkan AWB melalui
-`POST /api/v1/integrations/tracking/subscriptions`, lalu membaca snapshot pada
-`GET /api/v1/integrations/tracking/subscriptions/{fulfillment_id}`. Perubahan
-status dikirim melalui webhook HMAC. Kontrak lengkap tersedia pada
-[`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md).
-
-Saat seller memasukkan atau mengedit AWB, panggil
-`POST /api/v1/tracking/verify` lebih dulu agar typo dan salah pilihan ekspedisi
-dapat ditampilkan langsung. Penggantian AWB fulfillment wajib memakai
-`PUT /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` dengan
-`expected_revision`; AWB lama tetap aktif sampai AWB baru terverifikasi.
-
-Kontrak pilihan kurir/layanan dan pola UI bertingkat dijelaskan lengkap pada
-[`merchant-shipping-services.md`](merchant-shipping-services.md).
+Tracking sinkron memakai header yang sama pada
+`POST /api/v1/track/waybill`. Untuk fulfillment, gunakan subscription agar
+pembacaan berulang mengambil snapshot PostgreSQL dan worker saja yang melakukan
+refresh provider. Webhook HMAC mengirim perubahan status ke Emisell.
 
 ## Error penting
 
 | Kode | Arti |
 |---|---|
-| `TENANT_CONTEXT_REQUIRED` | Header tenant token tidak dikirim |
-| `INVALID_TENANT_CONTEXT` | Signature, issuer, audience, atau masa berlaku salah |
-| `INSUFFICIENT_TENANT_SCOPE` | Token tidak memiliki scope operasi |
+| `MERCHANT_ID_REQUIRED` | Header merchant tidak dikirim ke endpoint gateway |
+| `INVALID_MERCHANT_ID` | Format merchant ID tidak valid |
+| `MERCHANT_CONTEXT_FORBIDDEN` | Customer key mencoba membawa merchant header |
+| `UNAUTHORIZED` | Dedicated service API key tidak valid |
+| `INVALID_PROVIDER_KEY` | Key ditolak provider |
 | `PROVIDER_KEY_EXISTS` | Key yang sama sudah pernah disimpan |
-| `INVALID_PROVIDER_KEY` | Key ditolak RajaOngkir |
-| `PROVIDER_QUOTA_EXHAUSTED` | Ledger atau provider menyatakan kuota habis |
-| `RATE_NOT_AVAILABLE` | Merchant tidak mempunyai credential aktif atau tarif tidak tersedia |
+| `PROVIDER_CREDENTIAL_UNAVAILABLE` | Provider tidak mempunyai key aktif dan valid |
+| `SHIPPING_PROVIDER_VERSION_CONFLICT` | State berubah sejak katalog terakhir dibaca |
+| `PROVIDER_QUOTA_EXHAUSTED` | Kuota provider habis |
+| `RATE_NOT_AVAILABLE` | Tarif atau provider aktif tidak tersedia |
 
-OpenAPI lengkap tersedia pada [`openapi/public.yaml`](../openapi/public.yaml),
-sedangkan contoh ringkas dapat dibaca pada menu **Dokumentasi API → Emisell
-Gateway** di dashboard.
+Kontrak mesin tersedia di [`openapi/public.yaml`](../openapi/public.yaml), dan
+contoh siap pakai tersedia pada dashboard **Dokumentasi API → Emisell Gateway**.

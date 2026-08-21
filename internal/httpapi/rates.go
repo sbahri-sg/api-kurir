@@ -54,9 +54,6 @@ type calculateOptions struct {
 
 func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		if err := requireTenantScopeIfPresent(c, "shipping:read"); err != nil {
-			return err
-		}
 		var input calculateRequest
 		body := http.MaxBytesReader(c.Response(), c.Request().Body, maxCalculateBodyBytes)
 		decoder := json.NewDecoder(body)
@@ -213,9 +210,6 @@ func calculateRajaOngkirV2Rate(
 	locationRepository locations.Repository,
 	granularity string,
 ) error {
-	if err := requireTenantScopeIfPresent(c, "shipping:read"); err != nil {
-		return err
-	}
 	c.Request().Body = http.MaxBytesReader(
 		c.Response(),
 		c.Request().Body,
@@ -573,7 +567,6 @@ func attachTenantRateContext(ctx context.Context, request *rates.Request) {
 		return
 	}
 	request.TenantID = identity.TenantID
-	request.IntegrationID = identity.IntegrationID
 }
 
 func normalizeCourierCodes(value string) ([]string, error) {

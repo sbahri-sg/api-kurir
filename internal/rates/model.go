@@ -9,17 +9,17 @@ type Dimensions struct {
 }
 
 type Request struct {
-	TenantID          string
-	IntegrationID     string
-	Origin            string
-	Destination       string
-	Granularity       string
-	PriceFilter       string
-	ActualWeightGrams int64
-	Couriers          []string
-	Dimensions        *Dimensions
-	ItemValue         int64
-	IncludeUnverified bool
+	TenantID             string
+	ProviderCredentialID string
+	Origin               string
+	Destination          string
+	Granularity          string
+	PriceFilter          string
+	ActualWeightGrams    int64
+	Couriers             []string
+	Dimensions           *Dimensions
+	ItemValue            int64
+	IncludeUnverified    bool
 }
 
 type RateCard struct {

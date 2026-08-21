@@ -680,12 +680,12 @@ endpoint mengembalikan `503 TRACKING_NOT_CONFIGURED`.
 Untuk fulfillment Emisell gunakan endpoint tenant-aware berikut agar request
 checkout/customer hanya membaca snapshot dan tidak memicu provider:
 
-| Method | Endpoint | Scope |
+| Method | Endpoint | Konteks merchant |
 |---|---|---|
-| POST | `/api/v1/tracking/verify` | `tracking:read` bila tenant token tersedia |
-| POST | `/api/v1/integrations/tracking/subscriptions` | `tracking:write` |
-| GET | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | `tracking:read` |
-| PUT | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | `tracking:write` |
+| POST | `/api/v1/tracking/verify` | Header merchant opsional |
+| POST | `/api/v1/integrations/tracking/subscriptions` | Header merchant wajib |
+| GET | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Header merchant wajib |
+| PUT | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Header merchant wajib |
 
 Kebijakan checkpoint, negative cache AWB, batas hit, dan webhook HMAC dijelaskan
 pada [`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md).

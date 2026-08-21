@@ -65,30 +65,27 @@ func (r *PostgresRepository) Activate(
 
 	var credentialID any
 	if requiresCredential {
-		if input.CredentialID == "" {
-			return Catalog{}, ErrCredentialRequired
-		}
-		var valid bool
+		var selectedCredentialID string
 		err = tx.QueryRow(ctx, `
-			SELECT EXISTS (
-				SELECT 1
-				FROM provider_credentials
-				WHERE id = $1::uuid
-				  AND tenant_id = $2
-				  AND provider_code = $3
-				  AND active
-				  AND validation_status = 'valid'
-			)
-		`, input.CredentialID, tenantID, providerCode).Scan(&valid)
-		if err != nil {
-			return Catalog{}, fmt.Errorf("validate shipping provider credential: %w", err)
-		}
-		if !valid {
+			SELECT id::text
+			FROM provider_credentials
+			WHERE tenant_id = $1
+			  AND provider_code = $2
+			  AND active
+			  AND validation_status = 'valid'
+			ORDER BY created_at DESC
+			LIMIT 1
+			FOR SHARE
+		`, tenantID, providerCode).Scan(&selectedCredentialID)
+		if errors.Is(err, pgx.ErrNoRows) {
 			return Catalog{}, ErrCredentialUnavailable
 		}
-		credentialID = input.CredentialID
+		if err != nil {
+			return Catalog{}, fmt.Errorf("select shipping provider credential: %w", err)
+		}
+		credentialID = selectedCredentialID
 	} else {
-		if !builtIn || input.CredentialID != "" {
+		if !builtIn {
 			return Catalog{}, ErrInvalidCredential
 		}
 		credentialID = nil
@@ -200,13 +197,7 @@ func catalogWithQuerier(
 				  AND credential.validation_status = 'valid'
 			) AS installed,
 			COALESCE(selection.provider_code = provider.code, provider.code = $2),
-			CASE
-				WHEN selection.provider_code = provider.code
-				THEN selection.credential_id::text
-				ELSE NULL
-			END,
 			COALESCE(selection.provider_code, $2),
-			selection.credential_id::text,
 			COALESCE(selection.version, 0)
 		FROM shipping_integration_providers provider
 		LEFT JOIN tenant_active_shipping_providers selection
@@ -220,7 +211,6 @@ func catalogWithQuerier(
 	for rows.Next() {
 		var item Provider
 		var activeProvider string
-		var activeCredential *string
 		var version int64
 		if err := rows.Scan(
 			&item.Code,
@@ -230,15 +220,12 @@ func catalogWithQuerier(
 			&item.Available,
 			&item.Installed,
 			&item.Active,
-			&item.CredentialID,
 			&activeProvider,
-			&activeCredential,
 			&version,
 		); err != nil {
 			return Catalog{}, fmt.Errorf("scan shipping integration provider: %w", err)
 		}
 		result.ActiveProviderCode = activeProvider
-		result.ActiveCredentialID = activeCredential
 		result.Version = version
 		result.Providers = append(result.Providers, item)
 	}

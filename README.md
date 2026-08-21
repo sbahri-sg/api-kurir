@@ -142,6 +142,10 @@ Gunakan operator `emisell` dan admin API key `dev-emisell` pada development.
 Production wajib mempunyai
 `ADMIN_API_KEYS` sendiri dan tidak boleh menggunakan key customer.
 
+Komunikasi Main Service Emisell memakai salah satu `API_KEYS` khusus backend
+bersama header `X-Emisell-Merchant-ID`. API key customer yang dibuat dari
+dashboard tidak dapat mengakses endpoint merchant gateway.
+
 Master wilayah diimpor dari snapshot Kemendagri 2025 yang dipin ke commit dan
 checksum tertentu. Dataset berisi provinsi sampai desa/kelurahan serta mapping
 kode pos. Untuk development dengan Go lokal:

@@ -22,7 +22,6 @@ import (
 	"github.com/emisell/api-kurir/internal/providers/biteship"
 	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
 	"github.com/emisell/api-kurir/internal/rates"
-	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/emisell/api-kurir/internal/tracking"
 	"github.com/emisell/api-kurir/internal/webhooksettings"
 	"github.com/labstack/echo/v5"
@@ -120,20 +119,6 @@ func run(logger *slog.Logger) error {
 			Secret:      cfg.Tracking.WebhookSecret,
 		},
 	)
-	tenantVerifier, err := tenancy.NewVerifier(
-		cfg.TenantContext.PublicKey,
-		cfg.TenantContext.Issuer,
-		cfg.TenantContext.Audience,
-		cfg.TenantContext.MaxTTL,
-	)
-	if err != nil {
-		return err
-	}
-	if tenantVerifier == nil {
-		logger.Warn("tenant context verification disabled; merchant credential routes are unavailable")
-	} else {
-		logger.Info("tenant context verification enabled", "issuer", cfg.TenantContext.Issuer)
-	}
 	fallbacks := make(map[string]providercredentials.StaticCredential)
 	if cfg.RajaOngkir.APIKey != "" {
 		fallbacks["rajaongkir"] = providercredentials.StaticCredential{
@@ -160,7 +145,7 @@ func run(logger *slog.Logger) error {
 		rateRepository,
 		runtimeLocker,
 		cfg.RajaOngkir.Timeout+2*time.Second,
-	), rates.WithResultPolicy(merchantShippingService), rates.WithServicePolicyCache(
+	), rates.WithCredentialSelector(providerCredentialService), rates.WithResultPolicy(merchantShippingService), rates.WithServicePolicyCache(
 		runtimeCache,
 		5*time.Minute,
 	)}
@@ -222,7 +207,6 @@ func run(logger *slog.Logger) error {
 		webhookSettingsService,
 		merchantProviderService,
 		merchantShippingService,
-		tenantVerifier,
 		cfg.APIKeys,
 		cfg.AdminAPIKeys,
 		logger,

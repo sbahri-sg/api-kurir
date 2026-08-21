@@ -47,7 +47,7 @@ func (r *PostgresRepository) FindFreshProviderQuotes(
 		  AND source_type = 'provider_quote'
 		  AND expires_at > now()
 		ORDER BY courier_code, service_code, fetched_at DESC
-	`, fingerprint, providerCode, request.TenantID, request.IntegrationID)
+	`, fingerprint, providerCode, request.TenantID, request.ProviderCredentialID)
 	if err != nil {
 		return nil, fmt.Errorf("query provider quote snapshots: %w", err)
 	}
@@ -191,7 +191,7 @@ func (r *PostgresRepository) SaveProviderQuotes(
 			quote.FetchedAt,
 			quote.ExpiresAt,
 			request.TenantID,
-			request.IntegrationID,
+			request.ProviderCredentialID,
 		)
 		if err != nil {
 			return fmt.Errorf("insert provider quote snapshot: %w", err)
@@ -498,27 +498,27 @@ func providerRequestFingerprint(request Request) string {
 	couriers := append([]string(nil), request.Couriers...)
 	sort.Strings(couriers)
 	payload := struct {
-		TenantID          string
-		IntegrationID     string
-		Origin            string
-		Destination       string
-		Granularity       string
-		PriceFilter       string
-		ActualWeightGrams int64
-		Couriers          []string
-		Dimensions        *Dimensions
-		ItemValue         int64
+		TenantID             string
+		ProviderCredentialID string
+		Origin               string
+		Destination          string
+		Granularity          string
+		PriceFilter          string
+		ActualWeightGrams    int64
+		Couriers             []string
+		Dimensions           *Dimensions
+		ItemValue            int64
 	}{
-		TenantID:          request.TenantID,
-		IntegrationID:     request.IntegrationID,
-		Origin:            request.Origin,
-		Destination:       request.Destination,
-		Granularity:       request.Granularity,
-		PriceFilter:       request.PriceFilter,
-		ActualWeightGrams: request.ActualWeightGrams,
-		Couriers:          couriers,
-		Dimensions:        request.Dimensions,
-		ItemValue:         request.ItemValue,
+		TenantID:             request.TenantID,
+		ProviderCredentialID: request.ProviderCredentialID,
+		Origin:               request.Origin,
+		Destination:          request.Destination,
+		Granularity:          request.Granularity,
+		PriceFilter:          request.PriceFilter,
+		ActualWeightGrams:    request.ActualWeightGrams,
+		Couriers:             couriers,
+		Dimensions:           request.Dimensions,
+		ItemValue:            request.ItemValue,
 	}
 	encoded, _ := json.Marshal(payload)
 	hash := sha256.Sum256(encoded)

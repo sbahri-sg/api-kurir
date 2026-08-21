@@ -173,7 +173,6 @@ export type TrackingOperationSummary = {
 export type TrackingOperation = {
   id: string;
   tenant_id?: string;
-  domain_id?: string;
   order_id?: string;
   fulfillment_id?: string;
   subscription_revision?: number;
@@ -209,7 +208,7 @@ export type TrackingOperationPage = {
 export type RateSnapshot = {
   id: string;
   tenant_id?: string;
-  integration_id?: string;
+  provider_credential_id?: string;
   origin_public_id: string;
   origin_label: string;
   destination_public_id: string;

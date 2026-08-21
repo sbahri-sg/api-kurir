@@ -92,20 +92,20 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 	}
 
 	wrongCredentialCtx := tenancy.WithIdentity(ctx, tenancy.Identity{
-		TenantID: tenantA, IntegrationID: credentialB.ID,
+		TenantID: tenantA, ProviderCredentialID: credentialB.ID,
 	})
 	if _, _, _, err := service.ResolveProviderCredential(wrongCredentialCtx, "rajaongkir"); !errors.Is(err, ErrNoActiveCredential) {
 		t.Fatalf("tenant A resolved tenant B credential: %v", err)
 	}
 	inactiveCredentialCtx := tenancy.WithIdentity(ctx, tenancy.Identity{
-		TenantID: tenantB, IntegrationID: credentialB.ID,
+		TenantID: tenantB, ProviderCredentialID: credentialB.ID,
 	})
 	if _, _, _, err := service.ResolveProviderCredential(inactiveCredentialCtx, "rajaongkir"); !errors.Is(err, ErrNoActiveCredential) {
 		t.Fatalf("tenant B resolved an installed but inactive credential: %v", err)
 	}
 
 	ownedCredentialCtx := tenancy.WithIdentity(ctx, tenancy.Identity{
-		TenantID: tenantA, IntegrationID: credentialA.ID,
+		TenantID: tenantA,
 	})
 	secret, _, limit, err := service.ResolveProviderCredential(
 		ownedCredentialCtx,
@@ -115,13 +115,89 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 		t.Fatalf("tenant A credential resolution failed: secret=%q limit=%d err=%v", secret, limit, err)
 	}
 
-	if err := service.DisableForTenant(
+	replacementSecret := fmt.Sprintf("tenant-a-replacement-secret-%d", suffix)
+	replacement, err := service.AddForTenant(
 		ctx,
 		tenantA,
-		credentialB.ID,
+		"rajaongkir",
+		replacementSecret,
+		75_000,
+		"integration-test",
+		"req_replace",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var activeCount int
+	var selectedProvider, selectedCredentialID string
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*)
+		FROM provider_credentials
+		WHERE tenant_id = $1 AND provider_code = 'rajaongkir' AND active
+	`, tenantA).Scan(&activeCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT provider_code, credential_id::text
+		FROM tenant_active_shipping_providers
+		WHERE tenant_id = $1
+	`, tenantA).Scan(&selectedProvider, &selectedCredentialID); err != nil {
+		t.Fatal(err)
+	}
+	if activeCount != 1 || selectedProvider != "rajaongkir" ||
+		selectedCredentialID != replacement.ID {
+		t.Fatalf(
+			"replacement was not atomic: active=%d provider=%q credential=%q",
+			activeCount,
+			selectedProvider,
+			selectedCredentialID,
+		)
+	}
+	secret, _, limit, err = service.ResolveProviderCredential(
+		ownedCredentialCtx,
+		"rajaongkir",
+	)
+	if err != nil || secret != replacementSecret || limit != 75_000 {
+		t.Fatalf(
+			"replacement credential resolution failed: secret=%q limit=%d err=%v",
+			secret,
+			limit,
+			err,
+		)
+	}
+	if err := service.DisableForTenantProvider(
+		ctx,
+		tenantA,
+		"rajaongkir",
+		"integration-test",
+		"req_disable",
+	); err != nil {
+		t.Fatal(err)
+	}
+	var fallbackProvider string
+	var fallbackCredentialID *string
+	if err := pool.QueryRow(ctx, `
+		SELECT provider_code, credential_id::text
+		FROM tenant_active_shipping_providers
+		WHERE tenant_id = $1
+	`, tenantA).Scan(&fallbackProvider, &fallbackCredentialID); err != nil {
+		t.Fatal(err)
+	}
+	if fallbackProvider != "emisell" || fallbackCredentialID != nil {
+		t.Fatalf(
+			"disabled active credential did not fall back: provider=%q credential=%v",
+			fallbackProvider,
+			fallbackCredentialID,
+		)
+	}
+
+	if err := service.DisableForTenantProvider(
+		ctx,
+		tenantA,
+		"biteship",
 		"integration-test",
 		"req_wrong_owner",
-	); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("tenant A disabled tenant B credential: %v", err)
+	); !errors.Is(err, ErrUnsupportedProvider) {
+		t.Fatalf("merchant disabled unsupported provider credential: %v", err)
 	}
 }

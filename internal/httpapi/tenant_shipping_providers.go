@@ -11,7 +11,6 @@ import (
 )
 
 type changeTenantShippingProviderRequest struct {
-	CredentialID    string `json:"credential_id"`
 	ExpectedVersion *int64 `json:"expected_version"`
 }
 
@@ -42,7 +41,6 @@ func tenantShippingProviderActivateHandler(
 			identity.TenantID,
 			strings.TrimSpace(c.Param("provider_code")),
 			merchantproviders.ChangeInput{
-				CredentialID:    request.CredentialID,
 				ExpectedVersion: request.ExpectedVersion,
 				UpdatedBy:       "tenant:" + identity.TenantID,
 			},

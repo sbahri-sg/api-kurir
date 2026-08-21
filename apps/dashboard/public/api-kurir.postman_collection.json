@@ -35,8 +35,13 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/health/live",
-              "host": ["{{base_url}}"],
-              "path": ["health", "live"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ]
             },
             "description": "Memastikan proses API sedang berjalan."
           },
@@ -52,8 +57,13 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/health/ready",
-              "host": ["{{base_url}}"],
-              "path": ["health", "ready"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
             },
             "description": "Memastikan API dan PostgreSQL siap menerima traffic."
           },
@@ -90,8 +100,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/destination/domestic-destination?search={{origin_search}}&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "destination", "domestic-destination"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "destination",
+                "domestic-destination"
+              ],
               "query": [
                 {
                   "key": "search",
@@ -132,8 +148,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/destination/domestic-destination?search={{destination_search}}&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "destination", "domestic-destination"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "destination",
+                "domestic-destination"
+              ],
               "query": [
                 {
                   "key": "search",
@@ -182,8 +204,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/destination/province",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "destination", "province"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "destination",
+                "province"
+              ]
             },
             "description": "Daftar provinsi dari snapshot RajaOngkir lokal dengan bentuk respons RajaOngkir V2. ID bukan kode Kemendagri."
           },
@@ -222,8 +251,16 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/destination/city/{{province_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "destination", "city", "{{province_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "destination",
+                "city",
+                "{{province_id}}"
+              ]
             },
             "description": "Daftar kota/kabupaten berdasarkan ID provinsi lokal."
           },
@@ -262,8 +299,16 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/destination/district/{{city_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "destination", "district", "{{city_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "destination",
+                "district",
+                "{{city_id}}"
+              ]
             },
             "description": "Daftar kecamatan berdasarkan ID kota/kabupaten lokal."
           },
@@ -302,8 +347,16 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/destination/sub-district/{{district_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "destination", "sub-district", "{{district_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "destination",
+                "sub-district",
+                "{{district_id}}"
+              ]
             },
             "description": "Daftar kelurahan/desa dan kode pos berdasarkan ID kecamatan lokal."
           },
@@ -342,8 +395,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/destination/domestic-destination?search={{origin_search}}&limit=20&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "destination", "domestic-destination"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "destination",
+                "domestic-destination"
+              ],
               "query": [
                 {
                   "key": "search",
@@ -396,8 +456,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/destination/domestic-destination?search={{destination_search}}&limit=20&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "destination", "domestic-destination"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "destination",
+                "domestic-destination"
+              ],
               "query": [
                 {
                   "key": "search",
@@ -429,8 +496,13 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/couriers",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "couriers"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "couriers"
+              ]
             },
             "description": "Membaca kurir dan layanan aktif."
           },
@@ -474,8 +546,14 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/calculate/domestic-cost",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "calculate", "domestic-cost"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "calculate",
+                "domestic-cost"
+              ]
             },
             "description": "Cek ongkir dengan ID lokasi yang otomatis diisi oleh request pencarian."
           },
@@ -550,8 +628,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/calculate/domestic-cost",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "calculate", "domestic-cost"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "calculate",
+                "domestic-cost"
+              ]
             },
             "description": "Drop-in request direct shipping-cost untuk SDK RajaOngkir V2. Field price mengurutkan semua layanan (lowest naik, highest turun), bukan memilih satu hasil. include_group=true menambahkan canonical_service, service_group, dan service_type; hapus field tersebut untuk respons 1:1 RajaOngkir V2."
           },
@@ -626,8 +711,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/calculate/district/domestic-cost",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "calculate", "district", "domestic-cost"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "calculate",
+                "district",
+                "domestic-cost"
+              ]
             },
             "description": "Drop-in request district shipping-cost untuk SDK RajaOngkir V2. Field price mengurutkan semua layanan (lowest naik, highest turun), bukan memilih satu hasil. include_group=true menambahkan canonical_service, service_group, dan service_type; hapus field tersebut untuk respons 1:1 RajaOngkir V2."
           },
@@ -668,8 +761,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/track/waybill?awb={{waybill}}&courier={{courier}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "track", "waybill"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "track",
+                "waybill"
+              ],
               "query": [
                 {
                   "key": "awb",
@@ -706,8 +806,14 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/track/waybill",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "track", "waybill"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "track",
+                "waybill"
+              ]
             },
             "description": "Cek resi cukup menggunakan nomor resi dan kode ekspedisi."
           },
@@ -726,8 +832,13 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/regions/provinces",
-              "host": ["{{base_url}}"],
-              "path": ["regions", "provinces"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "regions",
+                "provinces"
+              ]
             },
             "description": "Daftar provinsi kompatibel region-service Emisell lama."
           },
@@ -740,9 +851,19 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/regions/cities?provinceId=5",
-              "host": ["{{base_url}}"],
-              "path": ["regions", "cities"],
-              "query": [{ "key": "provinceId", "value": "5" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "regions",
+                "cities"
+              ],
+              "query": [
+                {
+                  "key": "provinceId",
+                  "value": "5"
+                }
+              ]
             }
           },
           "response": []
@@ -754,9 +875,19 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/regions/districts?cityId=55",
-              "host": ["{{base_url}}"],
-              "path": ["regions", "districts"],
-              "query": [{ "key": "cityId", "value": "55" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "regions",
+                "districts"
+              ],
+              "query": [
+                {
+                  "key": "cityId",
+                  "value": "55"
+                }
+              ]
             }
           },
           "response": []
@@ -768,9 +899,19 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/regions/subdistricts?districtId=442",
-              "host": ["{{base_url}}"],
-              "path": ["regions", "subdistricts"],
-              "query": [{ "key": "districtId", "value": "442" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "regions",
+                "subdistricts"
+              ],
+              "query": [
+                {
+                  "key": "districtId",
+                  "value": "442"
+                }
+              ]
             },
             "description": "Daftar kelurahan/desa beserta kode pos."
           },
@@ -783,14 +924,34 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/shipping/domestic-cost?origin=1354&destination=2612&weight={{weight_grams}}&courier={{courier}}&price=lowest",
-              "host": ["{{base_url}}"],
-              "path": ["shipping", "domestic-cost"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "shipping",
+                "domestic-cost"
+              ],
               "query": [
-                { "key": "origin", "value": "1354" },
-                { "key": "destination", "value": "2612" },
-                { "key": "weight", "value": "{{weight_grams}}" },
-                { "key": "courier", "value": "{{courier}}" },
-                { "key": "price", "value": "lowest" }
+                {
+                  "key": "origin",
+                  "value": "1354"
+                },
+                {
+                  "key": "destination",
+                  "value": "2612"
+                },
+                {
+                  "key": "weight",
+                  "value": "{{weight_grams}}"
+                },
+                {
+                  "key": "courier",
+                  "value": "{{courier}}"
+                },
+                {
+                  "key": "price",
+                  "value": "lowest"
+                }
               ]
             },
             "description": "Origin dan destination memakai ID kecamatan dari kontrak legacy."
@@ -801,7 +962,7 @@
     },
     {
       "name": "5. Emisell Gateway · Seller BYOK",
-      "description": "Request tenant-aware. tenant_token harus dibuat backend Emisell menggunakan private key Ed25519; jangan pernah dibuat di browser seller.",
+      "description": "Request backend-to-backend memakai API_KEYS khusus Main Service dan X-Emisell-Merchant-ID. Jangan gunakan customer key hasil generate atau memanggil gateway langsung dari browser seller.",
       "item": [
         {
           "name": "List Seller Provider Credentials",
@@ -809,17 +970,24 @@
             "method": "GET",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               }
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/integrations/provider-credentials",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "provider-credentials"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "provider-credentials"
+              ]
             },
-            "description": "Memerlukan scope provider-credentials:read dan hanya mengembalikan key milik merchant pada claim sub."
+            "description": "Mengembalikan metadata key merchant tanpa secret, tenant_id, atau credential ID internal."
           },
           "response": []
         },
@@ -831,13 +999,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Credential seller tersimpan', function () {",
+                  "pm.test('Credential seller tersimpan tanpa ID internal', function () {",
                   "  pm.response.to.have.status(201);",
-                  "});",
-                  "const payload = pm.response.json();",
-                  "if (payload.data && payload.data.id) {",
-                  "  pm.environment.set('seller_provider_credential_id', payload.data.id);",
-                  "}"
+                  "  const payload = pm.response.json();",
+                  "  pm.expect(payload.data).not.to.have.property('id');",
+                  "});"
                 ]
               }
             }
@@ -846,8 +1012,8 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               },
               {
@@ -859,41 +1025,54 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"provider_code\": \"rajaongkir\",\n  \"api_key\": \"{{seller_rajaongkir_api_key}}\",\n  \"daily_limit\": 50000\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{base_url}}/api/v1/integrations/provider-credentials",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "provider-credentials"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "provider-credentials"
+              ]
             },
-            "description": "Memerlukan scope provider-credentials:write. Validasi memakai satu hit RajaOngkir seller."
+            "description": "Memvalidasi dan menyimpan key RajaOngkir. Key baru menggantikan key aktif lama untuk merchant yang sama."
           },
           "response": []
         },
         {
-          "name": "Disable Seller Provider Credential",
+          "name": "Disable Seller RajaOngkir Credential",
           "request": {
             "method": "POST",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               }
             ],
             "url": {
-              "raw": "{{base_url}}/api/v1/integrations/provider-credentials/{{seller_provider_credential_id}}/disable",
-              "host": ["{{base_url}}"],
+              "raw": "{{base_url}}/api/v1/integrations/provider-credentials/rajaongkir/disable",
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "api",
                 "v1",
                 "integrations",
                 "provider-credentials",
-                "{{seller_provider_credential_id}}",
+                "rajaongkir",
                 "disable"
               ]
             },
-            "description": "Credential tenant lain diperlakukan sebagai tidak ditemukan."
+            "description": "Menonaktifkan key aktif berdasarkan provider code; Main Service tidak menyimpan credential ID."
           },
           "response": []
         },
@@ -920,17 +1099,24 @@
             "method": "GET",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               }
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/integrations/providers",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "providers"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "providers"
+              ]
             },
-            "description": "Memerlukan scope shipping:read. Emisell Kurir selalu installed; provider eksternal installed bila credential aktif dan valid."
+            "description": "Mengembalikan katalog dan tepat satu provider efektif aktif untuk merchant."
           },
           "response": []
         },
@@ -957,38 +1143,8 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"credential_id\": \"{{seller_provider_credential_id}}\",\n  \"expected_version\": {{shipping_provider_version}}\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/integrations/providers/rajaongkir/activate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "providers", "rajaongkir", "activate"]
-            },
-            "description": "Memerlukan scope shipping:write. Credential harus aktif, valid, provider cocok, dan dimiliki tenant yang sama."
-          },
-          "response": []
-        },
-        {
-          "name": "Deactivate Seller RajaOngkir Provider",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               },
               {
@@ -1000,14 +1156,70 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"expected_version\": {{shipping_provider_version}}\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/providers/rajaongkir/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "providers",
+                "rajaongkir",
+                "activate"
+              ]
+            },
+            "description": "API Kurir otomatis memilih key RajaOngkir aktif milik merchant."
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Seller RajaOngkir Provider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_version\": {{shipping_provider_version}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{base_url}}/api/v1/integrations/providers/rajaongkir/deactivate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "providers", "rajaongkir", "deactivate"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "providers",
+                "rajaongkir",
+                "deactivate"
+              ]
             },
-            "description": "Memerlukan scope shipping:write. Provider efektif otomatis kembali ke Emisell Kurir."
+            "description": "Mengembalikan provider efektif ke Emisell Kurir."
           },
           "response": []
         },
@@ -1017,17 +1229,24 @@
             "method": "GET",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               }
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/integrations/shipping-services",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "shipping-services"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "shipping-services"
+              ]
             },
-            "description": "Memerlukan scope shipping:read. Mengembalikan katalog canonical, grup, capability, dan status checkbox none/partial/all milik merchant."
+            "description": "Mengembalikan katalog canonical dan pilihan checkout merchant."
           },
           "response": []
         },
@@ -1052,8 +1271,8 @@
             "method": "PUT",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               },
               {
@@ -1065,14 +1284,25 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"mode\": \"custom\",\n  \"enabled_groups\": [],\n  \"services\": [\n    { \"courier_code\": \"jne\", \"service_code\": \"REG\" },\n    { \"courier_code\": \"jne\", \"service_code\": \"YES\" },\n    { \"courier_code\": \"jnt\", \"service_code\": \"EZ\" }\n  ]\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{base_url}}/api/v1/integrations/shipping-services",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "shipping-services"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "shipping-services"
+              ]
             },
-            "description": "Memerlukan scope shipping:write. PUT mengganti seluruh pilihan merchant secara atomik; merchant_id selalu berasal dari claim sub."
+            "description": "Mengganti seluruh pilihan merchant secara atomik; merchant berasal dari header backend."
           },
           "response": []
         },
@@ -1082,8 +1312,8 @@
             "method": "POST",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               },
               {
@@ -1095,14 +1325,26 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"fulfillment_id\": \"{{fulfillment_id}}\",\n  \"courier\": \"{{courier}}\",\n  \"waybill\": \"{{waybill}}\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{base_url}}/api/v1/integrations/tracking/subscriptions",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "tracking", "subscriptions"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "tracking",
+                "subscriptions"
+              ]
             },
-            "description": "Memerlukan scope tracking:write. Mendaftarkan satu AWB ke checkpoint worker; response 202 berarti validasi sedang antre."
+            "description": "Mendaftarkan AWB ke checkpoint worker; response 202 berarti validasi sedang antre."
           },
           "response": []
         },
@@ -1112,17 +1354,26 @@
             "method": "GET",
             "header": [
               {
-                "key": "X-Emisell-Tenant-Token",
-                "value": "{{tenant_token}}",
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
                 "type": "text"
               }
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/integrations/tracking/subscriptions/{{fulfillment_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "integrations", "tracking", "subscriptions", "{{fulfillment_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "tracking",
+                "subscriptions",
+                "{{fulfillment_id}}"
+              ]
             },
-            "description": "Memerlukan scope tracking:read. Hanya membaca snapshot lokal dan tidak memakai hit RajaOngkir/Biteship."
+            "description": "Membaca snapshot lokal tanpa hit RajaOngkir/Biteship."
           },
           "response": []
         }
@@ -1148,8 +1399,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/overview",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "overview"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "overview"
+              ]
             }
           },
           "response": []
@@ -1161,8 +1418,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/catalog",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "catalog"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "catalog"
+              ]
             }
           },
           "response": []
@@ -1174,8 +1437,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/locations?search={{destination_search}}&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "locations"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "locations"
+              ],
               "query": [
                 {
                   "key": "search",
@@ -1197,8 +1466,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/couriers",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "couriers"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "couriers"
+              ]
             },
             "description": "Daftar kurir dan layanan untuk menu Cek Ongkir dan Cek Resi dashboard."
           },
@@ -1229,8 +1504,15 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/calculate/domestic-cost",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "calculate", "domestic-cost"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "calculate",
+                "domestic-cost"
+              ]
             },
             "description": "Cek ongkir operasional memakai admin key dan rate engine yang sama dengan endpoint customer."
           },
@@ -1257,8 +1539,15 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/track/waybill",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "track", "waybill"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "track",
+                "waybill"
+              ]
             },
             "description": "Cek resi operasional cukup menggunakan nomor resi dan kode ekspedisi."
           },
@@ -1271,8 +1560,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/rate-snapshots?limit=50&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "rate-snapshots"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "rate-snapshots"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -1294,8 +1589,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/location-mappings?limit=50&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "location-mappings"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "location-mappings"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -1317,8 +1618,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/provider-quotas?limit=30",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "provider-quotas"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "provider-quotas"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -1336,8 +1643,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/provider-credentials",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "provider-credentials"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "provider-credentials"
+              ]
             },
             "description": "Membaca metadata key provider yang sudah dimasking. Secret dan ciphertext tidak pernah dikembalikan."
           },
@@ -1386,8 +1699,14 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/provider-credentials",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "provider-credentials"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "provider-credentials"
+              ]
             },
             "description": "Key diuji langsung ke RajaOngkir, dienkripsi AES-256-GCM, dan langsung masuk rotasi runtime. Validasi memakai satu hit provider."
           },
@@ -1436,8 +1755,14 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/provider-credentials",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "provider-credentials"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "provider-credentials"
+              ]
             },
             "description": "Token diuji melalui katalog kurir lalu disimpan terenkripsi. Token ini hanya dipakai untuk fallback tracking seperti SiCepat, bukan cek ongkir."
           },
@@ -1455,7 +1780,9 @@
             ],
             "url": {
               "raw": "{{base_url}}/v1/admin/provider-credentials/{{provider_credential_id}}/disable",
-              "host": ["{{base_url}}"],
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "v1",
                 "admin",
@@ -1475,8 +1802,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/tracking-webhook",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "tracking-webhook"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "tracking-webhook"
+              ]
             },
             "description": "Membaca URL, status aktif, mask secret, dan hasil test terakhir. Plaintext secret tidak pernah dikembalikan."
           },
@@ -1507,8 +1840,14 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/admin/tracking-webhook",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "tracking-webhook"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "tracking-webhook"
+              ]
             },
             "description": "Simpan URL terlebih dahulu dalam kondisi nonaktif. Setelah secret disalin ke Emisell dan test berhasil, ubah enabled menjadi true."
           },
@@ -1540,8 +1879,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/v1/admin/tracking-webhook/secret",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "tracking-webhook", "secret"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "tracking-webhook",
+                "secret"
+              ]
             },
             "description": "Generate atau rotate secret HMAC 256-bit. Plaintext hanya tampil pada response ini."
           },
@@ -1559,8 +1905,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/v1/admin/tracking-webhook/test",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "tracking-webhook", "test"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "tracking-webhook",
+                "test"
+              ]
             },
             "description": "Mengirim tracking.test bertanda tangan tanpa merchant, order, AWB, alamat, atau identitas penerima."
           },
@@ -1573,8 +1926,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/v1/admin/api-keys?limit=100&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "api-keys"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "api-keys"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -1620,8 +1979,14 @@
             ],
             "url": {
               "raw": "{{base_url}}/v1/admin/api-keys",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "admin", "api-keys"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "api-keys"
+              ]
             },
             "description": "Tidak memerlukan body. Key dibuat tanpa nama dan tanpa masa berlaku. Secret lengkap hanya tampil pada response ini dan tidak disimpan otomatis."
           },
@@ -1639,7 +2004,9 @@
             ],
             "url": {
               "raw": "{{base_url}}/v1/admin/api-keys/{{customer_api_key_id}}/revoke",
-              "host": ["{{base_url}}"],
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "v1",
                 "admin",

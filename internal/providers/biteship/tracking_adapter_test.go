@@ -8,35 +8,44 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/emisell/api-kurir/internal/tracking"
 )
 
 type credentialResolverStub struct {
-	secret string
-	alias  string
-	limit  int64
-	err    error
+	secret     string
+	alias      string
+	limit      int64
+	err        error
+	seenTenant *string
 }
 
 func (r credentialResolverStub) ResolveProviderCredential(
-	context.Context,
-	string,
+	ctx context.Context,
+	_ string,
 ) (string, string, int64, error) {
+	if r.seenTenant != nil {
+		*r.seenTenant = tenancy.TenantID(ctx)
+	}
 	return r.secret, r.alias, r.limit, r.err
 }
 
 type quotaStub struct {
-	calls int
-	err   error
+	calls      int
+	err        error
+	seenTenant *string
 }
 
 func (q *quotaStub) ConsumeProviderHit(
-	context.Context,
-	string,
-	string,
-	int64,
+	ctx context.Context,
+	_ string,
+	_ string,
+	_ int64,
 ) error {
 	q.calls++
+	if q.seenTenant != nil {
+		*q.seenTenant = tenancy.TenantID(ctx)
+	}
 	return q.err
 }
 
@@ -68,10 +77,13 @@ func TestTrackingAdapterNormalizesPublicTracking(t *testing.T) {
 	}))
 	defer server.Close()
 
-	quota := &quotaStub{}
+	resolverTenant := "not-called"
+	quotaTenant := "not-called"
+	quota := &quotaStub{seenTenant: &quotaTenant}
 	adapter := NewDynamicTrackingAdapter(
 		credentialResolverStub{
 			secret: "biteship_test.valid", alias: "biteship-test", limit: 100,
+			seenTenant: &resolverTenant,
 		},
 		server.URL,
 		time.Second,
@@ -79,7 +91,11 @@ func TestTrackingAdapterNormalizesPublicTracking(t *testing.T) {
 		nil,
 		[]string{"sicepat"},
 	)
-	result, err := adapter.Track(context.Background(), tracking.Request{
+	ctx := tenancy.WithIdentity(
+		context.Background(),
+		tenancy.Identity{TenantID: "merchant_123"},
+	)
+	result, err := adapter.Track(ctx, tracking.Request{
 		CourierCode: "sicepat", Waybill: "AWB123456",
 	})
 	if err != nil {
@@ -94,6 +110,13 @@ func TestTrackingAdapterNormalizesPublicTracking(t *testing.T) {
 	}
 	if result.NextRefreshAt == nil || result.NextRefreshAt.Sub(result.FetchedAt) != 12*time.Hour {
 		t.Fatalf("expected economical twelve-hour checkpoint, got %#v", result.NextRefreshAt)
+	}
+	if resolverTenant != "" || quotaTenant != "" {
+		t.Fatalf(
+			"platform fallback must use global credential/quota: resolver=%q quota=%q",
+			resolverTenant,
+			quotaTenant,
+		)
 	}
 }
 

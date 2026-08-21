@@ -44,7 +44,6 @@ type TrackingOperationSummary struct {
 type TrackingOperation struct {
 	ID                   string     `json:"id"`
 	TenantID             string     `json:"tenant_id,omitempty"`
-	DomainID             string     `json:"domain_id,omitempty"`
 	OrderReference       string     `json:"order_id,omitempty"`
 	FulfillmentReference string     `json:"fulfillment_id,omitempty"`
 	SubscriptionRevision int        `json:"subscription_revision,omitempty"`
@@ -81,7 +80,7 @@ type TrackingOperationPage struct {
 type RateSnapshot struct {
 	ID                   string     `json:"id"`
 	TenantID             string     `json:"tenant_id,omitempty"`
-	IntegrationID        string     `json:"integration_id,omitempty"`
+	ProviderCredentialID string     `json:"provider_credential_id,omitempty"`
 	OriginPublicID       string     `json:"origin_public_id"`
 	OriginLabel          string     `json:"origin_label"`
 	DestinationPublicID  string     `json:"destination_public_id"`

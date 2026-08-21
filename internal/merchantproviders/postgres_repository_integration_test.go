@@ -70,21 +70,18 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 
 	version := initial.Version
 	active, err := service.Activate(ctx, tenantID, "rajaongkir", ChangeInput{
-		CredentialID:    credentialID,
 		ExpectedVersion: &version,
 		UpdatedBy:       "integration-test",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if active.ActiveProviderCode != "rajaongkir" || active.Version != 1 ||
-		active.ActiveCredentialID == nil || *active.ActiveCredentialID != credentialID {
+	if active.ActiveProviderCode != "rajaongkir" || active.Version != 1 {
 		t.Fatalf("unexpected active catalog: %#v", active)
 	}
 
 	_, err = service.Activate(ctx, otherTenantID, "rajaongkir", ChangeInput{
-		CredentialID: credentialID,
-		UpdatedBy:    "integration-test",
+		UpdatedBy: "integration-test",
 	})
 	if !errors.Is(err, ErrCredentialUnavailable) {
 		t.Fatalf("cross-tenant credential error=%v want ErrCredentialUnavailable", err)
@@ -102,8 +99,7 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fallback.ActiveProviderCode != DefaultProviderCode || fallback.Version != 2 ||
-		fallback.ActiveCredentialID != nil {
+	if fallback.ActiveProviderCode != DefaultProviderCode || fallback.Version != 2 {
 		t.Fatalf("credential disable did not fallback safely: %#v", fallback)
 	}
 }

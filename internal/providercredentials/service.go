@@ -24,6 +24,10 @@ var supportedProviderCodes = map[string]struct{}{
 	"biteship":   {},
 }
 
+var tenantProviderCodes = map[string]struct{}{
+	"rajaongkir": {},
+}
+
 type Validator interface {
 	Validate(ctx context.Context, providerCode, secret string) error
 }
@@ -71,8 +75,12 @@ func (s *Service) AddForTenant(
 	actor, requestID string,
 ) (Credential, error) {
 	tenantID = strings.TrimSpace(tenantID)
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	if !validTenantID(tenantID) {
 		return Credential{}, ErrInvalidTenant
+	}
+	if _, supported := tenantProviderCodes[providerCode]; !supported {
+		return Credential{}, ErrUnsupportedProvider
 	}
 	if dailyLimit == 0 {
 		dailyLimit = DefaultDailyLimit
@@ -150,15 +158,25 @@ func (s *Service) Disable(ctx context.Context, id, actor, requestID string) erro
 	return s.repository.Disable(ctx, id, actor, requestID)
 }
 
-func (s *Service) DisableForTenant(
+func (s *Service) DisableForTenantProvider(
 	ctx context.Context,
-	tenantID, id, actor, requestID string,
+	tenantID, providerCode, actor, requestID string,
 ) error {
 	tenantID = strings.TrimSpace(tenantID)
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	if !validTenantID(tenantID) {
 		return ErrInvalidTenant
 	}
-	return s.repository.DisableForTenant(ctx, tenantID, id, actor, requestID)
+	if _, supported := tenantProviderCodes[providerCode]; !supported {
+		return ErrUnsupportedProvider
+	}
+	return s.repository.DisableForTenantProvider(
+		ctx,
+		tenantID,
+		providerCode,
+		actor,
+		requestID,
+	)
 }
 
 func (s *Service) ResolveProviderCredential(
@@ -166,12 +184,6 @@ func (s *Service) ResolveProviderCredential(
 	providerCode string,
 ) (string, string, int64, error) {
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
-	if _, tenantRequest := tenancy.FromContext(ctx); tenantRequest &&
-		tenancy.IntegrationID(ctx) == "" {
-		// No integration ID means the merchant selected Emisell Kurir/free mode.
-		// Never consume a paid seller credential implicitly.
-		return "", "", 0, ErrNoActiveCredential
-	}
 	stored, err := s.repository.ResolveActive(ctx, providerCode)
 	if err != nil {
 		return "", "", 0, err
@@ -185,6 +197,37 @@ func (s *Service) ResolveProviderCredential(
 		return "", "", 0, err
 	}
 	return string(plaintext), stored.CredentialAlias, stored.DailyLimit, nil
+}
+
+// ActiveCredentialID resolves the credential selected internally for a
+// merchant. It is intentionally not part of the external Emisell contract.
+func (s *Service) ActiveCredentialID(
+	ctx context.Context,
+	tenantID, providerCode string,
+) (string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
+	if !validTenantID(tenantID) {
+		return "", ErrInvalidTenant
+	}
+	if _, supported := supportedProviderCodes[providerCode]; !supported {
+		return "", ErrUnsupportedProvider
+	}
+	return s.repository.ActiveCredentialID(ctx, tenantID, providerCode)
+}
+
+// SelectedCredentialID is used by rate snapshots. An empty value means the
+// merchant is on the built-in/free provider and therefore has no paid
+// credential to pin.
+func (s *Service) SelectedCredentialID(
+	ctx context.Context,
+	tenantID, providerCode string,
+) (string, error) {
+	id, err := s.ActiveCredentialID(ctx, tenantID, providerCode)
+	if errors.Is(err, ErrNoActiveCredential) {
+		return "", nil
+	}
+	return id, err
 }
 
 func newUUID() (string, error) {

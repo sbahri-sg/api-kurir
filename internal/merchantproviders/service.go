@@ -60,7 +60,6 @@ func (s *Service) Deactivate(
 	if providerCode == DefaultProviderCode {
 		return Catalog{}, ErrDefaultProvider
 	}
-	input.CredentialID = ""
 	return s.repository.Deactivate(ctx, tenantID, providerCode, input)
 }
 
@@ -77,11 +76,7 @@ func normalizeChange(
 	if !validProviderCode(providerCode) {
 		return "", "", ChangeInput{}, ErrInvalidProvider
 	}
-	input.CredentialID = strings.TrimSpace(input.CredentialID)
 	input.UpdatedBy = strings.TrimSpace(input.UpdatedBy)
-	if input.CredentialID != "" && !validUUID(input.CredentialID) {
-		return "", "", ChangeInput{}, ErrInvalidCredential
-	}
 	if input.ExpectedVersion != nil && *input.ExpectedVersion < 0 {
 		return "", "", ChangeInput{}, ErrVersionConflict
 	}
@@ -115,27 +110,6 @@ func validProviderCode(value string) bool {
 			continue
 		}
 		return false
-	}
-	return true
-}
-
-func validUUID(value string) bool {
-	if len(value) != 36 {
-		return false
-	}
-	for index, character := range value {
-		switch index {
-		case 8, 13, 18, 23:
-			if character != '-' {
-				return false
-			}
-		default:
-			if !((character >= '0' && character <= '9') ||
-				(character >= 'a' && character <= 'f') ||
-				(character >= 'A' && character <= 'F')) {
-				return false
-			}
-		}
 	}
 	return true
 }

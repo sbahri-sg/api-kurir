@@ -76,11 +76,11 @@ export const API_DOCUMENTATION_CONTRACTS: ApiDocumentationContractDefinition[] =
     status: "Stable",
     audience: "Backend Emisell yang membawa konteks merchant terverifikasi",
     basePath: "/api/v1",
-    idFormat: "merchant_id Emisell + UUID credential provider",
+    idFormat: "merchant_id Emisell yang stabil",
     authentication:
-      "Customer API key + X-Emisell-Tenant-Token bertanda tangan Ed25519",
+      "Dedicated service API key + X-Emisell-Merchant-ID",
     description:
-      "Kontrak tenant-aware untuk menyimpan key provider milik seller dan memastikan tarif, tracking, snapshot, serta kuota tidak bercampur antar-merchant.",
+      "Kontrak backend-to-backend untuk menyimpan key provider milik seller dan memastikan tarif, tracking, snapshot, serta kuota tidak bercampur antar-merchant. API Kurir memilih credential internal secara otomatis.",
   },
   {
     id: "admin",
@@ -1429,7 +1429,7 @@ key: {{api_key}}`,
     title: "Verifikasi AWB sebelum disimpan",
     description:
       "Memeriksa AWB ke ekspedisi pilihan seller. Jika tidak ditemukan, API Kurir mencoba maksimal dua kandidat kuat berdasarkan format. Pola hanya petunjuk; format baru tetap diproses ke provider yang dipilih.",
-    authentication: "Customer API key; tenant token digunakan bila tersedia",
+    authentication: "Customer API key; X-Emisell-Merchant-ID opsional",
     parameters: [
       "courier — ekspedisi yang dipilih seller",
       "waybill — AWB 6–40 karakter",
@@ -1463,18 +1463,17 @@ Content-Type: application/json
     title: "Daftarkan tracking fulfillment",
     description:
       "Mendaftarkan AWB satu kali untuk checkpoint tracking hemat. Worker melakukan maksimal 10 hit sepanjang siklus, sedangkan pembacaan seller/customer selalu memakai snapshot lokal.",
-    authentication:
-      "Customer API key + tenant token dengan scope tracking:write",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     parameters: [
       "order_id — ID order Emisell, maksimal 128 karakter",
       "fulfillment_id — ID fulfillment unik dalam merchant",
       "courier — kode kurir canonical",
       "waybill — AWB 6–40 karakter",
-      "merchant_id tidak dikirim; diambil dari claim sub",
+      "merchant_id dikirim melalui header, bukan body",
     ],
     request: `POST {{base_url}}/api/v1/integrations/tracking/subscriptions
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}
+X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/json
 
 {
@@ -1516,8 +1515,7 @@ Content-Type: application/json
     title: "Ganti AWB fulfillment dengan aman",
     description:
       "AWB lama tetap aktif saat AWB baru diverifikasi. Setelah valid dan sesuai courier, pergantian dilakukan atomik, revision naik satu, dan hubungan AWB lama disimpan sebagai audit. Status final dikunci.",
-    authentication:
-      "Customer API key + tenant token dengan scope tracking:write",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     parameters: [
       "fulfillment_id — fulfillment yang akan diganti",
       "expected_revision — revision terakhir yang dibaca Emisell; wajib",
@@ -1525,7 +1523,7 @@ Content-Type: application/json
     ],
     request: `PUT {{base_url}}/api/v1/integrations/tracking/subscriptions/fulfillment_123
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}
+X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/json
 
 {
@@ -1557,12 +1555,11 @@ Content-Type: application/json
     title: "Baca snapshot tracking fulfillment",
     description:
       "Hanya membaca snapshot PostgreSQL berdasarkan merchant dan fulfillment. Endpoint ini tidak memanggil RajaOngkir/Biteship dan aman dipakai berulang oleh backend Emisell.",
-    authentication:
-      "Customer API key + tenant token dengan scope tracking:read",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     parameters: ["fulfillment_id — ID fulfillment yang sebelumnya didaftarkan"],
     request: `GET {{base_url}}/api/v1/integrations/tracking/subscriptions/{{fulfillment_id}}
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}`,
+X-Emisell-Merchant-ID: {{merchant_id}}`,
     response: `{
   "meta": {
     "message": "Success Get Tracking Subscription",
@@ -1597,17 +1594,14 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     path: "/api/v1/integrations/provider-credentials",
     title: "Daftar credential provider milik merchant",
     description:
-      "Hanya mengembalikan credential yang tenant_id-nya sama dengan claim sub. Secret asli tidak pernah dikembalikan.",
-    authentication:
-      "Customer API key + tenant token dengan scope provider-credentials:read",
+      "Mengembalikan metadata key provider milik merchant tanpa secret, UUID internal, atau tenant_id.",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}`,
+X-Emisell-Merchant-ID: {{merchant_id}}`,
     response: `{
   "data": [
     {
-      "id": "11111111-2222-4333-8444-555555555555",
-      "tenant_id": "merchant_123",
       "provider_code": "rajaongkir",
       "display_key": "demo••••1234",
       "daily_limit": 50000,
@@ -1625,12 +1619,11 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     path: "/api/v1/integrations/provider-credentials",
     title: "Hubungkan key RajaOngkir seller",
     description:
-      "Memvalidasi key ke provider, mengenkripsinya dengan AES-256-GCM, dan mengikat credential ke merchant dari tenant token. Validasi menggunakan satu hit provider.",
-    authentication:
-      "Customer API key + tenant token dengan scope provider-credentials:write",
+      "Memvalidasi key ke provider, mengenkripsinya dengan AES-256-GCM, dan mengikat credential ke merchant dari header. Key baru otomatis menggantikan key aktif lama untuk provider yang sama.",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}
+X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/json
 
 {
@@ -1640,8 +1633,6 @@ Content-Type: application/json
 }`,
     response: `{
   "data": {
-    "id": "11111111-2222-4333-8444-555555555555",
-    "tenant_id": "merchant_123",
     "provider_code": "rajaongkir",
     "display_key": "demo••••1234",
     "daily_limit": 50000,
@@ -1655,16 +1646,15 @@ Content-Type: application/json
     contract: "gateway",
     scope: "customer",
     method: "POST",
-    path: "/api/v1/integrations/provider-credentials/{id}/disable",
+    path: "/api/v1/integrations/provider-credentials/{provider_code}/disable",
     title: "Putuskan credential seller",
     description:
-      "Menonaktifkan credential hanya bila UUID tersebut dimiliki merchant pada tenant token.",
-    authentication:
-      "Customer API key + tenant token dengan scope provider-credentials:write",
-    parameters: ["id — UUID credential milik merchant aktif"],
-    request: `POST {{base_url}}/api/v1/integrations/provider-credentials/{{credential_id}}/disable
+      "Menonaktifkan key aktif merchant berdasarkan provider code. Emisell tidak menyimpan credential ID.",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
+    parameters: ["provider_code — saat ini rajaongkir"],
+    request: `POST {{base_url}}/api/v1/integrations/provider-credentials/rajaongkir/disable
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}`,
+X-Emisell-Merchant-ID: {{merchant_id}}`,
     response: `HTTP 204 No Content`,
   },
   {
@@ -1675,11 +1665,10 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     title: "Katalog provider dan extension aktif",
     description:
       "Menampilkan Emisell Kurir sebagai provider bawaan, provider eksternal yang telah memiliki credential valid, kesiapan adapter, dan tepat satu provider efektif yang aktif untuk merchant.",
-    authentication:
-      "Customer API key + tenant token dengan scope shipping:read",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/providers
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}`,
+X-Emisell-Merchant-ID: {{merchant_id}}`,
     response: `{
   "data": {
     "active_provider_code": "emisell",
@@ -1724,35 +1713,30 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     path: "/api/v1/integrations/providers/{provider_code}/activate",
     title: "Aktifkan satu provider merchant",
     description:
-      "Mengganti provider aktif secara atomik. RajaOngkir memerlukan credential_id merchant yang valid; Emisell Kurir tidak memerlukan credential. expected_version mencegah perubahan paralel saling menimpa.",
-    authentication:
-      "Customer API key + tenant token dengan scope shipping:write",
+      "Mengganti provider aktif secara atomik. API Kurir otomatis memilih key aktif milik merchant untuk provider eksternal. expected_version mencegah perubahan paralel saling menimpa.",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     parameters: [
       "provider_code — emisell atau provider eksternal yang available",
-      "credential_id — wajib untuk provider eksternal",
       "expected_version — version terakhir dari GET providers",
     ],
     request: `POST {{base_url}}/api/v1/integrations/providers/rajaongkir/activate
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}
+X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/json
 
 {
-  "credential_id": "11111111-2222-4333-8444-555555555555",
   "expected_version": 0
 }`,
     response: `{
   "data": {
     "active_provider_code": "rajaongkir",
-    "active_credential_id": "11111111-2222-4333-8444-555555555555",
     "version": 1,
     "providers": [
       { "code": "emisell", "active": false, "installed": true },
       {
         "code": "rajaongkir",
         "active": true,
-        "installed": true,
-        "credential_id": "11111111-2222-4333-8444-555555555555"
+        "installed": true
       }
     ]
   },
@@ -1767,15 +1751,14 @@ Content-Type: application/json
     title: "Nonaktifkan provider dan kembali ke Emisell",
     description:
       "Menonaktifkan provider eksternal yang sedang dipakai dan otomatis mengaktifkan Emisell Kurir. Provider yang sudah tidak aktif menghasilkan respons sukses yang sama agar aman diulang.",
-    authentication:
-      "Customer API key + tenant token dengan scope shipping:write",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     parameters: [
       "provider_code — provider eksternal yang ingin dinonaktifkan",
       "expected_version — version terakhir dari GET providers",
     ],
     request: `POST {{base_url}}/api/v1/integrations/providers/rajaongkir/deactivate
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}
+X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/json
 
 { "expected_version": 1 }`,
@@ -1799,11 +1782,10 @@ Content-Type: application/json
     title: "Katalog dan pilihan layanan checkout",
     description:
       "Mengembalikan kurir canonical, grup layanan, capability yang tersedia, serta status none/partial/all berdasarkan preferensi merchant. Merchant lama yang belum menyimpan preferensi tetap memakai perilaku allow-all.",
-    authentication:
-      "Customer API key + tenant token dengan scope shipping:read",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/shipping-services
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}`,
+X-Emisell-Merchant-ID: {{merchant_id}}`,
     response: `{
   "data": {
     "preference": {
@@ -1867,17 +1849,16 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     title: "Simpan layanan yang tampil di checkout",
     description:
       "Mengganti preferensi merchant secara atomik. Gunakan custom untuk checkbox per layanan seperti Tokopedia, groups untuk aktivasi otomatis berdasarkan kategori, atau all untuk seluruh layanan canonical yang sudah dikenali.",
-    authentication:
-      "Customer API key + tenant token dengan scope shipping:write",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     parameters: [
       "mode — all, groups, atau custom",
       "enabled_groups — wajib hanya pada mode groups",
       "services — pasangan courier_code + canonical service_code, dipakai hanya pada mode custom",
-      "merchant_id tidak boleh dikirim; tenant selalu diambil dari claim sub",
+      "merchant_id dikirim melalui header dan tidak diterima dari body",
     ],
     request: `PUT {{base_url}}/api/v1/integrations/shipping-services
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}
+X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/json
 
 {
@@ -1912,12 +1893,11 @@ Content-Type: application/json
     path: "/api/v1/calculate/district/domestic-cost",
     title: "Cek ongkir dengan key seller",
     description:
-      "Kontrak respons tetap RajaOngkir V2, tetapi credential dipilih dari sub dan integration_id wajib dalam tenant token. Snapshot dipisahkan per merchant dan integrasi.",
-    authentication:
-      "Customer API key + tenant token dengan scope shipping:read",
+      "Kontrak respons tetap RajaOngkir V2. API Kurir memilih credential dari provider aktif merchant dan mengisolasi snapshot per merchant tanpa credential ID dari Emisell.",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}
+X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/x-www-form-urlencoded
 
 origin=442&destination=1354&weight=1200&courier=jne`,
@@ -1930,12 +1910,11 @@ origin=442&destination=1354&weight=1200&courier=jne`,
     path: "/api/v1/track/waybill",
     title: "Tracking dengan key seller",
     description:
-      "Tracking sinkron dan refresh worker mempertahankan tenant_id serta credential integration_id milik order. Kurir fallback seperti SiCepat dapat dijawab Biteship tanpa mengubah kontrak respons.",
-    authentication:
-      "Customer API key + tenant token dengan scope tracking:read",
+      "Tracking sinkron dan refresh worker mempertahankan merchant serta credential internal milik order. Kurir fallback seperti SiCepat dapat dijawab Biteship tanpa mengubah kontrak respons.",
+    authentication: "Dedicated service API key + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/track/waybill
 key: {{api_key}}
-X-Emisell-Tenant-Token: {{tenant_token}}
+X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/x-www-form-urlencoded
 
 awb=TEST123456789&courier=sicepat`,

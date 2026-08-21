@@ -51,18 +51,51 @@ func (r *memoryRepository) Disable(context.Context, string, string, string) erro
 	return nil
 }
 
-func (r *memoryRepository) DisableForTenant(
+func (r *memoryRepository) DisableForTenantProvider(
 	_ context.Context,
-	tenantID, _ string,
+	tenantID, providerCode string,
 	_ string,
 	_ string,
 ) error {
-	if r.item.TenantID != tenantID {
+	if r.item.TenantID != tenantID || r.item.ProviderCode != providerCode {
 		return ErrNotFound
 	}
 	r.disabled = true
 	r.item.Active = false
 	return nil
+}
+
+func TestTenantCannotInstallInternalFallbackProvider(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(&memoryRepository{}, cipher, &acceptingValidator{})
+	_, err = service.AddForTenant(
+		context.Background(),
+		"merchant_123",
+		"biteship",
+		"biteship_test.provider-secret",
+		50_000,
+		"tenant:merchant_123",
+		"req_test",
+	)
+	if !errors.Is(err, ErrUnsupportedProvider) {
+		t.Fatalf("expected internal fallback provider rejection, got %v", err)
+	}
+}
+
+func (r *memoryRepository) ActiveCredentialID(
+	_ context.Context,
+	tenantID, providerCode string,
+) (string, error) {
+	if r.item.ID == "" || r.disabled || r.item.TenantID != tenantID ||
+		r.item.ProviderCode != providerCode {
+		return "", ErrNoActiveCredential
+	}
+	return r.item.ID, nil
 }
 
 func (r *memoryRepository) ResolveActive(context.Context, string) (StoredCredential, error) {
@@ -210,7 +243,7 @@ func TestTenantCredentialIsOwnedAndUsesConfiguredLimit(t *testing.T) {
 	}
 }
 
-func TestTenantProviderResolutionRequiresExplicitIntegrationID(t *testing.T) {
+func TestTenantProviderResolutionUsesMerchantActiveCredential(t *testing.T) {
 	t.Parallel()
 
 	cipher, err := NewCipher(testEncryptionKey)
@@ -232,15 +265,9 @@ func TestTenantProviderResolutionRequiresExplicitIntegrationID(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant_123"})
-	if _, _, _, err := service.ResolveProviderCredential(ctx, "rajaongkir"); !errors.Is(err, ErrNoActiveCredential) {
-		t.Fatalf("tenant without integration ID must stay on free mode: %v", err)
-	}
-	ctx = tenancy.WithIdentity(context.Background(), tenancy.Identity{
-		TenantID: "merchant_123", IntegrationID: repository.item.ID,
-	})
 	secret, _, _, err := service.ResolveProviderCredential(ctx, "rajaongkir")
 	if err != nil || secret != "tenant-provider-secret" {
-		t.Fatalf("explicit tenant integration was not resolved: secret=%q err=%v", secret, err)
+		t.Fatalf("merchant active credential was not resolved: secret=%q err=%v", secret, err)
 	}
 }
 

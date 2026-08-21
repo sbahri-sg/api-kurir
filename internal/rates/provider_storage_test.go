@@ -47,11 +47,11 @@ func TestProviderRequestFingerprintIsolatedByTenantAndIntegration(t *testing.T) 
 	}
 	tenantA := base
 	tenantA.TenantID = "merchant_a"
-	tenantA.IntegrationID = "credential_a"
+	tenantA.ProviderCredentialID = "credential_a"
 	tenantB := tenantA
 	tenantB.TenantID = "merchant_b"
 	secondIntegration := tenantA
-	secondIntegration.IntegrationID = "credential_b"
+	secondIntegration.ProviderCredentialID = "credential_b"
 
 	baseFingerprint := providerRequestFingerprint(base)
 	if baseFingerprint == providerRequestFingerprint(tenantA) ||
