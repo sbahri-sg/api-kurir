@@ -127,6 +127,7 @@ func (trackingHTTPRepositoryStub) UpsertSubscription(
 	string,
 	string,
 	string,
+	int,
 ) (tracking.Subscription, error) {
 	return tracking.Subscription{}, nil
 }

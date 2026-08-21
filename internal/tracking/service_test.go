@@ -149,6 +149,7 @@ func (r *trackingRepositoryStub) UpsertSubscription(
 	_ context.Context,
 	_ string,
 	orderReference, fulfillmentReference string,
+	_ int,
 ) (Subscription, error) {
 	return Subscription{
 		ID: "subscription-1", OrderReference: orderReference,

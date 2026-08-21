@@ -57,6 +57,186 @@ func (r *PostgresRepository) Overview(ctx context.Context) (Overview, error) {
 	return result, nil
 }
 
+func (r *PostgresRepository) ListTrackingOperations(
+	ctx context.Context,
+	filter TrackingOperationFilter,
+) (TrackingOperationPage, error) {
+	filter.Search = strings.TrimSpace(filter.Search)
+	filter.CourierCode = strings.ToLower(strings.TrimSpace(filter.CourierCode))
+	filter.ValidationStatus = strings.ToLower(strings.TrimSpace(filter.ValidationStatus))
+	filter.QueueStatus = strings.ToLower(strings.TrimSpace(filter.QueueStatus))
+
+	var page TrackingOperationPage
+	err := r.pool.QueryRow(ctx, `
+		SELECT count(*),
+		       count(*) FILTER (WHERE job.status = 'pending'),
+		       count(*) FILTER (WHERE job.status = 'running'),
+		       count(*) FILTER (WHERE job.status = 'dead'),
+		       count(*) FILTER (WHERE shipment.validation_status = 'invalid'),
+		       count(*) FILTER (WHERE shipment.is_final)
+		FROM tracking_shipments shipment
+		LEFT JOIN LATERAL (
+			SELECT status
+			FROM tracking_refresh_jobs
+			WHERE shipment_id = shipment.id
+			ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'dead' THEN 2 ELSE 3 END,
+			         updated_at DESC
+			LIMIT 1
+		) job ON true
+	`).Scan(&page.Summary.Total, &page.Summary.Pending, &page.Summary.Running,
+		&page.Summary.Failed, &page.Summary.Invalid, &page.Summary.Final)
+	if err != nil {
+		return TrackingOperationPage{}, fmt.Errorf("summarize tracking operations: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		WITH operations AS (
+			SELECT shipment.id::text,
+			       shipment.tenant_id,
+			       coalesce(subscription.domain_id, '') AS domain_id,
+			       coalesce(subscription.order_reference, '') AS order_reference,
+			       coalesce(subscription.fulfillment_reference, '') AS fulfillment_reference,
+			       coalesce(subscription.revision, 0) AS subscription_revision,
+			       coalesce(revisions.history_count, 0) AS revision_history_count,
+			       shipment.courier_code,
+			       shipment.waybill_masked,
+			       shipment.validation_status,
+			       shipment.normalized_status,
+			       coalesce(shipment.status_label, '') AS status_label,
+			       coalesce(shipment.provider_code, '') AS provider_code,
+			       shipment.provider_fetched_at,
+			       shipment.next_refresh_at,
+			       shipment.is_final,
+			       coalesce(shipment.last_error_code, '') AS last_error_code,
+			       shipment.provider_hit_count,
+			       shipment.provider_hit_limit,
+			       CASE
+			         WHEN shipment.is_final THEN 'final'
+			         WHEN job.status IS NULL THEN 'idle'
+			         ELSE job.status
+			       END AS queue_status,
+			       coalesce(job.attempt_count, 0) AS job_attempt_count,
+			       coalesce(job.max_attempts, 0) AS job_max_attempts,
+			       job.available_at,
+			       job.locked_at,
+			       coalesce(job.locked_by, '') AS job_locked_by,
+			       shipment.created_at,
+			       shipment.updated_at
+			FROM tracking_shipments shipment
+			LEFT JOIN LATERAL (
+				SELECT *
+				FROM tracking_subscriptions
+				WHERE shipment_id = shipment.id AND active
+				ORDER BY updated_at DESC
+				LIMIT 1
+			) subscription ON true
+			LEFT JOIN LATERAL (
+				SELECT count(*)::integer AS history_count
+				FROM tracking_subscription_revisions
+				WHERE subscription_id = subscription.id
+			) revisions ON true
+			LEFT JOIN LATERAL (
+				SELECT status, attempt_count, max_attempts, available_at,
+				       locked_at, locked_by, updated_at
+				FROM tracking_refresh_jobs
+				WHERE shipment_id = shipment.id
+				ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'dead' THEN 2 ELSE 3 END,
+				         updated_at DESC
+				LIMIT 1
+			) job ON true
+		)
+		SELECT operations.*, count(*) OVER()
+		FROM operations
+		WHERE ($1 = '' OR lower(
+			courier_code || ' ' || waybill_masked || ' ' || tenant_id || ' ' ||
+			order_reference || ' ' || fulfillment_reference || ' ' || provider_code
+		) LIKE '%' || lower($1) || '%')
+		  AND ($2 = '' OR courier_code = $2)
+		  AND ($3 = '' OR validation_status = $3)
+		  AND ($4 = '' OR queue_status = $4)
+		ORDER BY CASE queue_status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'dead' THEN 2 ELSE 3 END,
+		         updated_at DESC
+		LIMIT $5 OFFSET $6
+	`, filter.Search, filter.CourierCode, filter.ValidationStatus,
+		filter.QueueStatus, filter.Limit, filter.Offset)
+	if err != nil {
+		return TrackingOperationPage{}, fmt.Errorf("list tracking operations: %w", err)
+	}
+	defer rows.Close()
+	page.Items = make([]TrackingOperation, 0)
+	for rows.Next() {
+		var item TrackingOperation
+		var total int64
+		if err := rows.Scan(
+			&item.ID, &item.TenantID, &item.DomainID, &item.OrderReference,
+			&item.FulfillmentReference, &item.SubscriptionRevision,
+			&item.RevisionHistoryCount, &item.CourierCode, &item.WaybillMasked,
+			&item.ValidationStatus, &item.NormalizedStatus, &item.StatusLabel,
+			&item.ProviderCode, &item.ProviderFetchedAt, &item.NextRefreshAt,
+			&item.IsFinal, &item.LastErrorCode, &item.ProviderHitCount,
+			&item.ProviderHitLimit, &item.QueueStatus, &item.JobAttemptCount,
+			&item.JobMaxAttempts, &item.JobAvailableAt, &item.JobLockedAt,
+			&item.JobLockedBy, &item.CreatedAt, &item.UpdatedAt, &total,
+		); err != nil {
+			return TrackingOperationPage{}, fmt.Errorf("scan tracking operation: %w", err)
+		}
+		page.Total = total
+		page.Items = append(page.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return TrackingOperationPage{}, fmt.Errorf("iterate tracking operations: %w", err)
+	}
+	return page, nil
+}
+
+// DeleteTrackingOperation permanently removes a tracking shipment and every
+// dependent queue, snapshot history, subscription, revision, and webhook row.
+// The foreign keys use ON DELETE CASCADE; the transaction keeps the audit trail
+// even though the operational tracking data itself is removed.
+func (r *PostgresRepository) DeleteTrackingOperation(
+	ctx context.Context,
+	id, actorAlias, requestID string,
+) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin delete tracking operation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var auditDetails map[string]any
+	err = tx.QueryRow(ctx, `
+		SELECT jsonb_build_object(
+			'courier', courier_code,
+			'waybill_masked', waybill_masked,
+			'validation_status', validation_status,
+			'normalized_status', normalized_status,
+			'provider', coalesce(provider_code, '')
+		)
+		FROM tracking_shipments
+		WHERE id = $1::uuid
+		FOR UPDATE
+	`, id).Scan(&auditDetails)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("find tracking operation for deletion: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM tracking_shipments WHERE id = $1::uuid`, id); err != nil {
+		return fmt.Errorf("delete tracking operation: %w", err)
+	}
+	if err := insertAudit(
+		ctx, tx, actorAlias, "delete_permanently", "tracking_shipment", id, requestID, auditDetails,
+	); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit delete tracking operation: %w", err)
+	}
+	return nil
+}
+
 func (r *PostgresRepository) ListRateSnapshots(
 	ctx context.Context,
 	search string,

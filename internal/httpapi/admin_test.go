@@ -1,9 +1,27 @@
 package httpapi
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/labstack/echo/v5"
 )
+
+func TestAdminTrackingOperationDeleteRejectsInvalidID(t *testing.T) {
+	t.Parallel()
+
+	e := echo.New()
+	e.DELETE("/v1/admin/tracking-operations/:id", adminTrackingOperationDeleteHandler(nil))
+	request := httptest.NewRequest(http.MethodDelete, "/v1/admin/tracking-operations/not-a-uuid", nil)
+	recorder := httptest.NewRecorder()
+
+	e.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", recorder.Code)
+	}
+}
 
 func TestNormalizeRateCardInput(t *testing.T) {
 	t.Parallel()

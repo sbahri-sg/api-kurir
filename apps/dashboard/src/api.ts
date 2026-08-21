@@ -154,6 +154,56 @@ export type TrackingShipment = {
   is_final: boolean;
   refresh_queued: boolean;
   last_error_code?: string;
+	validation_status: string;
+	validation_checked_at?: string | null;
+	provider_hit_count: number;
+	provider_hit_limit: number;
+	polling_stopped: boolean;
+};
+
+export type TrackingOperationSummary = {
+  total: number;
+  pending: number;
+  running: number;
+  failed: number;
+  invalid: number;
+  final: number;
+};
+
+export type TrackingOperation = {
+  id: string;
+  tenant_id?: string;
+  domain_id?: string;
+  order_id?: string;
+  fulfillment_id?: string;
+  subscription_revision?: number;
+  revision_history_count: number;
+  courier: string;
+  waybill: string;
+  validation_status: string;
+  status: string;
+  status_label: string;
+  provider: string;
+  provider_fetched_at: string | null;
+  next_refresh_at: string | null;
+  is_final: boolean;
+  last_error_code?: string;
+  provider_hit_count: number;
+  provider_hit_limit: number;
+  queue_status: string;
+  job_attempt_count: number;
+  job_max_attempts: number;
+  job_available_at: string | null;
+  job_locked_at: string | null;
+  job_locked_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TrackingOperationPage = {
+  items: TrackingOperation[];
+  total: number;
+  summary: TrackingOperationSummary;
 };
 
 export type RateSnapshot = {
@@ -317,6 +367,34 @@ export class AdminApi {
         ...input,
         refresh: "if_stale",
       }),
+    });
+  }
+
+  trackingOperations(filters: {
+    search?: string;
+    courier?: string;
+    validation_status?: string;
+    queue_status?: string;
+    limit?: number;
+    offset?: number;
+  } = {}, signal?: AbortSignal) {
+    const query = new URLSearchParams({
+      limit: String(filters.limit ?? 100),
+      offset: String(filters.offset ?? 0),
+    });
+    if (filters.search?.trim()) query.set("search", filters.search.trim());
+    if (filters.courier?.trim()) query.set("courier", filters.courier.trim());
+    if (filters.validation_status?.trim()) query.set("validation_status", filters.validation_status.trim());
+    if (filters.queue_status?.trim()) query.set("queue_status", filters.queue_status.trim());
+    return this.request<TrackingOperationPage>(
+      `/v1/admin/tracking-operations?${query}`,
+      { signal },
+    );
+  }
+
+  deleteTrackingOperation(id: string) {
+    return this.request<void>(`/v1/admin/tracking-operations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
     });
   }
 

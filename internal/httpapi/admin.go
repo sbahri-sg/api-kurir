@@ -64,6 +64,40 @@ func adminOverviewHandler(repository admin.Repository) echo.HandlerFunc {
 	}
 }
 
+func adminTrackingOperationListHandler(repository admin.Repository) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		limit, offset, err := adminPagination(c)
+		if err != nil {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), nil)
+		}
+		result, err := repository.ListTrackingOperations(c.Request().Context(), admin.TrackingOperationFilter{
+			Search: c.QueryParam("search"), CourierCode: c.QueryParam("courier"),
+			ValidationStatus: c.QueryParam("validation_status"), QueueStatus: c.QueryParam("queue_status"),
+			Limit: limit, Offset: offset,
+		})
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, adminResponse(c, result))
+	}
+}
+
+func adminTrackingOperationDeleteHandler(repository admin.Repository) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		id := strings.TrimSpace(c.Param("id"))
+		if !validUUID.MatchString(id) {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "ID resi tidak valid.", nil)
+		}
+		err := repository.DeleteTrackingOperation(
+			c.Request().Context(), id, adminActor(c), requestID(c),
+		)
+		if response := writeAdminRepositoryError(c, err); response != nil {
+			return response
+		}
+		return c.NoContent(http.StatusNoContent)
+	}
+}
+
 func adminCatalogHandler(repository admin.Repository) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		result, err := repository.Catalog(c.Request().Context())

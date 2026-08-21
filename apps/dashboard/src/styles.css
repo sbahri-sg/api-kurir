@@ -634,6 +634,74 @@ tr:last-child td {
   background: #fbf1dc;
 }
 
+.badge-danger {
+  color: #9b3f38;
+  background: #f9e8e6;
+}
+
+.tracking-monitor-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tracking-monitor-metric {
+  padding: 16px 18px;
+  border: 1px solid #dce3df;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.tracking-monitor-metric span,
+.tracking-monitor-metric strong {
+  display: block;
+}
+
+.tracking-monitor-metric span {
+  color: #7a847f;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.tracking-monitor-metric strong {
+  margin-top: 7px;
+  color: #23332d;
+  font-size: 25px;
+}
+
+.tracking-monitor-warning { border-left: 4px solid #d3a64d; }
+.tracking-monitor-success { border-left: 4px solid #4b8b71; }
+.tracking-monitor-danger { border-left: 4px solid #bd6258; }
+
+.tracking-monitor-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(145px, 1fr)) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.tracking-monitor-toolbar .subtle {
+  grid-column: 1 / -1;
+}
+
+.tracking-monitor-table table {
+	min-width: 1460px;
+}
+
+.tracking-monitor-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tracking-monitor-table td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
 .table-action {
   color: #a04f47;
   white-space: nowrap;
@@ -1913,6 +1981,11 @@ label {
   background: #fff1d6;
 }
 
+.method-delete {
+  color: #9b3f38;
+  background: #f9e8e6;
+}
+
 .endpoint-title {
   color: #56615b;
   font-size: 12px;
@@ -2772,6 +2845,21 @@ label {
   line-height: 1.45;
 }
 
+@media (max-width: 1200px) {
+	.tracking-monitor-summary {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	.tracking-monitor-toolbar {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.tracking-monitor-toolbar > input,
+	.tracking-monitor-toolbar .subtle {
+		grid-column: 1 / -1;
+	}
+}
+
 @media (max-width: 1050px) {
   .webhook-grid {
     grid-template-columns: 1fr;
@@ -2860,6 +2948,15 @@ label {
 }
 
 @media (max-width: 780px) {
+	.tracking-monitor-summary {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.tracking-monitor-toolbar {
+		display: grid;
+		grid-template-columns: 1fr;
+	}
+
   .webhook-hero,
   .webhook-test-card {
     align-items: flex-start;

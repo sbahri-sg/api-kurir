@@ -31,6 +31,7 @@ Dashboard
 Operasional
   - Cek Ongkir
   - Cek Resi
+  - Monitor Resi
 Master Data
   - Ekspedisi & Service
 Integrasi Provider
@@ -88,6 +89,8 @@ Nilainya dicatat sebagai alias. Nilai API key tidak pernah dicatat.
 | GET | `/v1/admin/couriers` | Katalog kemampuan kurir dan layanan untuk menu Ekspedisi & Service |
 | POST | `/v1/admin/calculate/domestic-cost` | Cek ongkir dari dashboard |
 | POST | `/v1/admin/track/waybill` | Cek resi dari dashboard |
+| GET | `/v1/admin/tracking-operations` | Monitor AWB, validasi, revision, snapshot, dan antrean worker |
+| DELETE | `/v1/admin/tracking-operations/{id}` | Hapus permanen data tracking dan seluruh turunannya |
 | GET | `/v1/admin/rate-snapshots` | Membaca hasil tarif yang tersimpan otomatis |
 | GET | `/v1/admin/location-mappings` | Membaca mapping yang dibentuk otomatis |
 | GET | `/v1/admin/provider-quotas` | Membaca quota ledger |
@@ -109,6 +112,20 @@ observasi dan pencarian, bukan input data tarif atau mapping. Harga tidak dapat
 dibuat, diedit, dipromosikan, atau dinonaktifkan oleh operator dashboard.
 Mutasi dashboard hanya tersedia untuk lifecycle credential customer dan
 provider, serta konfigurasi webhook Emisell; bukan untuk tarif atau mapping.
+
+Menu **Monitor Resi** berbentuk tabel operasional. Data diperbarui setiap 15
+detik dari PostgreSQL, bukan dari provider, sehingga halaman admin tidak
+mengurangi kuota tracking. Operator dapat memfilter merchant/order, courier,
+validasi, dan status job `pending`, `running`, `dead`, `final`, atau `idle`.
+AWB selalu ditampilkan termasking.
+
+Staff dapat memakai aksi **Hapus permanen** untuk membersihkan data development
+atau data uji. Aksi ini tersedia juga saat backend berstatus production karena
+otorisasinya berasal dari admin API key, tetapi dashboard tetap meminta
+konfirmasi terlebih dahulu. Penghapusan memakai UUID internal shipment dan
+dilakukan dalam satu transaksi. Antrean worker, status history, subscription,
+revision, dan webhook outbox ikut terhapus melalui relasi cascade. Audit admin
+tetap dipertahankan dengan resi yang sudah termasking, actor, dan request ID.
 
 Menu `Ekspedisi & Service` membaca katalog ini secara read-only. Kemampuan cek
 ongkir, internasional, dan tracking berasal dari katalog provider yang

@@ -124,6 +124,76 @@ func (s *Service) TrackNow(
 	return value.(Result), nil
 }
 
+// Verify checks the seller-selected courier first. Only when the provider
+// confirms that the AWB is not present do strong format candidates get tried.
+// Pattern rules never reject a provider-valid AWB by themselves.
+func (s *Service) Verify(
+	ctx context.Context,
+	adapter Adapter,
+	request VerificationRequest,
+) (VerificationResult, error) {
+	request.CourierCode = strings.ToLower(strings.TrimSpace(request.CourierCode))
+	request.Waybill = strings.ToUpper(strings.TrimSpace(request.Waybill))
+	request.LastPhoneDigits = strings.TrimSpace(request.LastPhoneDigits)
+	if !validWaybill.MatchString(request.Waybill) {
+		return VerificationResult{
+			Status: "invalid_format", RequestedCourier: request.CourierCode,
+			FormatStatus: "invalid", CandidateCouriers: []string{},
+			Message: "Format nomor resi tidak dapat diproses.",
+		}, ErrInvalidWaybill
+	}
+	if adapter == nil {
+		return VerificationResult{}, ErrAdapterUnavailable
+	}
+	candidates, formatStatus := rankedCourierCandidates(
+		request.Waybill, request.CourierCode, adapter.CourierCodes(),
+	)
+	verification := VerificationResult{
+		Status: "not_found", RequestedCourier: request.CourierCode,
+		FormatStatus: formatStatus, CandidateCouriers: candidates,
+		Message: "Nomor resi belum ditemukan pada provider.",
+	}
+	if len(candidates) == 0 || candidates[0] != request.CourierCode {
+		return verification, ErrUnsupportedCourier
+	}
+	if len(candidates) > 3 {
+		candidates = candidates[:3]
+		verification.CandidateCouriers = candidates
+	}
+	for _, candidate := range candidates {
+		result, err := s.TrackNow(
+			ctx, adapter, candidate, request.Waybill, request.LastPhoneDigits,
+		)
+		verification.ProviderChecked = true
+		if err == nil {
+			status := "verified"
+			message := "Nomor resi valid dan sesuai dengan ekspedisi yang dipilih."
+			if candidate != request.CourierCode {
+				status = "courier_mismatch"
+				message = "Nomor resi valid, tetapi milik ekspedisi lain."
+			}
+			verification.Status = status
+			verification.DetectedCourier = candidate
+			verification.Message = message
+			verification.Shipment = &Shipment{
+				CourierCode: candidate, WaybillMasked: maskWaybill(request.Waybill),
+				NormalizedStatus: result.NormalizedStatus, StatusLabel: result.StatusLabel,
+				Summary: result.Summary, Events: result.Events, ProviderCode: result.ProviderCode,
+				ProviderFetchedAt: &result.FetchedAt, NextRefreshAt: result.NextRefreshAt,
+				IsFinal: result.IsFinal, ValidationStatus: "valid", ValidationChecked: &result.FetchedAt,
+			}
+			return verification, nil
+		}
+		if errors.Is(err, ErrWaybillNotFound) {
+			continue
+		}
+		verification.Status = "provider_unavailable"
+		verification.Message = "Provider belum dapat menyelesaikan verifikasi resi."
+		return verification, err
+	}
+	return verification, ErrWaybillNotFound
+}
+
 func (s *Service) trackNow(
 	ctx context.Context,
 	adapter Adapter,
@@ -290,7 +360,53 @@ func (s *Service) Subscribe(
 		shipment.ID,
 		request.OrderReference,
 		request.FulfillmentReference,
+		0,
 	)
+}
+
+func (s *Service) ReplaceSubscription(
+	ctx context.Context,
+	adapter Adapter,
+	request SubscriptionRequest,
+) (Subscription, VerificationResult, error) {
+	current, err := s.Subscription(ctx, request.FulfillmentReference)
+	if err != nil {
+		return Subscription{}, VerificationResult{}, err
+	}
+	if current.Shipment.IsFinal {
+		return Subscription{}, VerificationResult{}, ErrFinalShipmentLocked
+	}
+	if request.ExpectedRevision <= 0 || current.Revision != request.ExpectedRevision {
+		return Subscription{}, VerificationResult{}, ErrRevisionConflict
+	}
+	verification, err := s.Verify(ctx, adapter, VerificationRequest{
+		CourierCode: request.CourierCode, Waybill: request.Waybill,
+		LastPhoneDigits: request.LastPhoneDigits,
+	})
+	if err != nil {
+		return Subscription{}, verification, err
+	}
+	if verification.Status == "courier_mismatch" {
+		return Subscription{}, verification, ErrCourierMismatch
+	}
+	if verification.Status != "verified" {
+		return Subscription{}, verification, ErrWaybillNotFound
+	}
+	request.OrderReference = strings.TrimSpace(request.OrderReference)
+	if !validReference.MatchString(request.OrderReference) {
+		return Subscription{}, verification, ErrInvalidWaybill
+	}
+	shipment, err := s.Register(
+		ctx, request.CourierCode, request.Waybill, request.LastPhoneDigits,
+	)
+	if err != nil {
+		return Subscription{}, verification, err
+	}
+	subscription, err := s.repository.UpsertSubscription(
+		ctx, shipment.ID, request.OrderReference, request.FulfillmentReference,
+		request.ExpectedRevision,
+	)
+	return subscription, verification, err
 }
 
 func (s *Service) Subscription(

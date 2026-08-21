@@ -728,6 +728,7 @@ func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipme
 func (r *PostgresRepository) UpsertSubscription(
 	ctx context.Context,
 	shipmentID, orderReference, fulfillmentReference string,
+	expectedRevision int,
 ) (Subscription, error) {
 	identity, ok := tenancy.FromContext(ctx)
 	if !ok {
@@ -739,29 +740,88 @@ func (r *PostgresRepository) UpsertSubscription(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var subscription Subscription
+	var currentShipmentID string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO tracking_subscriptions (
-			tenant_id, domain_id, order_reference,
-			fulfillment_reference, shipment_id
-		)
-		VALUES ($1, $2, $3, $4, $5::uuid)
-		ON CONFLICT (tenant_id, fulfillment_reference) DO UPDATE
-		SET domain_id = EXCLUDED.domain_id,
-		    order_reference = EXCLUDED.order_reference,
-		    shipment_id = EXCLUDED.shipment_id,
-		    active = true,
-		    updated_at = now()
-		RETURNING id::text, order_reference, fulfillment_reference, domain_id, active
-	`, identity.TenantID, identity.DomainID, orderReference,
-		fulfillmentReference, shipmentID).Scan(
-		&subscription.ID,
-		&subscription.OrderReference,
-		&subscription.FulfillmentReference,
-		&subscription.DomainID,
-		&subscription.Active,
+		SELECT id::text, order_reference, fulfillment_reference, domain_id,
+		       active, revision, shipment_id::text
+		FROM tracking_subscriptions
+		WHERE tenant_id = $1 AND fulfillment_reference = $2
+		FOR UPDATE
+	`, identity.TenantID, fulfillmentReference).Scan(
+		&subscription.ID, &subscription.OrderReference,
+		&subscription.FulfillmentReference, &subscription.DomainID,
+		&subscription.Active, &subscription.Revision, &currentShipmentID,
 	)
-	if err != nil {
-		return Subscription{}, fmt.Errorf("upsert tracking subscription: %w", err)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		if expectedRevision > 0 {
+			return Subscription{}, ErrRevisionConflict
+		}
+		err = tx.QueryRow(ctx, `
+			INSERT INTO tracking_subscriptions (
+				tenant_id, domain_id, order_reference,
+				fulfillment_reference, shipment_id, revision
+			)
+			VALUES ($1, $2, $3, $4, $5::uuid, 1)
+			RETURNING id::text, order_reference, fulfillment_reference,
+			          domain_id, active, revision
+		`, identity.TenantID, identity.DomainID, orderReference,
+			fulfillmentReference, shipmentID).Scan(
+			&subscription.ID, &subscription.OrderReference,
+			&subscription.FulfillmentReference, &subscription.DomainID,
+			&subscription.Active, &subscription.Revision,
+		)
+		if err != nil {
+			return Subscription{}, fmt.Errorf("insert tracking subscription: %w", err)
+		}
+	case err != nil:
+		return Subscription{}, fmt.Errorf("lock tracking subscription: %w", err)
+	case currentShipmentID == shipmentID:
+		if expectedRevision > 0 && expectedRevision != subscription.Revision {
+			return Subscription{}, ErrRevisionConflict
+		}
+		err = tx.QueryRow(ctx, `
+			UPDATE tracking_subscriptions
+			SET domain_id = $2, order_reference = $3, active = true, updated_at = now()
+			WHERE id = $1::uuid
+			RETURNING order_reference, domain_id, active, revision
+		`, subscription.ID, identity.DomainID, orderReference).Scan(
+			&subscription.OrderReference, &subscription.DomainID,
+			&subscription.Active, &subscription.Revision,
+		)
+		if err != nil {
+			return Subscription{}, fmt.Errorf("refresh tracking subscription: %w", err)
+		}
+	default:
+		// A changed AWB must use the verified replacement endpoint and include
+		// the revision read by Emisell. POST retries cannot silently overwrite it.
+		if expectedRevision <= 0 || expectedRevision != subscription.Revision {
+			return Subscription{}, ErrRevisionConflict
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tracking_subscription_revisions (
+				subscription_id, tenant_id, domain_id, order_reference,
+				fulfillment_reference, shipment_id, revision
+			)
+			VALUES ($1::uuid, $2, $3, $4, $5, $6::uuid, $7)
+		`, subscription.ID, identity.TenantID, subscription.DomainID,
+			subscription.OrderReference, subscription.FulfillmentReference,
+			currentShipmentID, subscription.Revision); err != nil {
+			return Subscription{}, fmt.Errorf("archive tracking subscription revision: %w", err)
+		}
+		err = tx.QueryRow(ctx, `
+			UPDATE tracking_subscriptions
+			SET domain_id = $2, order_reference = $3, shipment_id = $4::uuid,
+			    active = true, revision = revision + 1, updated_at = now()
+			WHERE id = $1::uuid
+			RETURNING order_reference, domain_id, active, revision
+		`, subscription.ID, identity.DomainID, orderReference, shipmentID).Scan(
+			&subscription.OrderReference, &subscription.DomainID,
+			&subscription.Active, &subscription.Revision,
+		)
+		if err != nil {
+			return Subscription{}, fmt.Errorf("replace tracking subscription: %w", err)
+		}
 	}
 	var normalizedStatus, validationStatus string
 	if err := tx.QueryRow(ctx, `
@@ -815,7 +875,7 @@ func (r *PostgresRepository) GetSubscription(
 	var shipmentID string
 	err := r.pool.QueryRow(ctx, `
 		SELECT id::text, order_reference, fulfillment_reference,
-		       domain_id, active, shipment_id::text
+		       domain_id, active, revision, shipment_id::text
 		FROM tracking_subscriptions
 		WHERE tenant_id = $1
 		  AND fulfillment_reference = $2
@@ -825,6 +885,7 @@ func (r *PostgresRepository) GetSubscription(
 		&subscription.FulfillmentReference,
 		&subscription.DomainID,
 		&subscription.Active,
+		&subscription.Revision,
 		&shipmentID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -879,6 +940,7 @@ func enqueueTrackingWebhook(
 				'domain_id', subscription.domain_id,
 				'order_id', subscription.order_reference,
 				'fulfillment_id', subscription.fulfillment_reference,
+				'tracking_revision', subscription.revision,
 				'shipment', jsonb_build_object(
 					'courier', shipment.courier_code,
 					'waybill', shipment.waybill_masked,

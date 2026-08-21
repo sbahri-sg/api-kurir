@@ -20,6 +20,44 @@ type trackingRequest struct {
 	Refresh         string `json:"refresh,omitempty"`
 }
 
+func trackingVerifyHandler(
+	service *tracking.Service,
+	immediateAdapter tracking.Adapter,
+) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		if err := requireTenantScopeIfPresent(c, "tracking:read"); err != nil {
+			return err
+		}
+		if service == nil || immediateAdapter == nil {
+			return writeError(c, http.StatusServiceUnavailable, "TRACKING_NOT_CONFIGURED", "Tracking belum dikonfigurasi.", nil)
+		}
+		body := http.MaxBytesReader(c.Response(), c.Request().Body, maxCalculateBodyBytes)
+		decoder := json.NewDecoder(body)
+		decoder.DisallowUnknownFields()
+		var request tracking.VerificationRequest
+		if err := decoder.Decode(&request); err != nil {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "Payload verifikasi resi tidak valid.", nil)
+		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "Payload hanya boleh berisi satu objek JSON.", nil)
+		}
+		result, err := service.Verify(c.Request().Context(), immediateAdapter, request)
+		switch {
+		case errors.Is(err, tracking.ErrInvalidWaybill), errors.Is(err, tracking.ErrInvalidPhoneSuffix):
+			return c.JSON(http.StatusBadRequest, map[string]any{"meta": map[string]any{"request_id": requestID(c)}, "data": result})
+		case errors.Is(err, tracking.ErrUnsupportedCourier):
+			return writeError(c, http.StatusUnprocessableEntity, "TRACKING_COURIER_UNSUPPORTED", "Courier belum didukung.", nil)
+		case errors.Is(err, tracking.ErrWaybillNotFound):
+			// Not found is a verification result, not a transport failure.
+			return c.JSON(http.StatusOK, map[string]any{"meta": map[string]any{"request_id": requestID(c)}, "data": result})
+		case err != nil:
+			return c.JSON(http.StatusServiceUnavailable, map[string]any{"meta": map[string]any{"request_id": requestID(c)}, "data": result})
+		default:
+			return c.JSON(http.StatusOK, map[string]any{"meta": map[string]any{"request_id": requestID(c)}, "data": result})
+		}
+	}
+}
+
 func trackingPublicHandler(
 	service *tracking.Service,
 	immediateAdapter tracking.Adapter,

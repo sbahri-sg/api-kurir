@@ -62,6 +62,16 @@ dapat membutuhkan waktu sebelum tersedia di sistem ekspedisi.
 
 ## Mendaftarkan fulfillment
 
+Sebelum menyimpan AWB dari seller, Emisell sebaiknya memanggil
+`POST /api/v1/tracking/verify`. Courier pilihan diperiksa lebih dulu. Bila tidak
+ditemukan, API Kurir mencoba maksimal dua kandidat format terkuat. Pola hanya
+petunjuk dan tidak menjadi alasan tunggal untuk menolak format baru.
+
+Hasil `verified` boleh disimpan. `courier_mismatch` menyertakan
+`detected_courier` agar seller dapat memperbaiki ekspedisi. `not_found` berarti
+provider sudah diperiksa tetapi AWB belum ditemukan; ini berbeda dari
+`invalid_format`.
+
 ```http
 POST /api/v1/integrations/tracking/subscriptions
 key: <customer-api-key>
@@ -86,6 +96,32 @@ Merchant tidak diterima dari body. `merchant_id` selalu berasal dari claim
 
 Respons `202` berarti validasi/refresh sedang antre. Respons `200` berarti
 snapshot sudah tersedia.
+
+## Mengganti AWB yang salah
+
+AWB aktif tidak ditimpa langsung. Emisell membaca `revision` terbaru lalu
+memanggil:
+
+```http
+PUT /api/v1/integrations/tracking/subscriptions/{fulfillment_id}
+key: <customer-api-key>
+X-Emisell-Tenant-Token: <tenant-jwt>
+Content-Type: application/json
+
+{
+  "order_id": "order_123",
+  "courier": "jnt",
+  "waybill": "JY1224870535",
+  "expected_revision": 1
+}
+```
+
+AWB lama tetap aktif selama verifikasi. AWB baru hanya menjadi aktif bila
+provider mengonfirmasi valid dan courier sesuai. Pergantian atomik menaikkan
+revision dan menyimpan hubungan lama ke `tracking_subscription_revisions`.
+Konflik revision menghasilkan HTTP 409. Shipment final dikunci agar order yang
+sudah selesai tidak berubah akibat edit tidak sengaja. POST subscription tetap
+idempotent untuk AWB yang sama, tetapi tidak dapat mengganti AWB diam-diam.
 
 ## Membaca snapshot tanpa hit provider
 
@@ -140,6 +176,7 @@ Payload:
     "domain_id": "domain_abc",
     "order_id": "order_123",
     "fulfillment_id": "fulfillment_123",
+	"tracking_revision": 2,
     "shipment": {
       "courier": "jne",
       "waybill": "********6789",
@@ -171,7 +208,8 @@ String yang ditandatangani:
 Receiver wajib memverifikasi HMAC dengan perbandingan constant-time, menolak
 timestamp terlalu lama, menyimpan event ID sebagai idempotency key, dan
 mengabaikan event yang `provider_fetched_at`-nya lebih lama dari status
-fulfillment saat ini. Respons
+fulfillment saat ini. Event dengan `tracking_revision` lebih kecil daripada
+revision aktif di Emisell juga wajib diabaikan. Respons
 2xx menandai event terkirim. Network error, 429, dan 5xx diulang dengan interval
 1 menit, 5 menit, 30 menit, 2 jam, 6 jam, lalu 24 jam. Respons 4xx lain masuk
 dead-letter tanpa retry agresif.
@@ -213,6 +251,18 @@ Endpoint admin pengelolaan:
 menambah baris ketika status berubah, bukan setiap polling. Webhook menggunakan
 transactional outbox agar perubahan database dan event tidak terpisah. Riwayat
 order permanen tetap dimiliki Emisell.
+
+Operator memantau data ini melalui menu **Operasional → Monitor Resi**. Tabel
+bersumber dari `GET /v1/admin/tracking-operations`, diperbarui setiap
+15 detik, dan dapat difilter berdasarkan merchant/order, courier, validasi,
+serta antrean `pending`, `running`, `dead`, `final`, atau `idle`. Plaintext AWB
+tidak pernah ditampilkan.
+
+Untuk pembersihan data development, staff dapat memanggil
+`DELETE /v1/admin/tracking-operations/{id}` dari action **Hapus permanen**.
+Endpoint tetap tersedia di production untuk dashboard internal, dilindungi
+admin API key, memakai UUID shipment, meminta konfirmasi pada UI, dan mencatat
+audit. Seluruh data operasional turunan ikut dihapus secara atomik.
 
 Target retention operasional:
 

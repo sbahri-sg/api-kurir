@@ -2,6 +2,7 @@ package tracking
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -114,7 +115,7 @@ func TestPostgresTrackingSubscriptionCreatesWebhookOutbox(t *testing.T) {
 	})
 
 	subscription, err := repository.UpsertSubscription(
-		tenantCtx, shipment.ID, "order-integration", "fulfillment-integration",
+		tenantCtx, shipment.ID, "order-integration", "fulfillment-integration", 0,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -149,5 +150,71 @@ func TestPostgresTrackingSubscriptionCreatesWebhookOutbox(t *testing.T) {
 	}
 	if err := repository.CompleteWebhook(ctx, webhook.ID, 202); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPostgresTrackingSubscriptionReplacementRequiresRevision(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	repository := NewPostgresRepository(pool)
+	suffix := time.Now().UTC().Format("150405000000")
+	tenantCtx := tenancy.WithIdentity(ctx, tenancy.Identity{
+		TenantID: "merchant-revision-" + suffix, DomainID: "domain-revision",
+	})
+	first, err := repository.RegisterImmediate(
+		tenantCtx, "jne", "revision-first-"+suffix,
+		"********1111", []byte("encrypted-first"), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := repository.RegisterImmediate(
+		tenantCtx, "jnt", "revision-second-"+suffix,
+		"********2222", []byte("encrypted-second"), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tracking_shipments WHERE id = $1::uuid", second.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tracking_shipments WHERE id = $1::uuid", first.ID)
+	}()
+
+	created, err := repository.UpsertSubscription(
+		tenantCtx, first.ID, "order-revision", "fulfillment-revision", 0,
+	)
+	if err != nil || created.Revision != 1 {
+		t.Fatalf("create revision: subscription=%#v err=%v", created, err)
+	}
+	if _, err := repository.UpsertSubscription(
+		tenantCtx, second.ID, "order-revision", "fulfillment-revision", 0,
+	); !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("expected revision conflict, got %v", err)
+	}
+	replaced, err := repository.UpsertSubscription(
+		tenantCtx, second.ID, "order-revision", "fulfillment-revision", 1,
+	)
+	if err != nil || replaced.Revision != 2 || replaced.Shipment.ID != second.ID {
+		t.Fatalf("replace revision: subscription=%#v err=%v", replaced, err)
+	}
+	var historyCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM tracking_subscription_revisions
+		WHERE subscription_id = $1::uuid
+	`, replaced.ID).Scan(&historyCount); err != nil {
+		t.Fatal(err)
+	}
+	if historyCount != 1 {
+		t.Fatalf("revision history count: got %d want 1", historyCount)
 	}
 }

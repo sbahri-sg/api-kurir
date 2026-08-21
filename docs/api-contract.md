@@ -668,8 +668,10 @@ checkout/customer hanya membaca snapshot dan tidak memicu provider:
 
 | Method | Endpoint | Scope |
 |---|---|---|
+| POST | `/api/v1/tracking/verify` | `tracking:read` bila tenant token tersedia |
 | POST | `/api/v1/integrations/tracking/subscriptions` | `tracking:write` |
 | GET | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | `tracking:read` |
+| PUT | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | `tracking:write` |
 
 Kebijakan checkpoint, negative cache AWB, batas hit, dan webhook HMAC dijelaskan
 pada [`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md).
@@ -689,6 +691,8 @@ hanya dapat mengakses endpoint `/v1` customer.
 | GET | `/admin/couriers` | Kurir untuk alat operasional dashboard |
 | POST | `/admin/calculate/domestic-cost` | Cek ongkir dengan admin key |
 | POST | `/admin/track/waybill` | Cek resi dengan admin key |
+| GET | `/admin/tracking-operations` | Monitor AWB, revision, snapshot, dan antrean worker |
+| DELETE | `/admin/tracking-operations/{id}` | Hapus permanen shipment tracking dan data turunannya |
 | GET | `/admin/rate-snapshots` | Snapshot tarif otomatis dari provider |
 | GET | `/admin/location-mappings` | Mapping lokasi otomatis (read-only) |
 | GET | `/admin/provider-credentials` | Metadata key provider termasking |

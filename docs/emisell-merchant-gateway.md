@@ -115,6 +115,12 @@ Untuk order fulfillment, backend Emisell mendaftarkan AWB melalui
 status dikirim melalui webhook HMAC. Kontrak lengkap tersedia pada
 [`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md).
 
+Saat seller memasukkan atau mengedit AWB, panggil
+`POST /api/v1/tracking/verify` lebih dulu agar typo dan salah pilihan ekspedisi
+dapat ditampilkan langsung. Penggantian AWB fulfillment wajib memakai
+`PUT /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` dengan
+`expected_revision`; AWB lama tetap aktif sampai AWB baru terverifikasi.
+
 Kontrak pilihan kurir/layanan dan pola UI bertingkat dijelaskan lengkap pada
 [`merchant-shipping-services.md`](merchant-shipping-services.md).
 

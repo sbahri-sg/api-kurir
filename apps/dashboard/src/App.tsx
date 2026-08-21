@@ -18,6 +18,8 @@ import {
   type RateResult,
   type RateSnapshot,
   type TrackingShipment,
+	type TrackingOperation,
+	type TrackingOperationPage,
   type WebhookSettings,
   type WebhookTestResult,
 } from "./api";
@@ -33,6 +35,7 @@ type Tab =
   | "overview"
   | "check-rate"
   | "tracking"
+	| "tracking-operations"
   | "couriers"
   | "rates"
   | "mappings"
@@ -65,6 +68,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { value: "check-rate", label: "Cek Ongkir" },
       { value: "tracking", label: "Cek Resi" },
+	  { value: "tracking-operations", label: "Monitor Resi" },
     ],
   },
   {
@@ -554,6 +558,7 @@ export function App() {
     overview: "Dashboard",
     "check-rate": "Cek Ongkir",
     tracking: "Cek Resi",
+	"tracking-operations": "Monitor Resi",
     couriers: "Ekspedisi & Service",
     rates: "Snapshot Tarif",
     mappings: "Mapping Lokasi Provider",
@@ -766,6 +771,10 @@ export function App() {
         {tab === "tracking" && (
           <TrackingTool api={api} couriers={couriers} onError={setError} />
         )}
+
+		{tab === "tracking-operations" && (
+		  <TrackingOperationsTable api={api} couriers={couriers} onError={setError} />
+		)}
 
         {tab === "couriers" && (
           <CourierCatalog
@@ -1914,6 +1923,184 @@ function ShippingCostTool({
       </section>
     </div>
   );
+}
+
+function TrackingOperationsTable({
+  api,
+  couriers,
+  onError,
+}: {
+  api: AdminApi;
+  couriers: Courier[];
+  onError: (message: string) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [courier, setCourier] = useState("");
+  const [validationStatus, setValidationStatus] = useState("");
+  const [queueStatus, setQueueStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [deletingID, setDeletingID] = useState("");
+  const [page, setPage] = useState<TrackingOperationPage>({
+    items: [], total: 0,
+    summary: { total: 0, pending: 0, running: 0, failed: 0, invalid: 0, final: 0 },
+  });
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const result = await api.trackingOperations({
+        search, courier, validation_status: validationStatus,
+        queue_status: queueStatus, limit: 100,
+      }, signal);
+      setPage(result);
+    } catch (requestError) {
+      if (requestError instanceof Error && requestError.name === "AbortError") return;
+      onError(getErrorMessage(requestError));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, courier, onError, queueStatus, search, validationStatus]);
+
+  const removePermanently = useCallback(async (item: TrackingOperation) => {
+    const confirmed = window.confirm(
+      `Hapus permanen resi ${item.courier.toUpperCase()} · ${item.waybill}?\n\n` +
+      "Antrean, snapshot history, subscription, revision, dan webhook terkait ikut dihapus. Tindakan ini tidak dapat dibatalkan.",
+    );
+    if (!confirmed) return;
+    setDeletingID(item.id);
+    onError("");
+    try {
+      await api.deleteTrackingOperation(item.id);
+      await load();
+    } catch (requestError) {
+      onError(getErrorMessage(requestError));
+    } finally {
+      setDeletingID("");
+    }
+  }, [api, load, onError]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    const debounce = window.setTimeout(() => void load(controller.signal), 250);
+    const refresh = window.setInterval(() => void load(controller.signal), 15_000);
+    return () => {
+      window.clearTimeout(debounce);
+      window.clearInterval(refresh);
+      controller.abort();
+    };
+  }, [load]);
+
+  return (
+    <div className="tracking-operations-page">
+      <section className="tracking-monitor-summary">
+        <TrackingMonitorMetric label="Semua resi" value={page.summary.total} tone="neutral" />
+        <TrackingMonitorMetric label="Menunggu" value={page.summary.pending} tone="warning" />
+        <TrackingMonitorMetric label="Diproses worker" value={page.summary.running} tone="success" />
+        <TrackingMonitorMetric label="Gagal / dead" value={page.summary.failed} tone="danger" />
+        <TrackingMonitorMetric label="Status final" value={page.summary.final} tone="neutral" />
+      </section>
+
+      <section className="toolbar tracking-monitor-toolbar">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Cari merchant, order, fulfillment, resi, atau provider…"
+        />
+        <select value={courier} onChange={(event) => setCourier(event.target.value)}>
+          <option value="">Semua ekspedisi</option>
+          {couriers.filter((item) => item.supports_tracking).map((item) => (
+            <option key={item.code} value={item.code}>{item.name}</option>
+          ))}
+        </select>
+        <select value={validationStatus} onChange={(event) => setValidationStatus(event.target.value)}>
+          <option value="">Semua validasi</option>
+          <option value="unverified">Belum diverifikasi</option>
+          <option value="valid">Valid</option>
+          <option value="not_found">Belum ditemukan</option>
+          <option value="invalid">Tidak valid</option>
+        </select>
+        <select value={queueStatus} onChange={(event) => setQueueStatus(event.target.value)}>
+          <option value="">Semua antrean</option>
+          <option value="pending">Menunggu</option>
+          <option value="running">Sedang diproses</option>
+          <option value="dead">Gagal / dead</option>
+          <option value="final">Selesai</option>
+          <option value="idle">Tidak mengantre</option>
+        </select>
+        <button className="button button-secondary" onClick={() => void load()} disabled={loading}>
+          {loading ? "Memuat…" : "Muat ulang"}
+        </button>
+        <span className="subtle">Otomatis diperbarui setiap 15 detik · {formatNumber(page.total)} hasil</span>
+      </section>
+
+      <section className="panel panel-table tracking-monitor-table">
+        <div className="table-scroll">
+          <table>
+            <thead><tr>
+              <th>Resi</th><th>Merchant / order</th><th>Validasi</th><th>Status kiriman</th>
+              <th>Antrean worker</th><th>Provider / hit</th><th>Jadwal</th><th>Diperbarui</th>
+              <th>Aksi</th>
+            </tr></thead>
+            <tbody>
+              {page.items.map((item) => <TrackingOperationRow
+                key={item.id}
+                item={item}
+                deleting={deletingID === item.id}
+                onRemove={() => void removePermanently(item)}
+              />)}
+              {!page.items.length && <tr><td colSpan={9} className="empty-state">
+                {loading ? "Memuat data operasional resi…" : "Belum ada resi yang sesuai filter."}
+              </td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TrackingMonitorMetric({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return <article className={`tracking-monitor-metric tracking-monitor-${tone}`}>
+    <span>{label}</span><strong>{formatNumber(value)}</strong>
+  </article>;
+}
+
+function TrackingOperationRow({
+  item,
+  deleting,
+  onRemove,
+}: {
+  item: TrackingOperation;
+  deleting: boolean;
+  onRemove: () => void;
+}) {
+  const queueLabel: Record<string, string> = {
+    pending: "menunggu", running: "diproses", completed: "selesai job",
+    dead: "gagal", final: "final", idle: "idle",
+  };
+  const validationLabel: Record<string, string> = {
+    unverified: "belum dicek", valid: "valid", not_found: "belum ditemukan", invalid: "tidak valid",
+  };
+  const queueTone = item.queue_status === "running" ? "badge-success" :
+    item.queue_status === "pending" ? "badge-warning" :
+    item.queue_status === "dead" ? "badge-danger" : "";
+  const validationTone = item.validation_status === "valid" ? "badge-success" :
+    item.validation_status === "invalid" ? "badge-danger" : "badge-warning";
+  return <tr>
+    <td><strong>{item.courier.toUpperCase()} · {item.waybill}</strong><small>ID {item.id.slice(0, 8)}</small></td>
+    <td><strong>{item.tenant_id || "Platform"}</strong><small>{item.order_id || "Tanpa order"} · {item.fulfillment_id || "tanpa fulfillment"}</small>{Boolean(item.subscription_revision) && <small>Revisi {item.subscription_revision} · {item.revision_history_count} diganti</small>}</td>
+    <td><span className={`badge ${validationTone}`}>{validationLabel[item.validation_status] || item.validation_status}</span>{item.last_error_code && <small>{item.last_error_code}</small>}</td>
+    <td><strong>{item.status_label || item.status.replaceAll("_", " ")}</strong><small>{item.is_final ? "Status final" : item.status}</small></td>
+    <td><span className={`badge ${queueTone}`}>{queueLabel[item.queue_status] || item.queue_status}</span><small>Percobaan {item.job_attempt_count}/{item.job_max_attempts || "—"}{item.job_locked_by ? ` · ${item.job_locked_by}` : ""}</small></td>
+    <td><strong>{item.provider || "Belum dipilih"}</strong><small>{item.provider_hit_count}/{item.provider_hit_limit} hit AWB</small></td>
+    <td><strong>{item.queue_status === "running" ? "Sekarang" : formatDate(item.job_available_at || item.next_refresh_at)}</strong><small>Snapshot {formatDate(item.provider_fetched_at)}</small></td>
+    <td><strong>{formatDate(item.updated_at)}</strong><small>Masuk {formatDate(item.created_at)}</small></td>
+    <td><button
+      className="table-action table-action-danger"
+      disabled={deleting}
+      onClick={onRemove}
+    >{deleting ? "Menghapus…" : "Hapus permanen"}</button></td>
+  </tr>;
 }
 
 function TrackingTool({

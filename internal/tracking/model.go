@@ -20,6 +20,9 @@ var (
 	ErrProviderTimeout      = errors.New("tracking provider timeout")
 	ErrProviderUnavailable  = errors.New("tracking provider unavailable")
 	ErrWaybillNotFound      = errors.New("tracking waybill not found")
+	ErrCourierMismatch      = errors.New("tracking courier does not match waybill")
+	ErrRevisionConflict     = errors.New("tracking subscription revision conflict")
+	ErrFinalShipmentLocked  = errors.New("final tracking subscription cannot be replaced")
 )
 
 type Shipment struct {
@@ -72,6 +75,7 @@ type SubscriptionRequest struct {
 	CourierCode          string `json:"courier"`
 	Waybill              string `json:"waybill"`
 	LastPhoneDigits      string `json:"last_phone_number,omitempty"`
+	ExpectedRevision     int    `json:"expected_revision,omitempty"`
 }
 
 type Subscription struct {
@@ -80,7 +84,25 @@ type Subscription struct {
 	FulfillmentReference string   `json:"fulfillment_id"`
 	DomainID             string   `json:"domain_id,omitempty"`
 	Active               bool     `json:"active"`
+	Revision             int      `json:"revision"`
 	Shipment             Shipment `json:"shipment"`
+}
+
+type VerificationRequest struct {
+	CourierCode     string `json:"courier"`
+	Waybill         string `json:"waybill"`
+	LastPhoneDigits string `json:"last_phone_number,omitempty"`
+}
+
+type VerificationResult struct {
+	Status            string    `json:"status"`
+	RequestedCourier  string    `json:"requested_courier"`
+	DetectedCourier   string    `json:"detected_courier,omitempty"`
+	FormatStatus      string    `json:"format_status"`
+	CandidateCouriers []string  `json:"candidate_couriers"`
+	ProviderChecked   bool      `json:"provider_checked"`
+	Message           string    `json:"message"`
+	Shipment          *Shipment `json:"shipment,omitempty"`
 }
 
 type Request struct {
@@ -128,7 +150,7 @@ type Repository interface {
 	RecordNotFoundImmediate(ctx context.Context, shipmentID string, fetchedAt time.Time, nextRefreshAt *time.Time, invalid bool) error
 	RecordImmediateFailure(ctx context.Context, shipmentID, errorCode string, retryAt time.Time, countProviderHit bool) error
 	Fail(ctx context.Context, job Job, errorCode, message string, retryAt time.Time) error
-	UpsertSubscription(ctx context.Context, shipmentID, orderReference, fulfillmentReference string) (Subscription, error)
+	UpsertSubscription(ctx context.Context, shipmentID, orderReference, fulfillmentReference string, expectedRevision int) (Subscription, error)
 	GetSubscription(ctx context.Context, fulfillmentReference string) (Subscription, error)
 }
 

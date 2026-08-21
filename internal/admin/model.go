@@ -23,6 +23,60 @@ type Overview struct {
 	TrackingShipments   int64 `json:"tracking_shipments"`
 }
 
+type TrackingOperationFilter struct {
+	Search           string
+	CourierCode      string
+	ValidationStatus string
+	QueueStatus      string
+	Limit            int
+	Offset           int
+}
+
+type TrackingOperationSummary struct {
+	Total   int64 `json:"total"`
+	Pending int64 `json:"pending"`
+	Running int64 `json:"running"`
+	Failed  int64 `json:"failed"`
+	Invalid int64 `json:"invalid"`
+	Final   int64 `json:"final"`
+}
+
+type TrackingOperation struct {
+	ID                   string     `json:"id"`
+	TenantID             string     `json:"tenant_id,omitempty"`
+	DomainID             string     `json:"domain_id,omitempty"`
+	OrderReference       string     `json:"order_id,omitempty"`
+	FulfillmentReference string     `json:"fulfillment_id,omitempty"`
+	SubscriptionRevision int        `json:"subscription_revision,omitempty"`
+	RevisionHistoryCount int        `json:"revision_history_count"`
+	CourierCode          string     `json:"courier"`
+	WaybillMasked        string     `json:"waybill"`
+	ValidationStatus     string     `json:"validation_status"`
+	NormalizedStatus     string     `json:"status"`
+	StatusLabel          string     `json:"status_label"`
+	ProviderCode         string     `json:"provider"`
+	ProviderFetchedAt    *time.Time `json:"provider_fetched_at"`
+	NextRefreshAt        *time.Time `json:"next_refresh_at"`
+	IsFinal              bool       `json:"is_final"`
+	LastErrorCode        string     `json:"last_error_code,omitempty"`
+	ProviderHitCount     int        `json:"provider_hit_count"`
+	ProviderHitLimit     int        `json:"provider_hit_limit"`
+	QueueStatus          string     `json:"queue_status"`
+	JobAttemptCount      int        `json:"job_attempt_count"`
+	JobMaxAttempts       int        `json:"job_max_attempts"`
+	JobAvailableAt       *time.Time `json:"job_available_at"`
+	JobLockedAt          *time.Time `json:"job_locked_at"`
+	JobLockedBy          string     `json:"job_locked_by,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+type TrackingOperationPage struct {
+	Items   []TrackingOperation      `json:"items"`
+	Total   int64                    `json:"total"`
+	Summary TrackingOperationSummary `json:"summary"`
+}
+
 type RateSnapshot struct {
 	ID                   string     `json:"id"`
 	TenantID             string     `json:"tenant_id,omitempty"`

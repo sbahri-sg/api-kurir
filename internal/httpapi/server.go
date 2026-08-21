@@ -128,6 +128,7 @@ func New(
 		trackingService,
 		tenantVerifier,
 		apiKeys,
+		immediateTrackingAdapter,
 	)
 	// Compatibility alias for Emisell clients deployed before the API prefix
 	// was standardized. New integrations must use /api/v1/integrations.
@@ -139,6 +140,7 @@ func New(
 		trackingService,
 		tenantVerifier,
 		apiKeys,
+		immediateTrackingAdapter,
 	)
 	if legacyRepository, ok := locationRepository.(legacyRegionStore); ok {
 		registerLegacyRegionRoutes(
@@ -159,6 +161,8 @@ func New(
 	adminGroup.GET("/couriers", courierListHandler(courierRepository))
 	adminGroup.POST("/calculate/domestic-cost", calculateRateHandler(rateService))
 	adminGroup.POST("/track/waybill", trackingHandler(trackingService))
+	adminGroup.GET("/tracking-operations", adminTrackingOperationListHandler(adminRepository))
+	adminGroup.DELETE("/tracking-operations/:id", adminTrackingOperationDeleteHandler(adminRepository))
 	adminGroup.GET("/rate-snapshots", adminRateSnapshotListHandler(adminRepository))
 	adminGroup.GET("/location-mappings", adminLocationMappingListHandler(adminRepository))
 	adminGroup.GET("/provider-quotas", adminProviderQuotaListHandler(adminRepository))
@@ -205,13 +209,23 @@ func registerTenantIntegrationRoutes(
 	trackingService *tracking.Service,
 	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
+	immediateTrackingAdapters ...tracking.Adapter,
 ) {
+	var immediateTrackingAdapter tracking.Adapter
+	if len(immediateTrackingAdapters) > 0 {
+		immediateTrackingAdapter = immediateTrackingAdapters[0]
+	}
 	integrationGroup.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
 	integrationGroup.Use(tenantContextMiddleware(tenantVerifier, true))
 	integrationGroup.GET(
 		"/provider-credentials",
 		tenantProviderCredentialListHandler(providerCredentialService),
 		tenantScopeMiddleware("provider-credentials:read"),
+	)
+	integrationGroup.PUT(
+		"/tracking/subscriptions/:fulfillment_id",
+		trackingSubscriptionReplaceHandler(trackingService, immediateTrackingAdapter),
+		tenantScopeMiddleware("tracking:write"),
 	)
 	integrationGroup.POST(
 		"/provider-credentials",
@@ -315,6 +329,10 @@ func registerCustomerRoutes(
 	group.POST(
 		"/track/waybill",
 		trackingPublicHandler(trackingService, immediateTrackingAdapter),
+	)
+	group.POST(
+		"/tracking/verify",
+		trackingVerifyHandler(trackingService, immediateTrackingAdapter),
 	)
 }
 

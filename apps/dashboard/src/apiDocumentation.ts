@@ -1,5 +1,5 @@
 export type ApiDocumentationScope = "customer" | "admin";
-export type ApiDocumentationMethod = "GET" | "POST" | "PUT";
+export type ApiDocumentationMethod = "GET" | "POST" | "PUT" | "DELETE";
 export type ApiDocumentationContract =
   | "rajaongkir-v2"
   | "emisell-legacy"
@@ -994,6 +994,55 @@ key: {{api_key}}`,
   {
     scope: "admin",
     method: "GET",
+    path: "/v1/admin/tracking-operations",
+    title: "Monitor resi dan antrean worker",
+    description:
+      "Sumber tabel operasional untuk melihat AWB masuk, validasi, merchant/order, revision, snapshot, provider hit, job pending/running/dead, serta jadwal refresh.",
+    authentication: "Bearer admin API key",
+    parameters: [
+      "search — merchant, order, fulfillment, resi termasking, courier, atau provider",
+      "courier — filter kode ekspedisi",
+      "validation_status — unverified, valid, not_found, atau invalid",
+      "queue_status — pending, running, dead, final, atau idle",
+      "limit dan offset — pagination",
+    ],
+    request: `GET {{base_url}}/v1/admin/tracking-operations?queue_status=running&limit=100`,
+    response: `{
+  "data": {
+    "items": [{
+      "courier": "jnt",
+      "waybill": "********0535",
+      "validation_status": "valid",
+      "status": "in_transit",
+      "queue_status": "running",
+      "provider": "rajaongkir",
+      "provider_hit_count": 2,
+      "provider_hit_limit": 10,
+      "subscription_revision": 2
+    }],
+    "total": 1,
+    "summary": {"total": 120, "pending": 8, "running": 2, "failed": 1, "invalid": 3, "final": 86}
+  }
+}`,
+  },
+  {
+    scope: "admin",
+    method: "DELETE",
+    path: "/v1/admin/tracking-operations/{id}",
+    title: "Hapus permanen data resi",
+    description:
+      "Menghapus shipment beserta antrean worker, snapshot history, subscription, revision, dan webhook outbox terkait. Tersedia di semua environment untuk staff dashboard; tindakan tetap dicatat pada audit log.",
+    authentication: "Bearer admin API key",
+    parameters: [
+      "id — UUID internal shipment dari hasil GET /v1/admin/tracking-operations",
+      "X-Admin-Actor — identitas staff yang melakukan penghapusan",
+    ],
+    request: `DELETE {{base_url}}/v1/admin/tracking-operations/{{tracking_shipment_id}}`,
+    response: `HTTP 204 No Content`,
+  },
+  {
+    scope: "admin",
+    method: "GET",
     path: "/v1/admin/provider-credentials",
     title: "Daftar key provider",
     description:
@@ -1376,6 +1425,40 @@ key: {{api_key}}`,
     contract: "gateway",
     scope: "customer",
     method: "POST",
+    path: "/api/v1/tracking/verify",
+    title: "Verifikasi AWB sebelum disimpan",
+    description:
+      "Memeriksa AWB ke ekspedisi pilihan seller. Jika tidak ditemukan, API Kurir mencoba maksimal dua kandidat kuat berdasarkan format. Pola hanya petunjuk; format baru tetap diproses ke provider yang dipilih.",
+    authentication: "Customer API key; tenant token digunakan bila tersedia",
+    parameters: [
+      "courier — ekspedisi yang dipilih seller",
+      "waybill — AWB 6–40 karakter",
+      "last_phone_number — opsional",
+    ],
+    request: `POST {{base_url}}/api/v1/tracking/verify
+key: {{api_key}}
+Content-Type: application/json
+
+{
+  "courier": "jne",
+  "waybill": "JY1224870535"
+}`,
+    response: `{
+  "data": {
+    "status": "courier_mismatch",
+    "requested_courier": "jne",
+    "detected_courier": "jnt",
+    "format_status": "possible",
+    "candidate_couriers": ["jne", "jnt"],
+    "provider_checked": true,
+    "message": "Nomor resi valid, tetapi milik ekspedisi lain."
+  }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
     path: "/api/v1/integrations/tracking/subscriptions",
     title: "Daftarkan tracking fulfillment",
     description:
@@ -1421,6 +1504,47 @@ Content-Type: application/json
       "provider_hit_limit": 10,
       "refresh_queued": true,
       "polling_stopped": false
+    }
+  }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "PUT",
+    path: "/api/v1/integrations/tracking/subscriptions/{fulfillment_id}",
+    title: "Ganti AWB fulfillment dengan aman",
+    description:
+      "AWB lama tetap aktif saat AWB baru diverifikasi. Setelah valid dan sesuai courier, pergantian dilakukan atomik, revision naik satu, dan hubungan AWB lama disimpan sebagai audit. Status final dikunci.",
+    authentication:
+      "Customer API key + tenant token dengan scope tracking:write",
+    parameters: [
+      "fulfillment_id — fulfillment yang akan diganti",
+      "expected_revision — revision terakhir yang dibaca Emisell; wajib",
+      "order_id, courier, waybill — data pengganti",
+    ],
+    request: `PUT {{base_url}}/api/v1/integrations/tracking/subscriptions/fulfillment_123
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}
+Content-Type: application/json
+
+{
+  "order_id": "order_123",
+  "courier": "jnt",
+  "waybill": "JY1224870535",
+  "expected_revision": 1
+}`,
+    response: `{
+  "data": {
+    "subscription": {
+      "fulfillment_id": "fulfillment_123",
+      "revision": 2,
+      "active": true
+    },
+    "verification": {
+      "status": "verified",
+      "requested_courier": "jnt",
+      "detected_courier": "jnt"
     }
   }
 }`,

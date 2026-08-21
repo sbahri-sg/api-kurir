@@ -997,6 +997,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/tracking/verify:
+    post:
+      tags: [Emisell Gateway]
+      operationId: verifyTrackingWaybill
+      summary: Verifikasi AWB dan deteksi salah ekspedisi
+      description: >
+        Courier pilihan diperiksa lebih dulu. Bila AWB tidak ditemukan, maksimal
+        dua kandidat kuat berdasarkan pola diperiksa. Pola tidak pernah menjadi
+        alasan tunggal untuk menolak format baru.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingVerificationRequest"
+      responses:
+        "200":
+          description: Hasil verifikasi, termasuk not_found atau courier_mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingVerificationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+        "503":
+          description: Provider belum dapat menyelesaikan verifikasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingVerificationResponse"
+
   /api/v1/integrations/tracking/subscriptions:
     post:
       tags: [Emisell Gateway]
@@ -1082,6 +1117,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags: [Emisell Gateway]
+      operationId: replaceTenantTrackingSubscription
+      summary: Mengganti AWB fulfillment setelah verifikasi
+      description: >
+        AWB lama tetap aktif sampai AWB baru valid. expected_revision mencegah
+        overwrite bersamaan; revisi lama disimpan sebagai audit dan webhook
+        berikutnya membawa tracking_revision terbaru.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      parameters:
+        - name: fulfillment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingSubscriptionReplacementRequest"
+      responses:
+        "200":
+          description: AWB baru sudah diverifikasi dan menjadi revisi aktif
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Revision berubah atau shipment sudah final
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: AWB tidak ditemukan atau salah ekspedisi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingVerificationResponse"
 
   /v1/admin/overview:
     get:
@@ -1246,6 +1332,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/tracking-operations:
+    get:
+      tags: [Admin]
+      operationId: listAdminTrackingOperations
+      summary: Monitor AWB, snapshot, dan antrean worker
+      parameters:
+        - name: search
+          in: query
+          schema: {type: string}
+        - name: courier
+          in: query
+          schema: {type: string}
+        - name: validation_status
+          in: query
+          schema: {type: string, enum: [unverified, valid, not_found, invalid]}
+        - name: queue_status
+          in: query
+          schema: {type: string, enum: [pending, running, dead, final, idle]}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: offset
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        "200":
+          description: Tabel operasional tracking beserta ringkasan antrean
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/tracking-operations/{id}:
+    delete:
+      tags: [Admin]
+      operationId: deleteAdminTrackingOperation
+      summary: Hapus permanen data operasional resi
+      description: >-
+        Menghapus shipment beserta job, status history, subscription, revision,
+        dan webhook outbox terkait. Endpoint internal ini tersedia di semua
+        environment, dilindungi admin API key, dan selalu mencatat audit admin.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "204":
+          description: Data tracking dan seluruh turunannya berhasil dihapus
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /v1/admin/rate-snapshots:
     get:
@@ -2936,9 +3083,81 @@ components:
           type: string
           pattern: "^[0-9]{5}$"
 
+    TrackingSubscriptionReplacementRequest:
+      type: object
+      additionalProperties: false
+      required: [order_id, courier, waybill, expected_revision]
+      properties:
+        order_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        courier:
+          type: string
+        waybill:
+          type: string
+          minLength: 6
+          maxLength: 40
+          pattern: "^[A-Za-z0-9-]+$"
+        last_phone_number:
+          type: string
+          pattern: "^[0-9]{5}$"
+        expected_revision:
+          type: integer
+          minimum: 1
+
+    TrackingVerificationRequest:
+      type: object
+      additionalProperties: false
+      required: [courier, waybill]
+      properties:
+        courier:
+          type: string
+        waybill:
+          type: string
+          minLength: 6
+          maxLength: 40
+          pattern: "^[A-Za-z0-9-]+$"
+        last_phone_number:
+          type: string
+          pattern: "^[0-9]{5}$"
+
+    TrackingVerificationResult:
+      type: object
+      required: [status, requested_courier, format_status, candidate_couriers, provider_checked, message]
+      properties:
+        status:
+          type: string
+          enum: [verified, courier_mismatch, invalid_format, not_found, provider_unavailable]
+        requested_courier:
+          type: string
+        detected_courier:
+          type: string
+        format_status:
+          type: string
+          enum: [matched, possible, unclassified, invalid]
+        candidate_couriers:
+          type: array
+          items: {type: string}
+        provider_checked:
+          type: boolean
+        message:
+          type: string
+        shipment:
+          $ref: "#/components/schemas/TrackingShipment"
+
+    TrackingVerificationResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TrackingVerificationResult"
+
     TrackingSubscription:
       type: object
-      required: [id, order_id, fulfillment_id, active, shipment]
+      required: [id, order_id, fulfillment_id, active, revision, shipment]
       properties:
         id:
           type: string
@@ -2951,6 +3170,9 @@ components:
           type: string
         active:
           type: boolean
+        revision:
+          type: integer
+          minimum: 1
         shipment:
           $ref: "#/components/schemas/TrackingShipment"
 
