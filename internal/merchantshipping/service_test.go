@@ -51,7 +51,7 @@ func TestUpdateCustomNormalizesAndValidatesCanonicalServices(t *testing.T) {
 		Services: []Selection{
 			{CourierCode: "JNE", ServiceCode: "reg"},
 			{CourierCode: "jne", ServiceCode: "REG"},
-			{CourierCode: "JNE", ServiceCode: "sps"},
+			{CourierCode: "JNE", ServiceCode: "jtr"},
 		},
 	})
 	if err != nil {
@@ -60,8 +60,8 @@ func TestUpdateCustomNormalizesAndValidatesCanonicalServices(t *testing.T) {
 	if preference.Mode != ModeCustom || len(preference.Services) != 2 {
 		t.Fatalf("unexpected preference: %#v", preference)
 	}
-	if repository.replaced.Services[0] != (Selection{CourierCode: "jne", ServiceCode: "REG"}) ||
-		repository.replaced.Services[1] != (Selection{CourierCode: "jne", ServiceCode: "SPS"}) {
+	if repository.replaced.Services[0] != (Selection{CourierCode: "jne", ServiceCode: "JTR"}) ||
+		repository.replaced.Services[1] != (Selection{CourierCode: "jne", ServiceCode: "REG"}) {
 		t.Fatalf("unexpected normalized services: %#v", repository.replaced.Services)
 	}
 
@@ -71,6 +71,14 @@ func TestUpdateCustomNormalizesAndValidatesCanonicalServices(t *testing.T) {
 	})
 	if !errors.Is(err, ErrUnknownService) {
 		t.Fatalf("error=%v want ErrUnknownService", err)
+	}
+
+	_, err = service.Update(context.Background(), "merchant_123", UpdateInput{
+		Mode:     ModeCustom,
+		Services: []Selection{{CourierCode: "jne", ServiceCode: "SPS"}},
+	})
+	if !errors.Is(err, ErrUnknownService) {
+		t.Fatalf("hidden group error=%v want ErrUnknownService", err)
 	}
 }
 
@@ -137,7 +145,7 @@ func TestUpdateEnforcesCourierAndServiceLimits(t *testing.T) {
 			Services: []couriers.Service{
 				{Code: "REG", Name: "JNE Regular", Group: "regular"},
 				{Code: "YES", Name: "JNE YES", Group: "next_day"},
-				{Code: "SPS", Name: "JNE Super Speed", Group: "express"},
+				{Code: "JTR", Name: "JNE Trucking", Group: "cargo"},
 			},
 		},
 		{
@@ -170,7 +178,7 @@ func TestUpdateEnforcesCourierAndServiceLimits(t *testing.T) {
 		Services: []Selection{
 			{CourierCode: "jne", ServiceCode: "REG"},
 			{CourierCode: "jne", ServiceCode: "YES"},
-			{CourierCode: "jne", ServiceCode: "SPS"},
+			{CourierCode: "jne", ServiceCode: "JTR"},
 		},
 	})
 	if !errors.As(err, &limitError) || limitError.RequestedServices != 3 {
@@ -224,6 +232,9 @@ func TestFilterUsesCanonicalServiceAndGroup(t *testing.T) {
 			CourierCode: "jne", ServiceCode: "REG23", CanonicalServiceCode: "REG", ServiceGroup: "regular",
 		}},
 		{Card: rates.RateCard{
+			CourierCode: "jne", ServiceCode: "CTCJTR", CanonicalServiceCode: "JTR", ServiceGroup: "cargo",
+		}},
+		{Card: rates.RateCard{
 			CourierCode: "jne", ServiceCode: "CTCSPS", CanonicalServiceCode: "SPS", ServiceGroup: "express",
 		}},
 	}
@@ -245,14 +256,58 @@ func TestFilterUsesCanonicalServiceAndGroup(t *testing.T) {
 	customRepository.preference = Preference{
 		Configured:    true,
 		Mode:          ModeGroups,
-		EnabledGroups: []string{"express"},
+		EnabledGroups: []string{"cargo"},
 	}
 	filtered, err = service.Filter(context.Background(), "merchant_123", results)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(filtered) != 1 || filtered[0].Card.ServiceCode != "CTCSPS" {
+	if len(filtered) != 1 || filtered[0].Card.ServiceCode != "CTCJTR" {
 		t.Fatalf("unexpected group filter result: %#v", filtered)
+	}
+}
+
+func TestCatalogOnlyExposesEmisellCheckoutGroups(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{preference: Preference{
+		Configured: true,
+		Mode:       ModeCustom,
+		Services: []Selection{
+			{CourierCode: "jne", ServiceCode: "REG"},
+			{CourierCode: "jne", ServiceCode: "SPS"},
+		},
+	}}
+	items := append(testCouriers(), couriers.Courier{
+		Code: "instant-only",
+		Name: "Instant Only",
+		Services: []couriers.Service{
+			{Code: "INSTANT", Name: "Instant", Group: "instant", ServiceType: "instant"},
+		},
+	})
+	service := NewService(repository, courierRepository{items: items})
+	catalog, err := service.Catalog(context.Background(), "merchant_123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantGroups := []string{"regular", "next_day", "economy", "cargo"}
+	if len(catalog.Groups) != len(wantGroups) {
+		t.Fatalf("groups=%#v", catalog.Groups)
+	}
+	for index, group := range catalog.Groups {
+		if group.Code != wantGroups[index] {
+			t.Fatalf("group[%d]=%s want %s", index, group.Code, wantGroups[index])
+		}
+	}
+	if len(catalog.Preference.Services) != 1 || catalog.Preference.Services[0].ServiceCode != "REG" {
+		t.Fatalf("hidden preference leaked: %#v", catalog.Preference.Services)
+	}
+	if len(catalog.Couriers) != 1 || len(catalog.Couriers[0].Services) != 2 {
+		t.Fatalf("unexpected filtered catalog: %#v", catalog.Couriers)
+	}
+	for _, item := range catalog.Couriers[0].Services {
+		if !supportedGroup(item.Group) {
+			t.Fatalf("unsupported group leaked: %#v", item)
+		}
 	}
 }
 
@@ -281,6 +336,7 @@ func testCouriers() []couriers.Courier {
 		Name: "JNE",
 		Services: []couriers.Service{
 			{Code: "REG", Name: "JNE Regular", Group: "regular", ServiceType: "parcel"},
+			{Code: "JTR", Name: "JNE Trucking", Group: "cargo", ServiceType: "cargo"},
 			{Code: "SPS", Name: "JNE Super Speed", Group: "express", ServiceType: "parcel"},
 		},
 	}}

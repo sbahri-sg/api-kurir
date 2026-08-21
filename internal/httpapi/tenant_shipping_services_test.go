@@ -47,6 +47,7 @@ func (shippingCourierRepository) List(context.Context) ([]couriers.Courier, erro
 		Name: "JNE",
 		Services: []couriers.Service{
 			{Code: "REG", Name: "JNE Regular", Group: "regular", ServiceType: "parcel"},
+			{Code: "JTR", Name: "JNE Trucking", Group: "cargo", ServiceType: "cargo"},
 			{Code: "SPS", Name: "JNE Super Speed", Group: "express", ServiceType: "parcel"},
 		},
 	}}, nil
@@ -87,7 +88,9 @@ func TestTenantShippingServicesPutAndGet(t *testing.T) {
 		t.Fatalf("GET status=%d body=%s", response.Code, response.Body.String())
 	}
 	if body := response.Body.String(); !bytes.Contains([]byte(body), []byte(`"selection_state":"partial"`)) ||
-		!bytes.Contains([]byte(body), []byte(`"service_code":"REG"`)) {
+		!bytes.Contains([]byte(body), []byte(`"service_code":"REG"`)) ||
+		bytes.Contains([]byte(body), []byte(`"code":"SPS"`)) ||
+		bytes.Contains([]byte(body), []byte(`"code":"express"`)) {
 		t.Fatalf("unexpected GET body=%s", body)
 	}
 }
@@ -170,7 +173,7 @@ func TestTenantShippingServicesReturnsAndEnforcesLimits(t *testing.T) {
 			"enabled_groups":[],
 			"services":[
 				{"courier_code":"jne","service_code":"REG"},
-				{"courier_code":"jne","service_code":"SPS"}
+				{"courier_code":"jne","service_code":"JTR"}
 			]
 		}`),
 	)

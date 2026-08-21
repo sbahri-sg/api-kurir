@@ -1246,7 +1246,7 @@
                 "shipping-services"
               ]
             },
-            "description": "Mengembalikan katalog canonical dan pilihan checkout merchant."
+            "description": "Mengembalikan katalog canonical dan pilihan checkout merchant hanya untuk grup regular, next_day, economy, dan cargo."
           },
           "response": []
         },
@@ -1302,7 +1302,7 @@
                 "shipping-services"
               ]
             },
-            "description": "Mengganti seluruh pilihan custom merchant secara atomik. Mode all/groups ditolak dan limit aktual dibaca dari GET shipping-services."
+            "description": "Mengganti seluruh pilihan custom merchant secara atomik. Hanya layanan regular, next_day, economy, dan cargo yang diterima; mode all/groups ditolak dan limit aktual dibaca dari GET shipping-services."
           },
           "response": []
         },

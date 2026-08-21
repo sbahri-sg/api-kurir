@@ -13,15 +13,10 @@ const (
 )
 
 var SupportedGroups = []string{
-	"economy",
 	"regular",
 	"next_day",
-	"express",
-	"same_day",
-	"instant",
+	"economy",
 	"cargo",
-	"international",
-	"special",
 }
 
 type Selection struct {

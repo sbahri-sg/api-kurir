@@ -81,7 +81,7 @@ dan tetap digunakan sebagai fallback tracking internal.
 | `GET /api/v1/integrations/providers` | Katalog provider dan provider efektif aktif |
 | `POST /api/v1/integrations/providers/{provider_code}/activate` | Aktifkan provider; credential dipilih internal |
 | `POST /api/v1/integrations/providers/{provider_code}/deactivate` | Nonaktifkan shipping merchant bila provider tersebut sedang aktif |
-| `GET/PUT /api/v1/integrations/shipping-services` | Baca limit/selectable dan simpan pilihan custom checkout merchant |
+| `GET/PUT /api/v1/integrations/shipping-services` | Baca limit/selectable dan simpan pilihan custom grup regular, next_day, economy, atau cargo |
 | `POST /api/v1/integrations/tracking/subscriptions` | Daftarkan AWB fulfillment |
 | `GET /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Baca snapshot tanpa hit provider |
 | `DELETE /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Hentikan tracking fulfillment merchant; snapshot tetap disimpan |

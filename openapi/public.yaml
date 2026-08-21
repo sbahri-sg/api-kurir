@@ -1046,8 +1046,9 @@ paths:
         Mengembalikan katalog canonical beserta selected dan selection_state
         untuk membangun checkbox kurir bertingkat. Response juga memuat limit,
         pemakaian, sisa pilihan, dan selectable pada setiap kurir/layanan.
-        Tenant tanpa preference mulai dari nol pilihan dan tidak memperoleh
-        opsi checkout sebelum menyimpan layanan custom.
+        Hanya grup regular, next_day, economy, dan cargo yang dikirim ke
+        Emisell. Tenant tanpa preference mulai dari nol pilihan dan tidak
+        memperoleh opsi checkout sebelum menyimpan layanan custom.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -2469,15 +2470,10 @@ components:
           items:
             type: string
             enum:
-              - economy
               - regular
               - next_day
-              - express
-              - same_day
-              - instant
+              - economy
               - cargo
-              - international
-              - special
         services:
           type: array
           maxItems: 200
@@ -2524,15 +2520,20 @@ components:
       properties:
         code:
           type: string
+          enum: [regular, next_day, economy, cargo]
         name:
           type: string
 
     TenantShippingCatalogService:
+      description: Layanan checkout Emisell; group selalu regular, next_day, economy, atau cargo.
       allOf:
         - $ref: "#/components/schemas/CourierService"
         - type: object
           required: [selected, selectable]
           properties:
+            group:
+              type: string
+              enum: [regular, next_day, economy, cargo]
             selected:
               type: boolean
             selectable:

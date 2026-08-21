@@ -13,25 +13,21 @@ layanan canonical.
 - Credential/provider account tetap dikelola terpisah. Seller memilih layanan
   seperti `JNE REG`, bukan memilih snapshot atau kode mentah provider.
 - Kunci layanan stabil adalah `courier_code + canonical service_code`, misalnya
-  `jne:REG`, `jne:YES`, dan `jne:SPS`.
+  `jne:REG`, `jne:YES`, dan `jne:JTR`.
 
 ## 2. Grup canonical
 
 | Grup | Contoh |
 |---|---|
-| `economy` | JNE OKE, TIKI ECO |
 | `regular` | JNE REG, J&T EZ, TIKI REG |
 | `next_day` | JNE YES, TIKI ONS |
-| `express` | JNE Super Speed, J&T SUPER |
-| `same_day` | TIKI SDS, Pos Same Day |
-| `instant` | layanan instant yang tersedia melalui provider aktif |
+| `economy` | JNE OKE, TIKI ECO |
 | `cargo` | JNE JTR, TIKI TRC, SiCepat GOKIL |
-| `international` | layanan internasional |
-| `special` | dangerous goods, valuable goods, atau layanan khusus lain |
 
-`unknown` tidak dapat diaktifkan oleh konfigurasi baru. Kode provider baru harus
-masuk katalog canonical terlebih dahulu. Kode mentah tetap disimpan untuk audit
-dan proses klasifikasi otomatis.
+GET Emisell Gateway hanya mengirim empat grup tersebut. Layanan `express`,
+`same_day`, `instant`, `international`, `special`, dan `unknown` tetap boleh ada
+di master internal untuk kebutuhan provider, tetapi tidak dikirim ke Emisell,
+tidak dapat dipilih melalui PUT, dan tidak lolos ke hasil checkout merchant.
 
 ## 3. Mode pilihan
 
@@ -114,7 +110,8 @@ Response utama:
     "groups": [
       { "code": "regular", "name": "Regular" },
       { "code": "next_day", "name": "Next Day" },
-      { "code": "express", "name": "Express" }
+      { "code": "economy", "name": "Economy" },
+      { "code": "cargo", "name": "Cargo" }
     ],
     "couriers": [
       {
@@ -141,10 +138,10 @@ Response utama:
             "selectable": true
           },
           {
-            "code": "SPS",
-            "name": "JNE Super Speed",
-            "group": "express",
-            "service_type": "parcel",
+            "code": "JTR",
+            "name": "JNE Trucking",
+            "group": "cargo",
+            "service_type": "cargo",
             "calculation_mode": "provider_quote",
             "selected": false,
             "selectable": true
@@ -193,7 +190,8 @@ bila berupa array kosong untuk kompatibilitas client lama.
 
 Response mengembalikan preferensi yang sudah dinormalisasi dan nomor `version`
 baru. Kode kurir dinormalisasi lowercase dan kode layanan uppercase. Duplikasi
-dihapus otomatis.
+dihapus otomatis. Layanan dari grup selain `regular`, `next_day`, `economy`,
+dan `cargo` ditolak sebagai layanan yang tidak tersedia pada katalog Emisell.
 
 Mode `custom` boleh menyimpan array kosong untuk menonaktifkan seluruh layanan.
 Checkout kemudian menerima `RATE_NOT_AVAILABLE` sampai setidaknya satu layanan
@@ -269,7 +267,8 @@ Detail pemisahan minimum penerimaan dan minimum tagihan tersedia pada
 - Operator dapat mengubahnya melalui `MERCHANT_SHIPPING_MAX_COURIERS` dan
   `MERCHANT_SHIPPING_MAX_SERVICES`; batas keras layanan adalah 200.
 - Update disimpan dalam satu transaksi database.
-- Service `unknown` tidak dapat dipilih pada konfigurasi baru.
+- Hanya service dalam grup `regular`, `next_day`, `economy`, dan `cargo` yang
+  dapat dipilih pada konfigurasi baru.
 - Secret provider tidak pernah menjadi bagian preference atau response katalog.
 - Domain tidak mengubah kepemilikan preference dan diselesaikan oleh Emisell.
 - Hasil exact quote tetap terisolasi berdasarkan merchant dan credential

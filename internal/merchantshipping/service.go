@@ -73,6 +73,7 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 	if err != nil {
 		return Catalog{}, err
 	}
+	preference = filterPreference(preference, courierCatalog)
 	result := Catalog{
 		Preference: preference,
 		Groups:     groupOptions(),
@@ -85,7 +86,7 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 	for _, courier := range courierCatalog {
 		item := catalogCourier(courier)
 		for _, service := range courier.Services {
-			if strings.EqualFold(strings.TrimSpace(service.Group), "unknown") {
+			if !supportedGroup(service.Group) {
 				continue
 			}
 			selected := preferenceAllows(
@@ -108,10 +109,11 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 			})
 		}
 		item.TotalServiceCount = len(item.Services)
-		availableServices += item.TotalServiceCount
-		if item.TotalServiceCount > 0 {
-			availableCouriers++
+		if item.TotalServiceCount == 0 {
+			continue
 		}
+		availableServices += item.TotalServiceCount
+		availableCouriers++
 		switch {
 		case item.SelectedServiceCount == 0:
 			item.SelectionState = "none"
@@ -166,6 +168,9 @@ func (s *Service) Filter(
 	}
 	filtered := make([]rates.Result, 0, len(results))
 	for _, result := range results {
+		if !supportedGroup(result.Card.ServiceGroup) {
+			continue
+		}
 		canonicalCode := result.Card.CanonicalServiceCode
 		if canonicalCode == "" {
 			canonicalCode = result.Card.ServiceCode
@@ -215,7 +220,7 @@ func (s *Service) normalizeUpdate(
 		available := make(map[string]struct{})
 		for _, courier := range catalog {
 			for _, service := range courier.Services {
-				if service.Group == "unknown" {
+				if !supportedGroup(service.Group) {
 					continue
 				}
 				available[selectionKey(courier.Code, service.Code)] = struct{}{}
@@ -358,6 +363,45 @@ func selectionKey(courierCode, serviceCode string) string {
 		strings.ToUpper(strings.TrimSpace(serviceCode))
 }
 
+func supportedGroup(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	for _, group := range SupportedGroups {
+		if value == group {
+			return true
+		}
+	}
+	return false
+}
+
+func filterPreference(preference Preference, catalog []couriers.Courier) Preference {
+	allowedSelections := make(map[string]struct{})
+	for _, courier := range catalog {
+		for _, service := range courier.Services {
+			if supportedGroup(service.Group) {
+				allowedSelections[selectionKey(courier.Code, service.Code)] = struct{}{}
+			}
+		}
+	}
+	services := make([]Selection, 0, len(preference.Services))
+	for _, selection := range preference.Services {
+		if _, allowed := allowedSelections[selectionKey(
+			selection.CourierCode,
+			selection.ServiceCode,
+		)]; allowed {
+			services = append(services, selection)
+		}
+	}
+	groups := make([]string, 0, len(preference.EnabledGroups))
+	for _, group := range preference.EnabledGroups {
+		if supportedGroup(group) {
+			groups = append(groups, group)
+		}
+	}
+	preference.Services = services
+	preference.EnabledGroups = groups
+	return preference
+}
+
 func validTenantID(value string) bool {
 	if len(value) < 1 || len(value) > 128 {
 		return false
@@ -376,15 +420,10 @@ func validTenantID(value string) bool {
 
 func groupOptions() []GroupOption {
 	names := map[string]string{
-		"economy":       "Economy",
-		"regular":       "Regular",
-		"next_day":      "Next Day",
-		"express":       "Express",
-		"same_day":      "Same Day",
-		"instant":       "Instant",
-		"cargo":         "Cargo",
-		"international": "International",
-		"special":       "Special",
+		"economy":  "Economy",
+		"regular":  "Regular",
+		"next_day": "Next Day",
+		"cargo":    "Cargo",
 	}
 	result := make([]GroupOption, 0, len(SupportedGroups))
 	for _, group := range SupportedGroups {

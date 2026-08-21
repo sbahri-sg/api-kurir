@@ -1822,7 +1822,7 @@ Content-Type: application/json
     path: "/api/v1/integrations/shipping-services",
     title: "Katalog dan pilihan layanan checkout",
     description:
-      "Mengembalikan kurir canonical, layanan, capability, status pilihan, limit maksimum, pemakaian, sisa, dan selectable. Merchant baru mulai dari nol pilihan dan wajib menyimpan layanan custom sebelum checkout menampilkan ongkir.",
+      "Mengembalikan kurir canonical dan layanan dari grup regular, next_day, economy, atau cargo beserta capability, status pilihan, limit, dan selectable. Grup lain tidak dikirim ke Emisell dan tidak dapat dipilih.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/shipping-services
 key: {{api_key}}
@@ -1858,7 +1858,8 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     "groups": [
       { "code": "regular", "name": "Regular" },
       { "code": "next_day", "name": "Next Day" },
-      { "code": "express", "name": "Express" }
+      { "code": "economy", "name": "Economy" },
+      { "code": "cargo", "name": "Cargo" }
     ],
     "couriers": [
       {
@@ -1885,10 +1886,10 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
             "selectable": true
           },
           {
-            "code": "SPS",
-            "name": "JNE Super Speed",
-            "group": "express",
-            "service_type": "parcel",
+            "code": "JTR",
+            "name": "JNE Trucking",
+            "group": "cargo",
+            "service_type": "cargo",
             "calculation_mode": "provider_quote",
             "selected": false,
             "selectable": true
@@ -1911,6 +1912,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     parameters: [
       "services — seluruh pasangan courier_code + canonical service_code yang dipilih",
+      "group yang dapat dipilih hanya regular, next_day, economy, dan cargo",
       "mode — opsional; bila dikirim hanya boleh custom",
       "enabled_groups — legacy opsional dan harus berupa array kosong",
       "maksimum default 5 kurir dan 20 layanan; baca limit aktual dari GET",
