@@ -65,11 +65,11 @@ Endpoint `/v1/admin/*` memakai:
 ADMIN_API_KEYS
 ```
 
-Kedua key tidak saling menggantikan. `API_KEYS` menjadi bootstrap/recovery key
-sekaligus dedicated service key Main Service Emisell. Hanya key ini yang boleh
-membawa `X-Emisell-Merchant-ID`. Admin dapat membuat key customer tambahan
-dari dashboard tanpa restart API, tetapi key customer tersebut tidak dapat
-mengakses endpoint gateway atau membawa konteks merchant. Production menolak startup bila salah satu
+Kedua key tidak saling menggantikan. `API_KEYS` menjadi bootstrap/recovery key.
+Admin dapat membuat **Main Service key** dari dashboard tanpa restart; key ini
+memiliki scope `gateway:access` dan boleh membawa `X-Emisell-Merchant-ID`.
+**Public API key** hanya mengakses ongkir, lokasi, kurir, dan tracking serta
+ditolak bila mencoba membawa konteks merchant. Production menolak startup bila
 kelompok key environment tidak dikonfigurasi. Dashboard menyimpan admin key
 hanya di `sessionStorage`, sehingga key hilang ketika sesi browser ditutup.
 

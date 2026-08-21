@@ -11,14 +11,25 @@ import (
 )
 
 type stubCustomerKeyAuthenticator struct {
-	valid bool
-	err   error
-	calls int
+	valid       bool
+	scopedValid bool
+	err         error
+	calls       int
+	scopeCalls  int
 }
 
 func (s *stubCustomerKeyAuthenticator) Authenticate(context.Context, string) (bool, error) {
 	s.calls++
 	return s.valid, s.err
+}
+
+func (s *stubCustomerKeyAuthenticator) AuthenticateScope(
+	context.Context,
+	string,
+	string,
+) (bool, error) {
+	s.scopeCalls++
+	return s.scopedValid, s.err
 }
 
 func TestCustomerAPIKeyMiddlewareAcceptsStaticAndGeneratedKeys(t *testing.T) {

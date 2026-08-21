@@ -43,6 +43,23 @@ func (r *memoryRepository) Authenticate(_ context.Context, keyHash []byte) (bool
 	return !r.revoked && bytes.Equal(keyHash, r.input.KeyHash), nil
 }
 
+func (r *memoryRepository) AuthenticateScope(
+	_ context.Context,
+	keyHash []byte,
+	scope string,
+) (bool, error) {
+	r.authenticateCalls++
+	if r.revoked || !bytes.Equal(keyHash, r.input.KeyHash) {
+		return false, nil
+	}
+	for _, candidate := range r.input.Scopes {
+		if candidate == scope {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func TestGenerateStoresOnlyHashAndReturnsSecretOnce(t *testing.T) {
 	t.Parallel()
 
@@ -101,5 +118,44 @@ func TestAuthenticateCachesValidKeyAndRevokeClearsCache(t *testing.T) {
 	}
 	if valid {
 		t.Fatal("revoked key must no longer authenticate")
+	}
+}
+
+func TestMainServiceKeyRequiresGatewayScope(t *testing.T) {
+	t.Parallel()
+
+	repository := &memoryRepository{}
+	service := NewService(repository)
+	publicKey, err := service.Generate(context.Background(), "operator", "req_public")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed, err := service.AuthenticateScope(
+		context.Background(), publicKey.Secret, ScopeGatewayAccess,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed {
+		t.Fatal("public key must not receive gateway access")
+	}
+
+	mainKey, err := service.GenerateMainService(
+		context.Background(), "operator", "req_main_service",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed, err = service.AuthenticateScope(
+		context.Background(), mainKey.Secret, ScopeGatewayAccess,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allowed {
+		t.Fatal("main service key must receive gateway access")
+	}
+	if mainKey.APIKey.Kind != KeyKindMainService {
+		t.Fatalf("kind=%q want %q", mainKey.APIKey.Kind, KeyKindMainService)
 	}
 }

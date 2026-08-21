@@ -173,6 +173,29 @@ func (r *PostgresRepository) Authenticate(
 	return true, nil
 }
 
+func (r *PostgresRepository) AuthenticateScope(
+	ctx context.Context,
+	keyHash []byte,
+	scope string,
+) (bool, error) {
+	var id string
+	err := r.pool.QueryRow(ctx, `
+		UPDATE customer_api_keys
+		SET last_used_at = now()
+		WHERE key_hash = $1
+		  AND active
+		  AND $2 = ANY(scopes)
+		RETURNING id::text
+	`, keyHash, scope).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("authorize customer api key scope: %w", err)
+	}
+	return true, nil
+}
+
 func (r *PostgresRepository) get(ctx context.Context, id string) (APIKey, error) {
 	item, err := scanAPIKey(r.pool.QueryRow(ctx, `
 		SELECT
@@ -217,6 +240,7 @@ func scanAPIKey(row rowScanner) (APIKey, error) {
 	); err != nil {
 		return APIKey{}, fmt.Errorf("scan customer api key: %w", err)
 	}
+	item.Kind = keyKindFromScopes(item.Scopes)
 	return item, nil
 }
 

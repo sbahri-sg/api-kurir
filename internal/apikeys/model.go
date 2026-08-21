@@ -2,12 +2,22 @@ package apikeys
 
 import "time"
 
+const (
+	ScopeShippingRead  = "shipping:read"
+	ScopeTrackingRead  = "tracking:read"
+	ScopeGatewayAccess = "gateway:access"
+
+	KeyKindPublic      = "public"
+	KeyKindMainService = "main_service"
+)
+
 type APIKey struct {
 	ID          string     `json:"id"`
 	KeyPrefix   string     `json:"key_prefix"`
 	KeyLastFour string     `json:"key_last_four"`
 	DisplayKey  string     `json:"display_key"`
 	Scopes      []string   `json:"scopes"`
+	Kind        string     `json:"kind"`
 	Active      bool       `json:"active"`
 	LastUsedAt  *time.Time `json:"last_used_at"`
 	CreatedBy   string     `json:"created_by"`
@@ -28,4 +38,13 @@ type CreateInput struct {
 	Scopes    []string
 	CreatedBy string
 	RequestID string
+}
+
+func keyKindFromScopes(scopes []string) string {
+	for _, scope := range scopes {
+		if scope == ScopeGatewayAccess {
+			return KeyKindMainService
+		}
+	}
+	return KeyKindPublic
 }

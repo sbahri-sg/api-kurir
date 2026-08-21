@@ -12,7 +12,7 @@ import (
 func TestMerchantContextMiddlewarePropagatesMerchant(t *testing.T) {
 	t.Parallel()
 	e := echo.New()
-	e.Use(serviceAPIKeyMiddleware([]string{"emisell-service-key"}))
+	e.Use(serviceAPIKeyMiddleware([]string{"emisell-service-key"}, nil))
 	e.Use(merchantContextMiddleware(true))
 	e.GET("/protected", func(c *echo.Context) error {
 		identity, ok := tenancy.FromContext(c.Request().Context())
@@ -34,7 +34,7 @@ func TestMerchantContextMiddlewarePropagatesMerchant(t *testing.T) {
 func TestMerchantContextMiddlewareRejectsMissingAndInvalidMerchant(t *testing.T) {
 	t.Parallel()
 	e := echo.New()
-	e.Use(serviceAPIKeyMiddleware([]string{"emisell-service-key"}))
+	e.Use(serviceAPIKeyMiddleware([]string{"emisell-service-key"}, nil))
 	e.Use(merchantContextMiddleware(true))
 	e.GET("/protected", func(c *echo.Context) error {
 		return c.NoContent(http.StatusNoContent)
@@ -55,6 +55,47 @@ func TestMerchantContextMiddlewareRejectsMissingAndInvalidMerchant(t *testing.T)
 	e.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid merchant status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestServiceAPIKeyMiddlewareAcceptsScopedGeneratedKey(t *testing.T) {
+	t.Parallel()
+	authenticator := &stubCustomerKeyAuthenticator{scopedValid: true}
+	e := echo.New()
+	e.Use(serviceAPIKeyMiddleware(nil, authenticator))
+	e.Use(merchantContextMiddleware(true))
+	e.GET("/protected", func(c *echo.Context) error {
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("key", "ek_live_main_service")
+	request.Header.Set(merchantIDHeader, "merchant_123")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if authenticator.scopeCalls != 1 {
+		t.Fatalf("scope calls=%d want 1", authenticator.scopeCalls)
+	}
+}
+
+func TestServiceAPIKeyMiddlewareRejectsUnscopedGeneratedKey(t *testing.T) {
+	t.Parallel()
+	authenticator := &stubCustomerKeyAuthenticator{scopedValid: false}
+	e := echo.New()
+	e.Use(serviceAPIKeyMiddleware(nil, authenticator))
+	e.GET("/protected", func(c *echo.Context) error {
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("key", "ek_live_public")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

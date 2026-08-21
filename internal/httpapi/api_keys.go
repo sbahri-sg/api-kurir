@@ -9,6 +9,10 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+type createAPIKeyRequest struct {
+	Kind string `json:"kind"`
+}
+
 func adminAPIKeyListHandler(service *apikeys.Service) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		limit, offset, err := adminPagination(c)
@@ -25,11 +29,35 @@ func adminAPIKeyListHandler(service *apikeys.Service) echo.HandlerFunc {
 
 func adminAPIKeyCreateHandler(service *apikeys.Service) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		result, err := service.Generate(
-			c.Request().Context(),
-			adminActor(c),
-			requestID(c),
-		)
+		var request createAPIKeyRequest
+		if err := decodeOptionalJSON(c, &request); err != nil {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), nil)
+		}
+		kind := strings.TrimSpace(request.Kind)
+		if kind == "" {
+			kind = apikeys.KeyKindPublic
+		}
+
+		var result apikeys.GeneratedAPIKey
+		var err error
+		switch kind {
+		case apikeys.KeyKindPublic:
+			result, err = service.Generate(
+				c.Request().Context(), adminActor(c), requestID(c),
+			)
+		case apikeys.KeyKindMainService:
+			result, err = service.GenerateMainService(
+				c.Request().Context(), adminActor(c), requestID(c),
+			)
+		default:
+			return writeError(
+				c,
+				http.StatusBadRequest,
+				"INVALID_API_KEY_KIND",
+				"Jenis API key harus public atau main_service.",
+				nil,
+			)
+		}
 		if err != nil {
 			return err
 		}

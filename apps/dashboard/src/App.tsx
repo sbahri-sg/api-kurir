@@ -391,11 +391,11 @@ export function App() {
     }
   }
 
-  async function generateAPIKey() {
+  async function generateAPIKey(kind: "public" | "main_service") {
     setKeyActionLoading(true);
     setError("");
     try {
-      const generated = await api.generateAPIKey();
+      const generated = await api.generateAPIKey(kind);
       setGeneratedAPIKey(generated);
       setAPIKeys((current) => [
         generated.api_key,
@@ -2454,16 +2454,19 @@ function APIKeyManagement({
   items: CustomerAPIKey[];
   generated: GeneratedCustomerAPIKey | null;
   loading: boolean;
-  onGenerate: () => Promise<void>;
+  onGenerate: (kind: "public" | "main_service") => Promise<void>;
   onRevoke: (id: string) => Promise<void>;
   onDismissGenerated: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [keyKind, setKeyKind] = useState<"public" | "main_service">(
+    "main_service",
+  );
 
   async function generate() {
     setCopied(false);
     try {
-      await onGenerate();
+      await onGenerate(keyKind);
     } catch {
       // The parent renders the API error.
     }
@@ -2483,13 +2486,32 @@ function APIKeyManagement({
     <div className="api-key-page">
       <section className="api-key-grid">
         <div className="panel api-key-create">
-          <p className="eyebrow">AKSES CUSTOMER</p>
+          <p className="eyebrow">AKSES API</p>
           <h2>Generate API key</h2>
           <p>
-            Buat key untuk main service atau customer. Key ini hanya dapat
-            mengakses API ongkir, lokasi, kurir, dan tracking—bukan endpoint
-            admin. Key tetap aktif sampai Anda melakukan revoke.
+            Buat key sesuai pemakainya. Main Service dapat membawa konteks
+            merchant ke Emisell Gateway, sedangkan Public API hanya dapat
+            mengakses ongkir, lokasi, kurir, dan tracking.
           </p>
+          <label className="field">
+            <span>Jenis key</span>
+            <select
+              value={keyKind}
+              onChange={(event) =>
+                setKeyKind(
+                  event.target.value as "public" | "main_service",
+                )
+              }
+            >
+              <option value="main_service">Main Service (disarankan)</option>
+              <option value="public">Public API</option>
+            </select>
+            <small>
+              {keyKind === "main_service"
+                ? "Khusus backend Emisell; dapat memakai X-Emisell-Merchant-ID."
+                : "Tidak dapat mengakses /integrations atau membawa konteks merchant."}
+            </small>
+          </label>
           <div className="api-key-action">
             <button
               className="button button-primary"
@@ -2568,7 +2590,12 @@ function APIKeyManagement({
                       <strong className="api-key-mask">{item.display_key}</strong>
                     </td>
                     <td>
-                      <strong>Ongkir & tracking</strong>
+                      <strong>
+                        {item.kind === "main_service" ||
+                        item.scopes.includes("gateway:access")
+                          ? "Main Service & Gateway"
+                          : "Public API"}
+                      </strong>
                       <small>{item.scopes.join(" · ")}</small>
                     </td>
                     <td>

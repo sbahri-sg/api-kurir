@@ -12,4 +12,5 @@ type Repository interface {
 	Create(ctx context.Context, input CreateInput) (APIKey, error)
 	Revoke(ctx context.Context, id, actor, requestID string) error
 	Authenticate(ctx context.Context, keyHash []byte) (bool, error)
+	AuthenticateScope(ctx context.Context, keyHash []byte, scope string) (bool, error)
 }

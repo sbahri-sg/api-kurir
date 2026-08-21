@@ -127,6 +127,7 @@ func New(
 		merchantShippingService,
 		trackingService,
 		apiKeys,
+		customerAPIKeyService,
 		immediateTrackingAdapter,
 	)
 	// Compatibility alias for Emisell clients deployed before the API prefix
@@ -138,6 +139,7 @@ func New(
 		merchantShippingService,
 		trackingService,
 		apiKeys,
+		customerAPIKeyService,
 		immediateTrackingAdapter,
 	)
 	if legacyRepository, ok := locationRepository.(legacyRegionStore); ok {
@@ -208,13 +210,14 @@ func registerTenantIntegrationRoutes(
 	merchantShippingService *merchantshipping.Service,
 	trackingService *tracking.Service,
 	apiKeys []string,
+	serviceKeyAuthenticator customerKeyAuthenticator,
 	immediateTrackingAdapters ...tracking.Adapter,
 ) {
 	var immediateTrackingAdapter tracking.Adapter
 	if len(immediateTrackingAdapters) > 0 {
 		immediateTrackingAdapter = immediateTrackingAdapters[0]
 	}
-	integrationGroup.Use(serviceAPIKeyMiddleware(apiKeys))
+	integrationGroup.Use(serviceAPIKeyMiddleware(apiKeys, serviceKeyAuthenticator))
 	integrationGroup.Use(merchantContextMiddleware(true))
 	integrationGroup.GET(
 		"/provider-credentials",
@@ -406,6 +409,7 @@ func apiKeyMiddleware(keys []string) echo.MiddlewareFunc {
 
 type customerKeyAuthenticator interface {
 	Authenticate(ctx context.Context, token string) (bool, error)
+	AuthenticateScope(ctx context.Context, token, scope string) (bool, error)
 }
 
 func customerAPIKeyMiddleware(
@@ -435,26 +439,70 @@ func customerAPIKeyMiddleware(
 			if !valid {
 				return writeError(c, http.StatusUnauthorized, "UNAUTHORIZED", "API key tidak valid.", nil)
 			}
+			if strings.TrimSpace(c.Request().Header.Get(merchantIDHeader)) != "" {
+				allowed, err := authenticator.AuthenticateScope(
+					c.Request().Context(),
+					token,
+					apikeys.ScopeGatewayAccess,
+				)
+				if err != nil {
+					return err
+				}
+				if allowed {
+					c.Set(serviceAPIKeyContextKey, true)
+				}
+			}
 			return next(c)
 		}
 	}
 }
 
-func serviceAPIKeyMiddleware(staticKeys []string) echo.MiddlewareFunc {
+func serviceAPIKeyMiddleware(
+	staticKeys []string,
+	authenticator customerKeyAuthenticator,
+) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			token := strings.TrimSpace(c.Request().Header.Get("key"))
 			if token == "" {
 				token = bearerToken(c.Request().Header.Get("Authorization"))
 			}
-			if token == "" || !matchesAnyKey(token, staticKeys) {
+			if token == "" {
 				return writeError(
 					c,
 					http.StatusUnauthorized,
 					"UNAUTHORIZED",
-					"Dedicated service API key tidak valid.",
+					"Main Service API key tidak valid atau tidak memiliki scope gateway:access.",
 					nil,
 				)
+			}
+			if !matchesAnyKey(token, staticKeys) {
+				if authenticator == nil {
+					return writeError(
+						c,
+						http.StatusUnauthorized,
+						"UNAUTHORIZED",
+						"Main Service API key tidak valid atau tidak memiliki scope gateway:access.",
+						nil,
+					)
+				}
+				valid, err := authenticator.AuthenticateScope(
+					c.Request().Context(),
+					token,
+					apikeys.ScopeGatewayAccess,
+				)
+				if err != nil {
+					return err
+				}
+				if !valid {
+					return writeError(
+						c,
+						http.StatusUnauthorized,
+						"UNAUTHORIZED",
+						"Main Service API key tidak valid atau tidak memiliki scope gateway:access.",
+						nil,
+					)
+				}
 			}
 			c.Set(serviceAPIKeyContextKey, true)
 			return next(c)

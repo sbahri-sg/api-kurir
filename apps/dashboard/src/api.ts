@@ -278,6 +278,7 @@ export type CustomerAPIKey = {
   key_last_four: string;
   display_key: string;
   scopes: string[];
+  kind: "public" | "main_service";
   active: boolean;
   last_used_at: string | null;
   created_by: string;
@@ -452,9 +453,10 @@ export class AdminApi {
     });
   }
 
-  generateAPIKey() {
+  generateAPIKey(kind: "public" | "main_service") {
     return this.request<GeneratedCustomerAPIKey>("/v1/admin/api-keys", {
       method: "POST",
+      body: JSON.stringify({ kind }),
     });
   }
 

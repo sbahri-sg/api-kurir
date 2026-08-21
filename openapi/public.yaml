@@ -1648,16 +1648,23 @@ paths:
           $ref: "#/components/responses/Unauthorized"
     post:
       tags: [Admin]
-      operationId: adminGenerateCustomerAPIKey
-      summary: Membuat customer API key
+      operationId: adminGenerateAPIKey
+      summary: Membuat Public API atau Main Service key
       description: >
         Secret lengkap hanya dikembalikan pada response pembuatan ini.
         Database hanya menyimpan hash SHA-256. Key dibuat tanpa nama,
-        tidak kedaluwarsa, dan aktif sampai di-revoke.
+        tidak kedaluwarsa, dan aktif sampai di-revoke. Hanya kind main_service
+        yang memperoleh scope gateway:access.
       security:
         - adminBearerAuth: []
       parameters:
         - $ref: "#/components/parameters/AdminActor"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyRequest"
       responses:
         "201":
           description: Key berhasil dibuat; secret wajib disimpan sekarang
@@ -1809,12 +1816,16 @@ components:
       type: http
       scheme: bearer
       bearerFormat: Dedicated Emisell service API key
-      description: Salah satu secret statis dari API_KEYS; bukan customer key hasil generate.
+      description: >
+        Key Main Service hasil generate dashboard dengan scope gateway:access,
+        atau secret statis API_KEYS sebagai recovery.
     serviceKeyAuth:
       type: apiKey
       in: header
       name: key
-      description: Salah satu secret statis dari API_KEYS; hanya disimpan pada backend Emisell.
+      description: >
+        Key Main Service hasil generate dashboard dengan scope gateway:access,
+        atau secret statis API_KEYS sebagai recovery. Hanya disimpan pada backend Emisell.
     merchantContextAuth:
       type: apiKey
       in: header
@@ -1844,7 +1855,8 @@ components:
         Merchant ID stabil dari backend Emisell. Wajib pada endpoint gateway;
         opsional pada endpoint kompatibilitas RajaOngkir V2 agar snapshot dan
         credential tetap terisolasi per merchant. Hanya diterima bersama
-        dedicated service key dari API_KEYS, bukan customer key hasil generate.
+        key bertipe main_service dengan scope gateway:access, atau recovery key
+        statis dari API_KEYS. Key public biasa ditolak.
       schema:
         type: string
         pattern: "^[A-Za-z0-9._:-]{1,128}$"
@@ -3452,6 +3464,7 @@ components:
         - key_last_four
         - display_key
         - scopes
+        - kind
         - active
         - created_by
         - created_at
@@ -3473,7 +3486,13 @@ components:
           type: array
           items:
             type: string
-            enum: ["shipping:read", "tracking:read"]
+            enum: ["shipping:read", "tracking:read", "gateway:access"]
+        kind:
+          type: string
+          enum: [public, main_service]
+          description: >
+            public tidak boleh membawa konteks merchant; main_service boleh
+            mengakses Emisell Gateway dari backend tepercaya.
         active:
           type: boolean
         last_used_at:
@@ -3686,6 +3705,15 @@ components:
           type: string
           description: Secret sekali tampil dengan prefix ek_live_.
           pattern: "^ek_live_[A-Za-z0-9_-]{43}$"
+
+    CreateAPIKeyRequest:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [public, main_service]
+          default: public
+          description: Gunakan main_service untuk backend Emisell Gateway.
 
     GeneratedCustomerAPIKeyResponse:
       type: object

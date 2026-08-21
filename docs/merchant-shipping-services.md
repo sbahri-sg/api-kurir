@@ -89,12 +89,13 @@ berlaku.
 Semua endpoint memakai dua header:
 
 ```http
-key: <customer-api-key>
+key: <main-service-api-key>
 X-Emisell-Merchant-ID: merchant_123
 ```
 
-Gunakan dedicated service API key milik Main Service. Merchant ID berasal dari
-database Emisell dan header maupun API key tidak pernah dikirim ke browser.
+Gunakan key bertipe `main_service` hasil generate dashboard dengan scope
+`gateway:access`. `API_KEYS` environment hanya menjadi recovery. Merchant ID
+berasal dari database Emisell dan kedua header tidak pernah dikirim ke browser.
 
 ## 5. Membaca katalog dan status pilihan
 
@@ -254,8 +255,8 @@ Detail pemisahan minimum penerimaan dan minimum tagihan tersedia pada
 |---|---|---|
 | 400 | `INVALID_SHIPPING_SERVICE_PREFERENCE` | kombinasi mode, groups, atau services tidak valid |
 | 400 | `MERCHANT_ID_REQUIRED` / `INVALID_MERCHANT_ID` | header merchant hilang atau tidak valid |
-| 403 | `MERCHANT_CONTEXT_FORBIDDEN` | customer key mencoba membawa konteks merchant |
-| 401 | `UNAUTHORIZED` | service API key tidak valid |
+| 403 | `MERCHANT_CONTEXT_FORBIDDEN` | public key mencoba membawa konteks merchant |
+| 401 | `UNAUTHORIZED` | Main Service key tidak aktif/tidak valid atau tidak memiliki gateway:access |
 | 422 | `SHIPPING_SERVICE_NOT_FOUND` | pasangan courier/service tidak ada pada katalog aktif |
 | 400/422 | `RATE_NOT_AVAILABLE` | tidak ada hasil rute yang lolos konfigurasi |
 

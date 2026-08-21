@@ -38,6 +38,21 @@ domain-b.com ─┼─> merchant_123 ─> API Kurir
 domain-c.com ─┘
 ```
 
+## Autentikasi Main Service
+
+Admin membuat key dari dashboard **API Key → Generate API key** dan memilih
+jenis **Main Service**. Key ini disimpan sebagai hash dan memperoleh scope
+`gateway:access`. Main Service mengirim dua header berikut:
+
+```http
+key: <main-service-key>
+X-Emisell-Merchant-ID: merchant_123
+```
+
+Key jenis **Public API** tetap dapat memakai ongkir dan tracking publik, tetapi
+tidak dapat mengakses `/api/v1/integrations/*` atau membawa konteks merchant.
+`API_KEYS` dari environment tetap tersedia hanya sebagai recovery/bootstrap.
+
 ## Lifecycle credential dan provider
 
 1. Main Service mengirim key seller ke
@@ -98,8 +113,8 @@ refresh provider. Webhook HMAC mengirim perubahan status ke Emisell.
 |---|---|
 | `MERCHANT_ID_REQUIRED` | Header merchant tidak dikirim ke endpoint gateway |
 | `INVALID_MERCHANT_ID` | Format merchant ID tidak valid |
-| `MERCHANT_CONTEXT_FORBIDDEN` | Customer key mencoba membawa merchant header |
-| `UNAUTHORIZED` | Dedicated service API key tidak valid |
+| `MERCHANT_CONTEXT_FORBIDDEN` | Public API key mencoba membawa merchant header |
+| `UNAUTHORIZED` | Key bukan Main Service, tidak aktif, atau tidak valid |
 | `INVALID_PROVIDER_KEY` | Key ditolak provider |
 | `PROVIDER_KEY_EXISTS` | Key yang sama sudah pernah disimpan |
 | `PROVIDER_CREDENTIAL_UNAVAILABLE` | Provider tidak mempunyai key aktif dan valid |

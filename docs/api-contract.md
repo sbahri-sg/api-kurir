@@ -692,10 +692,11 @@ pada [`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md
 
 ## 7. API admin
 
-Endpoint `/v1/admin/*` menggunakan `ADMIN_API_KEYS`, bukan key customer.
-Admin dapat membuat customer key tambahan tanpa restart. Key tersebut disimpan
-sebagai hash, tidak memakai nama atau masa berlaku, aktif sampai di-revoke, dan
-hanya dapat mengakses endpoint `/v1` customer.
+Endpoint `/v1/admin/*` menggunakan `ADMIN_API_KEYS`. Admin dapat membuat dua
+jenis key tanpa restart: `public` untuk API ongkir/tracking dan `main_service`
+untuk backend Emisell Gateway. Keduanya disimpan sebagai hash, tidak memakai
+nama atau masa berlaku, serta aktif sampai di-revoke. Hanya `main_service` yang
+mendapat scope `gateway:access` dan boleh membawa `X-Emisell-Merchant-ID`.
 
 | Method | Endpoint | Keterangan |
 |---|---|---|
@@ -713,7 +714,7 @@ hanya dapat mengakses endpoint `/v1` customer.
 | POST | `/admin/provider-credentials` | Validasi dan simpan key provider terenkripsi |
 | POST | `/admin/provider-credentials/{id}/disable` | Nonaktifkan key provider |
 | GET | `/admin/api-keys` | Metadata dan status customer API key |
-| POST | `/admin/api-keys` | Generate customer key; secret tampil sekali |
+| POST | `/admin/api-keys` | Generate public/main_service key; secret tampil sekali |
 | POST | `/admin/api-keys/{id}/revoke` | Revoke customer key |
 | GET | `/admin/provider-quotas` | Monitoring quota tanpa key |
 

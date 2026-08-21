@@ -962,7 +962,7 @@
     },
     {
       "name": "5. Emisell Gateway · Seller BYOK",
-      "description": "Request backend-to-backend memakai API_KEYS khusus Main Service dan X-Emisell-Merchant-ID. Jangan gunakan customer key hasil generate atau memanggil gateway langsung dari browser seller.",
+      "description": "Request backend-to-backend memakai Main Service key hasil generate dashboard (scope gateway:access), atau API_KEYS sebagai recovery, bersama X-Emisell-Merchant-ID. Jangan gunakan Public API key atau memanggil gateway langsung dari browser seller.",
       "item": [
         {
           "name": "List Seller Provider Credentials",
@@ -1950,7 +1950,7 @@
           "response": []
         },
         {
-          "name": "Generate Customer API Key",
+          "name": "Generate Main Service API Key",
           "event": [
             {
               "listen": "test",
@@ -1975,8 +1975,21 @@
               {
                 "key": "X-Admin-Actor",
                 "value": "postman"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"main_service\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base_url}}/v1/admin/api-keys",
               "host": [
@@ -1988,7 +2001,7 @@
                 "api-keys"
               ]
             },
-            "description": "Tidak memerlukan body. Key dibuat tanpa nama dan tanpa masa berlaku. Secret lengkap hanya tampil pada response ini dan tidak disimpan otomatis."
+            "description": "kind main_service memberi scope gateway:access untuk backend Emisell. Gunakan kind public untuk ongkir/tracking umum tanpa konteks merchant. Secret lengkap hanya tampil pada response ini dan tidak disimpan otomatis."
           },
           "response": []
         },
