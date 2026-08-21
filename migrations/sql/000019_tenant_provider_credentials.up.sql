@@ -13,6 +13,9 @@ ALTER TABLE provider_quota_ledger
     );
 
 ALTER TABLE provider_quota_ledger
+    DROP CONSTRAINT IF EXISTS provider_quota_ledger_provider_code_credential_alias_quota__key;
+
+ALTER TABLE provider_quota_ledger
     ADD CONSTRAINT provider_quota_ledger_tenant_provider_credential_date_key
     UNIQUE (tenant_id, provider_code, credential_alias, quota_date);
 
