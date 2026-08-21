@@ -230,6 +230,7 @@ func TestRegisterTenantIntegrationRoutesUsesCanonicalAPIPath(t *testing.T) {
 		"PUT /api/v1/integrations/shipping-services",
 		"POST /api/v1/integrations/tracking/subscriptions",
 		"GET /api/v1/integrations/tracking/subscriptions/:fulfillment_id",
+		"DELETE /api/v1/integrations/tracking/subscriptions/:fulfillment_id",
 		"GET /v1/integrations/provider-credentials",
 	} {
 		if !routes[expected] {

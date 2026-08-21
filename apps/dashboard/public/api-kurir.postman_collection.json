@@ -1376,6 +1376,35 @@
             "description": "Membaca snapshot lokal tanpa hit RajaOngkir/Biteship."
           },
           "response": []
+        },
+        {
+          "name": "Remove Merchant Tracking Subscription",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/tracking/subscriptions/{{fulfillment_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "tracking",
+                "subscriptions",
+                "{{fulfillment_id}}"
+              ]
+            },
+            "description": "Menonaktifkan tracking fulfillment milik merchant, membatalkan webhook tertunda, dan menghentikan polling jika tidak ada subscription aktif lain. Snapshot tetap disimpan."
+          },
+          "response": []
         }
       ]
     },

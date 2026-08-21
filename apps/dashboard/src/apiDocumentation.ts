@@ -1597,6 +1597,40 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
   {
     contract: "gateway",
     scope: "customer",
+    method: "DELETE",
+    path: "/api/v1/integrations/tracking/subscriptions/{fulfillment_id}",
+    title: "Hapus tracking fulfillment merchant",
+    description:
+      "Menonaktifkan hubungan tracking milik merchant tanpa membuang snapshot dan riwayat audit. Webhook tertunda dibatalkan; polling berhenti jika snapshot tidak lagi memiliki subscription aktif. Request ulang aman dan POST dapat mengaktifkannya kembali.",
+    authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
+    parameters: [
+      "fulfillment_id — fulfillment milik merchant yang tracking-nya dihentikan",
+      "merchant_id wajib berasal dari header backend, bukan request body",
+    ],
+    request: `DELETE {{base_url}}/api/v1/integrations/tracking/subscriptions/{{fulfillment_id}}
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}`,
+    response: `{
+  "meta": {
+    "message": "Tracking subscription removed",
+    "code": 200,
+    "status": "success",
+    "request_id": "req_example"
+  },
+  "data": {
+    "id": "subscription_uuid",
+    "fulfillment_id": "fulfillment_123",
+    "active": false,
+    "revision": 1,
+    "status": "removed",
+    "polling_stopped": true,
+    "snapshot_retained": true
+  }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
     method: "GET",
     path: "/api/v1/integrations/provider-credentials",
     title: "Daftar credential provider milik merchant",

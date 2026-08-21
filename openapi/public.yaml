@@ -1260,6 +1260,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TrackingVerificationResponse"
+    delete:
+      tags: [Emisell Gateway]
+      operationId: removeTenantTrackingSubscription
+      summary: Menghapus tracking fulfillment dari merchant
+      description: >
+        Menonaktifkan hubungan fulfillment milik merchant secara idempotent,
+        membatalkan webhook yang belum terkirim, dan menghentikan polling bila
+        tidak ada subscription aktif lain pada snapshot. Snapshot AWB tetap
+        disimpan untuk audit dan dapat diaktifkan kembali melalui POST.
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - name: fulfillment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Subscription merchant sudah dinonaktifkan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingSubscriptionRemovalResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Subscription tidak pernah terdaftar pada merchant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /v1/admin/overview:
     get:
@@ -3418,6 +3455,39 @@ components:
           $ref: "#/components/schemas/RequestMeta"
         data:
           $ref: "#/components/schemas/TrackingSubscription"
+
+    TrackingSubscriptionRemoval:
+      type: object
+      required: [id, fulfillment_id, active, revision, status, polling_stopped, snapshot_retained]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fulfillment_id:
+          type: string
+        active:
+          type: boolean
+          const: false
+        revision:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          const: removed
+        polling_stopped:
+          type: boolean
+        snapshot_retained:
+          type: boolean
+          const: true
+
+    TrackingSubscriptionRemovalResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TrackingSubscriptionRemoval"
 
     TrackingResponse:
       type: object

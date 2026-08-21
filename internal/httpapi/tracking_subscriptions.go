@@ -120,3 +120,28 @@ func trackingSubscriptionGetHandler(service *tracking.Service) echo.HandlerFunc 
 		})
 	}
 }
+
+func trackingSubscriptionDeleteHandler(service *tracking.Service) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		if service == nil {
+			return writeError(c, http.StatusServiceUnavailable, "TRACKING_NOT_CONFIGURED", "Tracking belum dikonfigurasi.", nil)
+		}
+		fulfillmentID := strings.TrimSpace(c.Param("fulfillment_id"))
+		removal, err := service.RemoveSubscription(c.Request().Context(), fulfillmentID)
+		if errors.Is(err, tracking.ErrNotFound) {
+			return writeError(c, http.StatusNotFound, "TRACKING_SUBSCRIPTION_NOT_FOUND", "Subscription tracking tidak ditemukan pada merchant.", nil)
+		}
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, map[string]any{
+			"meta": map[string]any{
+				"message":    "Tracking subscription removed",
+				"code":       http.StatusOK,
+				"status":     "success",
+				"request_id": requestID(c),
+			},
+			"data": removal,
+		})
+	}
+}

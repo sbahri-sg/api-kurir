@@ -218,3 +218,83 @@ func TestPostgresTrackingSubscriptionReplacementRequiresRevision(t *testing.T) {
 		t.Fatalf("revision history count: got %d want 1", historyCount)
 	}
 }
+
+func TestPostgresTrackingSubscriptionRemovalStopsPollingAndCanReactivate(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	repository := NewPostgresRepository(pool)
+	suffix := time.Now().UTC().Format("150405000000")
+	tenantCtx := tenancy.WithIdentity(ctx, tenancy.Identity{TenantID: "merchant-remove-" + suffix})
+	hash := "remove-" + suffix
+	shipment, err := repository.Register(
+		tenantCtx, "jne", hash, "********3333", []byte("encrypted-remove"), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tracking_shipments WHERE id = $1::uuid", shipment.ID)
+	}()
+	if _, err := repository.UpsertSubscription(
+		tenantCtx, shipment.ID, "order-remove", "fulfillment-remove", 0,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	removal, err := repository.DeactivateSubscription(tenantCtx, "fulfillment-remove")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removal.Active || !removal.PollingStopped || !removal.SnapshotRetained {
+		t.Fatalf("unexpected removal: %#v", removal)
+	}
+	if _, err := repository.GetSubscription(tenantCtx, "fulfillment-remove"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected inactive subscription to be hidden, got %v", err)
+	}
+	var pollingEnabled bool
+	var activeJobs int
+	if err := pool.QueryRow(ctx, `
+		SELECT polling_enabled,
+		       (SELECT count(*) FROM tracking_refresh_jobs
+		        WHERE shipment_id = $1::uuid AND status IN ('pending', 'running'))
+		FROM tracking_shipments
+		WHERE id = $1::uuid
+	`, shipment.ID).Scan(&pollingEnabled, &activeJobs); err != nil {
+		t.Fatal(err)
+	}
+	if pollingEnabled || activeJobs != 0 {
+		t.Fatalf("polling not stopped: enabled=%t active_jobs=%d", pollingEnabled, activeJobs)
+	}
+
+	reactivatedShipment, err := repository.Register(
+		tenantCtx, "jnt", hash+"-replacement", "********4444", []byte("encrypted-replacement"), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tracking_shipments WHERE id = $1::uuid", reactivatedShipment.ID)
+	}()
+	reactivated, err := repository.UpsertSubscription(
+		tenantCtx, reactivatedShipment.ID, "order-remove", "fulfillment-remove", 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reactivated.Revision != 2 || reactivated.Shipment.ID != reactivatedShipment.ID {
+		t.Fatalf("unexpected reactivated subscription: %#v", reactivated)
+	}
+	if _, err := repository.GetSubscription(tenantCtx, "fulfillment-remove"); err != nil {
+		t.Fatalf("reactivated subscription unavailable: %v", err)
+	}
+}

@@ -435,6 +435,20 @@ func (s *Service) Subscription(
 	return s.repository.GetSubscription(ctx, fulfillmentReference)
 }
 
+func (s *Service) RemoveSubscription(
+	ctx context.Context,
+	fulfillmentReference string,
+) (SubscriptionRemoval, error) {
+	fulfillmentReference = strings.TrimSpace(fulfillmentReference)
+	if !validReference.MatchString(fulfillmentReference) {
+		return SubscriptionRemoval{}, ErrNotFound
+	}
+	if tenancy.TenantID(ctx) == "" {
+		return SubscriptionRemoval{}, ErrNotFound
+	}
+	return s.repository.DeactivateSubscription(ctx, fulfillmentReference)
+}
+
 func (s *Service) normalizeRequest(request Request) (Request, error) {
 	request.CourierCode = strings.ToLower(strings.TrimSpace(request.CourierCode))
 	request.Waybill = strings.ToUpper(strings.TrimSpace(request.Waybill))

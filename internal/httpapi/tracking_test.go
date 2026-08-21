@@ -139,6 +139,20 @@ func (trackingHTTPRepositoryStub) GetSubscription(
 	return tracking.Subscription{}, tracking.ErrNotFound
 }
 
+func (trackingHTTPRepositoryStub) DeactivateSubscription(
+	_ context.Context,
+	fulfillmentReference string,
+) (tracking.SubscriptionRemoval, error) {
+	return tracking.SubscriptionRemoval{
+		ID:                   "subscription-1",
+		FulfillmentReference: fulfillmentReference,
+		Revision:             1,
+		Status:               "removed",
+		PollingStopped:       true,
+		SnapshotRetained:     true,
+	}, nil
+}
+
 func (trackingHTTPRepositoryStub) Fail(
 	context.Context,
 	tracking.Job,
@@ -215,6 +229,35 @@ func TestTrackingHandlerRejectsUnsupportedCourier(t *testing.T) {
 			http.StatusUnprocessableEntity,
 			response.Body.String(),
 		)
+	}
+}
+
+func TestTrackingSubscriptionDeleteHandlerRemovesMerchantSubscription(t *testing.T) {
+	t.Parallel()
+	e := echo.New()
+	e.DELETE(
+		"/api/v1/integrations/tracking/subscriptions/:fulfillment_id",
+		withTenantIdentity(trackingSubscriptionDeleteHandler(trackingTestService(t))),
+	)
+	request := httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/integrations/tracking/subscriptions/fulfillment-123",
+		nil,
+	)
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status: got %d want %d, body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	for _, expected := range []string{
+		`"fulfillment_id":"fulfillment-123"`,
+		`"status":"removed"`,
+		`"polling_stopped":true`,
+		`"snapshot_retained":true`,
+	} {
+		if !bytes.Contains(response.Body.Bytes(), []byte(expected)) {
+			t.Fatalf("missing %s in response: %s", expected, response.Body.String())
+		}
 	}
 }
 

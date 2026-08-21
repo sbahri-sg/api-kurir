@@ -151,6 +151,40 @@ Pada snapshot miss endpoint melakukan validasi sinkron satu kali; request ulang
 dalam jendela checkpoint menggunakan snapshot/negative cache. Integrasi order
 Emisell sebaiknya memakai subscription agar seluruh refresh berjalan di worker.
 
+## Menghapus tracking milik merchant
+
+Saat AWB dihapus dari fulfillment Emisell, backend memanggil:
+
+```http
+DELETE /api/v1/integrations/tracking/subscriptions/{fulfillment_id}
+key: <customer-api-key>
+X-Emisell-Merchant-ID: merchant_123
+```
+
+Penghapusan bersifat idempotent dan tenant-aware. Subscription menjadi tidak
+aktif, GET berikutnya mengembalikan 404, webhook yang belum dikirim dibatalkan,
+dan worker berhenti bila tidak ada subscription aktif lain pada snapshot yang
+sama. Shipment, status history, dan revision tetap disimpan untuk audit. POST
+dengan fulfillment yang sama dapat mengaktifkan tracking kembali, termasuk
+dengan AWB baru.
+
+```json
+{
+  "data": {
+    "id": "subscription_uuid",
+    "fulfillment_id": "fulfillment_123",
+    "active": false,
+    "revision": 1,
+    "status": "removed",
+    "polling_stopped": true,
+    "snapshot_retained": true
+  }
+}
+```
+
+Hard delete shipment dan seluruh data turunannya tetap khusus admin development
+melalui `/v1/admin/tracking-operations/{id}`.
+
 ## Webhook ke Emisell
 
 Event yang dikirim:

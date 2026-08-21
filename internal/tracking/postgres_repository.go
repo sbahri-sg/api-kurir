@@ -100,6 +100,7 @@ func (r *PostgresRepository) register(
 		ON CONFLICT (tenant_id, courier_code, waybill_hash) DO UPDATE
 		SET waybill_masked = EXCLUDED.waybill_masked,
 		    waybill_ciphertext = EXCLUDED.waybill_ciphertext,
+		    polling_enabled = true,
 		    provider_credential_id = CASE
 		        WHEN EXCLUDED.provider_credential_id <> ''
 		        THEN EXCLUDED.provider_credential_id
@@ -171,6 +172,7 @@ func (r *PostgresRepository) Claim(
 				(job.status = 'pending' AND job.available_at <= now()) OR
 				(job.status = 'running' AND job.locked_at < now() - interval '5 minutes')
 			)
+			  AND shipment.polling_enabled
 			  AND shipment.courier_code = ANY($2::text[])
 			ORDER BY job.priority, job.available_at, job.created_at
 			FOR UPDATE OF job SKIP LOCKED
@@ -320,7 +322,9 @@ func (r *PostgresRepository) Complete(
 	if !result.IsFinal && result.NextRefreshAt != nil {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO tracking_refresh_jobs (shipment_id, available_at)
-			VALUES ($1::uuid, $2)
+			SELECT id, $2
+			FROM tracking_shipments
+			WHERE id = $1::uuid AND polling_enabled
 			ON CONFLICT (shipment_id) WHERE status IN ('pending', 'running') DO NOTHING
 		`, job.ShipmentID, result.NextRefreshAt); err != nil {
 			return fmt.Errorf("schedule next tracking refresh: %w", err)
@@ -437,7 +441,9 @@ func (r *PostgresRepository) CompleteImmediate(
 		result.NextRefreshAt != nil {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO tracking_refresh_jobs (shipment_id, available_at)
-			VALUES ($1::uuid, $2)
+			SELECT id, $2
+			FROM tracking_shipments
+			WHERE id = $1::uuid AND polling_enabled
 			ON CONFLICT (shipment_id) WHERE status IN ('pending', 'running') DO NOTHING
 		`, shipmentID, result.NextRefreshAt); err != nil {
 			return fmt.Errorf("schedule immediate tracking refresh: %w", err)
@@ -541,6 +547,7 @@ func (r *PostgresRepository) recordNotFound(
 			SELECT id, $2
 			FROM tracking_shipments
 			WHERE id = $1::uuid
+			  AND polling_enabled
 			  AND provider_hit_count < provider_hit_limit
 			ON CONFLICT (shipment_id) WHERE status IN ('pending', 'running') DO NOTHING
 		`, shipmentID, nextRefreshAt); err != nil {
@@ -590,6 +597,7 @@ func (r *PostgresRepository) RecordImmediateFailure(
 	if _, err := tx.Exec(ctx, `
 		UPDATE tracking_refresh_jobs job
 		SET status = CASE
+		        WHEN NOT shipment.polling_enabled THEN 'completed'
 		        WHEN shipment.provider_hit_count >= shipment.provider_hit_limit THEN 'dead'
 		        ELSE 'pending'
 		    END,
@@ -630,8 +638,8 @@ func (r *PostgresRepository) Fail(
 		status = "dead"
 	}
 	tag, err := r.pool.Exec(ctx, `
-		UPDATE tracking_refresh_jobs
-		SET status = $2,
+		UPDATE tracking_refresh_jobs job
+		SET status = CASE WHEN shipment.polling_enabled THEN $2 ELSE 'completed' END,
 		    attempt_count = $3,
 		    available_at = $4,
 		    locked_at = NULL,
@@ -639,7 +647,9 @@ func (r *PostgresRepository) Fail(
 		    last_error_code = $5,
 		    last_error_message = left($6, 500),
 		    updated_at = now()
-		WHERE id = $1::uuid
+		FROM tracking_shipments shipment
+		WHERE job.id = $1::uuid
+		  AND shipment.id = job.shipment_id
 	`, job.ID, status, nextAttempt, retryAt, errorCode, message)
 	if err != nil {
 		return fmt.Errorf("fail tracking refresh job: %w", err)
@@ -651,7 +661,10 @@ func (r *PostgresRepository) Fail(
 		UPDATE tracking_shipments
 		SET last_error_code = $2,
 		    provider_hit_count = provider_hit_count + $3,
-		    next_refresh_at = CASE WHEN $4 = 'dead' THEN NULL ELSE $5 END,
+		    next_refresh_at = CASE
+		        WHEN NOT polling_enabled OR $4 = 'dead' THEN NULL
+		        ELSE $5
+		    END,
 		    updated_at = now()
 		WHERE id = $1::uuid
 	`, job.ShipmentID, errorCode, boolToInt(countProviderHit), status, retryAt)
@@ -688,6 +701,7 @@ func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipme
 			shipment.provider_hit_count,
 			shipment.provider_hit_limit,
 			(
+				NOT shipment.polling_enabled OR
 				shipment.is_final OR
 				shipment.validation_status = 'invalid' OR
 				shipment.provider_hit_count >= shipment.provider_hit_limit
@@ -788,6 +802,37 @@ func (r *PostgresRepository) UpsertSubscription(
 		}
 	case err != nil:
 		return Subscription{}, fmt.Errorf("lock tracking subscription: %w", err)
+	case !subscription.Active:
+		if expectedRevision > 0 && expectedRevision != subscription.Revision {
+			return Subscription{}, ErrRevisionConflict
+		}
+		if currentShipmentID != shipmentID {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO tracking_subscription_revisions (
+					subscription_id, tenant_id, domain_id, order_reference,
+					fulfillment_reference, shipment_id, revision, replacement_reason
+				)
+				VALUES ($1::uuid, $2, $3, $4, $5, $6::uuid, $7, 'reactivated_after_removal')
+			`, subscription.ID, identity.TenantID, legacyDomainID,
+				subscription.OrderReference, subscription.FulfillmentReference,
+				currentShipmentID, subscription.Revision); err != nil {
+				return Subscription{}, fmt.Errorf("archive removed tracking subscription revision: %w", err)
+			}
+		}
+		err = tx.QueryRow(ctx, `
+			UPDATE tracking_subscriptions
+			SET domain_id = '', order_reference = $2, shipment_id = $3::uuid,
+			    active = true,
+			    revision = revision + CASE WHEN shipment_id <> $3::uuid THEN 1 ELSE 0 END,
+			    updated_at = now()
+			WHERE id = $1::uuid
+			RETURNING order_reference, active, revision
+		`, subscription.ID, orderReference, shipmentID).Scan(
+			&subscription.OrderReference, &subscription.Active, &subscription.Revision,
+		)
+		if err != nil {
+			return Subscription{}, fmt.Errorf("reactivate tracking subscription: %w", err)
+		}
 	case currentShipmentID == shipmentID:
 		if expectedRevision > 0 && expectedRevision != subscription.Revision {
 			return Subscription{}, ErrRevisionConflict
@@ -889,6 +934,7 @@ func (r *PostgresRepository) GetSubscription(
 		FROM tracking_subscriptions
 		WHERE tenant_id = $1
 		  AND fulfillment_reference = $2
+		  AND active
 	`, identity.TenantID, fulfillmentReference).Scan(
 		&subscription.ID,
 		&subscription.OrderReference,
@@ -909,6 +955,104 @@ func (r *PostgresRepository) GetSubscription(
 	}
 	subscription.Shipment = shipment
 	return subscription, nil
+}
+
+func (r *PostgresRepository) DeactivateSubscription(
+	ctx context.Context,
+	fulfillmentReference string,
+) (SubscriptionRemoval, error) {
+	identity, ok := tenancy.FromContext(ctx)
+	if !ok {
+		return SubscriptionRemoval{}, ErrNotFound
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return SubscriptionRemoval{}, fmt.Errorf("begin deactivate tracking subscription: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var removal SubscriptionRemoval
+	var shipmentID string
+	err = tx.QueryRow(ctx, `
+		SELECT id::text, fulfillment_reference, active, revision, shipment_id::text
+		FROM tracking_subscriptions
+		WHERE tenant_id = $1 AND fulfillment_reference = $2
+		FOR UPDATE
+	`, identity.TenantID, fulfillmentReference).Scan(
+		&removal.ID,
+		&removal.FulfillmentReference,
+		&removal.Active,
+		&removal.Revision,
+		&shipmentID,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SubscriptionRemoval{}, ErrNotFound
+	}
+	if err != nil {
+		return SubscriptionRemoval{}, fmt.Errorf("lock tracking subscription for deactivation: %w", err)
+	}
+
+	if removal.Active {
+		if _, err := tx.Exec(ctx, `
+			UPDATE tracking_subscriptions
+			SET active = false, updated_at = now()
+			WHERE id = $1::uuid
+		`, removal.ID); err != nil {
+			return SubscriptionRemoval{}, fmt.Errorf("deactivate tracking subscription: %w", err)
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE tracking_webhook_outbox
+		SET status = 'dead',
+		    locked_at = NULL,
+		    locked_by = NULL,
+		    last_error_message = 'tracking subscription removed by merchant',
+		    updated_at = now()
+		WHERE subscription_id = $1::uuid
+		  AND status IN ('pending', 'running')
+	`, removal.ID); err != nil {
+		return SubscriptionRemoval{}, fmt.Errorf("cancel tracking subscription webhooks: %w", err)
+	}
+
+	var activeSubscriptions int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*)
+		FROM tracking_subscriptions
+		WHERE shipment_id = $1::uuid AND active
+	`, shipmentID).Scan(&activeSubscriptions); err != nil {
+		return SubscriptionRemoval{}, fmt.Errorf("count active tracking subscriptions: %w", err)
+	}
+	removal.PollingStopped = activeSubscriptions == 0
+	if removal.PollingStopped {
+		if _, err := tx.Exec(ctx, `
+			UPDATE tracking_shipments
+			SET polling_enabled = false, next_refresh_at = NULL, updated_at = now()
+			WHERE id = $1::uuid
+		`, shipmentID); err != nil {
+			return SubscriptionRemoval{}, fmt.Errorf("stop tracking shipment polling: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE tracking_refresh_jobs
+			SET status = 'completed',
+			    locked_at = NULL,
+			    locked_by = NULL,
+			    last_error_code = 'SUBSCRIPTION_REMOVED',
+			    last_error_message = 'tracking subscription removed by merchant',
+			    updated_at = now()
+			WHERE shipment_id = $1::uuid
+			  AND status IN ('pending', 'running')
+		`, shipmentID); err != nil {
+			return SubscriptionRemoval{}, fmt.Errorf("cancel tracking refresh jobs: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return SubscriptionRemoval{}, fmt.Errorf("commit tracking subscription deactivation: %w", err)
+	}
+	removal.Active = false
+	removal.Status = "removed"
+	removal.SnapshotRetained = true
+	return removal, nil
 }
 
 func changedTrackingEvent(previousStatus, previousValidation string, result Result) string {

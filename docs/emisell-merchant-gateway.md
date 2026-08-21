@@ -84,6 +84,7 @@ dan tetap digunakan sebagai fallback tracking internal.
 | `GET/PUT /api/v1/integrations/shipping-services` | Baca limit/selectable dan simpan pilihan custom checkout merchant |
 | `POST /api/v1/integrations/tracking/subscriptions` | Daftarkan AWB fulfillment |
 | `GET /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Baca snapshot tanpa hit provider |
+| `DELETE /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Hentikan tracking fulfillment merchant; snapshot tetap disimpan |
 
 Semua integrasi baru menggunakan base path `/api/v1`. Alias `/v1` tetap ada
 sementara untuk kompatibilitas.

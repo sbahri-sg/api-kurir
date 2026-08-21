@@ -16,6 +16,7 @@ type trackingRepositoryStub struct {
 	result                    Result
 	shipment                  Shipment
 	failed                    bool
+	removedFulfillment        string
 }
 
 func (r *trackingRepositoryStub) Register(
@@ -165,6 +166,21 @@ func (r *trackingRepositoryStub) GetSubscription(
 	return Subscription{
 		ID: "subscription-1", FulfillmentReference: fulfillmentReference,
 		Active: true, Shipment: r.shipment,
+	}, nil
+}
+
+func (r *trackingRepositoryStub) DeactivateSubscription(
+	_ context.Context,
+	fulfillmentReference string,
+) (SubscriptionRemoval, error) {
+	r.removedFulfillment = fulfillmentReference
+	return SubscriptionRemoval{
+		ID:                   "subscription-1",
+		FulfillmentReference: fulfillmentReference,
+		Revision:             1,
+		Status:               "removed",
+		PollingStopped:       true,
+		SnapshotRetained:     true,
 	}, nil
 }
 

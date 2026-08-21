@@ -87,6 +87,16 @@ type Subscription struct {
 	Shipment             Shipment `json:"shipment"`
 }
 
+type SubscriptionRemoval struct {
+	ID                   string `json:"id"`
+	FulfillmentReference string `json:"fulfillment_id"`
+	Active               bool   `json:"active"`
+	Revision             int    `json:"revision"`
+	Status               string `json:"status"`
+	PollingStopped       bool   `json:"polling_stopped"`
+	SnapshotRetained     bool   `json:"snapshot_retained"`
+}
+
 type VerificationRequest struct {
 	CourierCode     string `json:"courier"`
 	Waybill         string `json:"waybill"`
@@ -151,6 +161,7 @@ type Repository interface {
 	Fail(ctx context.Context, job Job, errorCode, message string, retryAt time.Time) error
 	UpsertSubscription(ctx context.Context, shipmentID, orderReference, fulfillmentReference string, expectedRevision int) (Subscription, error)
 	GetSubscription(ctx context.Context, fulfillmentReference string) (Subscription, error)
+	DeactivateSubscription(ctx context.Context, fulfillmentReference string) (SubscriptionRemoval, error)
 }
 
 type WebhookJob struct {

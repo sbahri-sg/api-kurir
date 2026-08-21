@@ -688,6 +688,7 @@ checkout/customer hanya membaca snapshot dan tidak memicu provider:
 | POST | `/api/v1/integrations/tracking/subscriptions` | Header merchant wajib |
 | GET | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Header merchant wajib |
 | PUT | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Header merchant wajib |
+| DELETE | `/api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Header merchant wajib; hapus relasi tanpa membuang snapshot |
 
 Kebijakan checkpoint, negative cache AWB, batas hit, dan webhook HMAC dijelaskan
 pada [`tracking-checkpoint-and-webhooks.md`](tracking-checkpoint-and-webhooks.md).

@@ -263,6 +263,10 @@ func registerTenantIntegrationRoutes(
 		"/tracking/subscriptions/:fulfillment_id",
 		trackingSubscriptionGetHandler(trackingService),
 	)
+	integrationGroup.DELETE(
+		"/tracking/subscriptions/:fulfillment_id",
+		trackingSubscriptionDeleteHandler(trackingService),
+	)
 }
 
 func registerCustomerRoutes(
