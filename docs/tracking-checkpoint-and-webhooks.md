@@ -172,7 +172,7 @@ Payload:
     "merchant_id": "merchant_123",
     "order_id": "order_123",
     "fulfillment_id": "fulfillment_123",
-	"tracking_revision": 2,
+    "tracking_revision": 2,
     "shipment": {
       "courier": "jne",
       "waybill": "********6789",
@@ -180,6 +180,8 @@ Payload:
       "status": "delivered",
       "status_label": "Terkirim",
       "provider": "rajaongkir",
+      "provider_fetched_at": "2026-08-20T10:00:00Z",
+      "next_refresh_at": null,
       "is_final": true
     }
   }
@@ -200,6 +202,35 @@ String yang ditandatangani:
 ```text
 <timestamp>.<raw-request-body>
 ```
+
+Contoh verifikasi pada backend Node.js Emisell:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+export function verifyApiKurirWebhook(rawBody, headers, secret) {
+  const timestamp = headers["x-emisell-webhook-timestamp"];
+  const received = headers["x-emisell-webhook-signature"];
+  const timestampNumber = Number(timestamp);
+  const age = Math.abs(Date.now() / 1000 - timestampNumber);
+
+  if (!timestamp || !received || !Number.isFinite(timestampNumber) || age > 300) {
+    return false;
+  }
+
+  const expected = "v1=" + createHmac("sha256", secret)
+    .update(timestamp + ".")
+    .update(rawBody)
+    .digest("hex");
+  const left = Buffer.from(received);
+  const right = Buffer.from(expected);
+
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+```
+
+`rawBody` wajib berupa byte/`Buffer` asli sebelum body diubah oleh JSON parser.
+Setelah signature valid, simpan `X-Emisell-Event-ID` sebagai kunci deduplikasi.
 
 Receiver wajib memverifikasi HMAC dengan perbandingan constant-time, menolak
 timestamp terlalu lama, menyimpan event ID sebagai idempotency key, dan

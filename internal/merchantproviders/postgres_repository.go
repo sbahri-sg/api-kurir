@@ -24,6 +24,24 @@ func (r *PostgresRepository) Catalog(
 	return catalogWithQuerier(ctx, r.pool, tenantID)
 }
 
+func (r *PostgresRepository) HasActiveProvider(
+	ctx context.Context,
+	tenantID string,
+) (bool, error) {
+	var active bool
+	if err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM tenant_active_shipping_providers
+			WHERE tenant_id = $1
+			  AND provider_code IS NOT NULL
+		)
+	`, tenantID).Scan(&active); err != nil {
+		return false, fmt.Errorf("inspect active shipping provider: %w", err)
+	}
+	return active, nil
+}
+
 func (r *PostgresRepository) Activate(
 	ctx context.Context,
 	tenantID string,
@@ -137,7 +155,7 @@ func (r *PostgresRepository) Deactivate(
 	if input.ExpectedVersion != nil && currentVersion != *input.ExpectedVersion {
 		return Catalog{}, ErrVersionConflict
 	}
-	if currentProvider != providerCode {
+	if currentProvider == nil || *currentProvider != providerCode {
 		if err := tx.Commit(ctx); err != nil {
 			return Catalog{}, fmt.Errorf("commit idempotent provider deactivation: %w", err)
 		}
@@ -151,16 +169,16 @@ func (r *PostgresRepository) Deactivate(
 			credential_id,
 			updated_by
 		)
-		VALUES ($1, $2, NULL, $3)
+		VALUES ($1, NULL, NULL, $2)
 		ON CONFLICT (tenant_id) DO UPDATE
 		SET provider_code = EXCLUDED.provider_code,
 		    credential_id = NULL,
 		    version = tenant_active_shipping_providers.version + 1,
 		    updated_by = EXCLUDED.updated_by,
 		    updated_at = now()
-	`, tenantID, DefaultProviderCode, input.UpdatedBy)
+	`, tenantID, input.UpdatedBy)
 	if err != nil {
-		return Catalog{}, fmt.Errorf("fallback to default shipping provider: %w", err)
+		return Catalog{}, fmt.Errorf("deactivate shipping provider: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Catalog{}, fmt.Errorf("commit shipping provider deactivation: %w", err)
@@ -177,10 +195,7 @@ func catalogWithQuerier(
 	querier rowQuerier,
 	tenantID string,
 ) (Catalog, error) {
-	result := Catalog{
-		ActiveProviderCode: DefaultProviderCode,
-		Providers:          make([]Provider, 0),
-	}
+	result := Catalog{Providers: make([]Provider, 0)}
 	rows, err := querier.Query(ctx, `
 		SELECT
 			provider.code,
@@ -196,21 +211,21 @@ func catalogWithQuerier(
 				  AND credential.active
 				  AND credential.validation_status = 'valid'
 			) AS installed,
-			COALESCE(selection.provider_code = provider.code, provider.code = $2),
-			COALESCE(selection.provider_code, $2),
+			COALESCE(selection.provider_code = provider.code, false),
+			selection.provider_code,
 			COALESCE(selection.version, 0)
 		FROM shipping_integration_providers provider
 		LEFT JOIN tenant_active_shipping_providers selection
 		  ON selection.tenant_id = $1
 		ORDER BY provider.display_order, provider.name
-	`, tenantID, DefaultProviderCode)
+	`, tenantID)
 	if err != nil {
 		return Catalog{}, fmt.Errorf("list shipping integration providers: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var item Provider
-		var activeProvider string
+		var activeProvider *string
 		var version int64
 		if err := rows.Scan(
 			&item.Code,
@@ -253,9 +268,9 @@ func lockCurrentSelection(
 	ctx context.Context,
 	tx pgx.Tx,
 	tenantID string,
-) (int64, string, error) {
+) (int64, *string, error) {
 	var version int64
-	var providerCode string
+	var providerCode *string
 	err := tx.QueryRow(ctx, `
 		SELECT version, provider_code
 		FROM tenant_active_shipping_providers
@@ -263,10 +278,10 @@ func lockCurrentSelection(
 		FOR UPDATE
 	`, tenantID).Scan(&version, &providerCode)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, DefaultProviderCode, nil
+		return 0, nil, nil
 	}
 	if err != nil {
-		return 0, "", fmt.Errorf("lock shipping provider selection: %w", err)
+		return 0, nil, fmt.Errorf("lock shipping provider selection: %w", err)
 	}
 	return version, providerCode, nil
 }

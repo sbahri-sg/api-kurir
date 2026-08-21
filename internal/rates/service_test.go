@@ -72,6 +72,59 @@ func (emptyRepository) FindActiveRateCards(context.Context, Request) ([]RateCard
 	return nil, nil
 }
 
+type staticShippingProviderGate struct {
+	active bool
+	err    error
+}
+
+func (gate staticShippingProviderGate) HasActiveProvider(context.Context, string) (bool, error) {
+	return gate.active, gate.err
+}
+
+func TestServiceRejectsTenantRateWhenShippingIsInactive(t *testing.T) {
+	t.Parallel()
+	repository := &countingRepository{card: testFlatRateCard("REG", 15_000)}
+	service := NewService(
+		repository,
+		time.Second,
+		WithShippingProviderGate(staticShippingProviderGate{}),
+	)
+
+	_, err := service.Calculate(context.Background(), Request{
+		TenantID:          "merchant_123",
+		Origin:            "loc_origin",
+		Destination:       "loc_destination",
+		ActualWeightGrams: 1_000,
+		Couriers:          []string{"jne"},
+	})
+	if !errors.Is(err, ErrShippingDisabled) {
+		t.Fatalf("error=%v want ErrShippingDisabled", err)
+	}
+	if calls := repository.calls.Load(); calls != 0 {
+		t.Fatalf("repository calls=%d want=0", calls)
+	}
+}
+
+func TestServiceAllowsTenantRateWhenShippingIsActive(t *testing.T) {
+	t.Parallel()
+	service := NewService(
+		staticRepository{cards: []RateCard{testFlatRateCard("REG", 15_000)}},
+		time.Second,
+		WithShippingProviderGate(staticShippingProviderGate{active: true}),
+	)
+
+	results, err := service.Calculate(context.Background(), Request{
+		TenantID:          "merchant_123",
+		Origin:            "loc_origin",
+		Destination:       "loc_destination",
+		ActualWeightGrams: 1_000,
+		Couriers:          []string{"jne"},
+	})
+	if err != nil || len(results) != 1 {
+		t.Fatalf("results=%#v err=%v", results, err)
+	}
+}
+
 type memorySnapshots struct {
 	mu     sync.Mutex
 	quotes []ProviderQuote

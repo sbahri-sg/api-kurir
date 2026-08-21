@@ -7,7 +7,10 @@ Emisell dan API Kurir.
 
 - Emisell Kurir adalah provider bawaan dan selalu terpasang.
 - Merchant dapat memasang beberapa provider eksternal.
-- Hanya satu provider shipping yang efektif aktif per merchant.
+- Merchant baru tidak mempunyai provider aktif. Seller harus mengaktifkan
+  Emisell Kurir atau provider eksternal bila membutuhkan pengiriman.
+- Maksimal satu provider shipping efektif aktif per merchant; state tanpa
+  provider aktif diperbolehkan.
 - Satu merchant mempunyai maksimal satu credential aktif per provider.
 - Credential ID sepenuhnya internal API Kurir.
 - Biteship hanya fallback tracking internal dan tidak dapat diaktifkan seller.
@@ -15,7 +18,7 @@ Emisell dan API Kurir.
 | Status | Arti |
 |---|---|
 | `installed=true` | Provider siap dipilih; provider eksternal mempunyai key aktif dan valid. |
-| `active=true` | Provider menjadi jalur shipping efektif merchant. Hanya satu yang aktif. |
+| `active=true` | Provider menjadi jalur shipping efektif merchant. Maksimal satu yang aktif. |
 | `available=false` | Provider ada di katalog, tetapi adapter production belum siap. |
 
 ## Autentikasi
@@ -52,8 +55,8 @@ Untuk memutuskan key:
 POST /api/v1/integrations/provider-credentials/rajaongkir/disable
 ```
 
-Jika key sedang digunakan, database otomatis mengembalikan provider efektif
-merchant ke Emisell Kurir.
+Jika key sedang digunakan, database otomatis menonaktifkan shipping merchant.
+Seller dapat memilih Emisell Kurir atau memasang key provider lain setelahnya.
 
 ## Membaca katalog
 
@@ -64,14 +67,14 @@ GET /api/v1/integrations/providers
 ```json
 {
   "data": {
-    "active_provider_code": "emisell",
+    "active_provider_code": null,
     "version": 0,
     "providers": [
       {
         "code": "emisell",
         "name": "Emisell Kurir",
         "installed": true,
-        "active": true
+        "active": false
       },
       {
         "code": "rajaongkir",
@@ -99,7 +102,7 @@ API Kurir memilih key aktif milik merchant dan provider tersebut. Main Service
 tidak menyimpan atau mengirim credential ID. `expected_version` mencegah dua
 tab dashboard saling menimpa.
 
-Untuk kembali ke provider gratis:
+Untuk menonaktifkan pengiriman provider tersebut:
 
 ```http
 POST /api/v1/integrations/providers/rajaongkir/deactivate
@@ -110,14 +113,29 @@ Content-Type: application/json
 }
 ```
 
+Endpoint yang sama berlaku untuk Emisell Kurir:
+
+```http
+POST /api/v1/integrations/providers/emisell/deactivate
+```
+
+Setelah berhasil, `active_provider_code` bernilai `null` dan semua item katalog
+memiliki `active=false`. Permintaan ongkir bertenant akan mengembalikan HTTP
+`409` dengan kode `SHIPPING_DISABLED` sampai seller mengaktifkan provider.
+
 ## Alur dashboard Emisell
 
 1. Baca `GET /integrations/providers`.
-2. Jika seller memasang RajaOngkir, kirim key ke endpoint credential.
-3. Baca ulang katalog sampai `installed=true`.
-4. Aktifkan RajaOngkir dengan provider code dan version katalog.
-5. Render kurir/service dari `GET /integrations/shipping-services`.
-6. Semua rate dan tracking berikutnya cukup membawa API key dan merchant ID.
+2. Jangan mengaktifkan provider otomatis saat merchant dibuat.
+3. Bila seller mengaktifkan Emisell Kurir, panggil endpoint activate untuk
+   `emisell`.
+4. Jika seller memasang RajaOngkir, kirim key ke endpoint credential.
+5. Baca ulang katalog sampai `installed=true`, lalu aktifkan RajaOngkir dengan
+   provider code dan version katalog.
+6. Saat seller mematikan extension kurir, panggil endpoint deactivate untuk
+   provider yang sedang aktif.
+7. Render kurir/service dari `GET /integrations/shipping-services` hanya ketika
+   `active_provider_code` tidak `null`.
 
 ## Error kontrak
 
@@ -127,7 +145,7 @@ Content-Type: application/json
 | `SHIPPING_PROVIDER_UNAVAILABLE` | Adapter provider belum siap. |
 | `PROVIDER_CREDENTIAL_UNAVAILABLE` | Key aktif dan valid belum tersedia. |
 | `SHIPPING_PROVIDER_VERSION_CONFLICT` | Version katalog sudah berubah. |
-| `DEFAULT_PROVIDER_REQUIRED` | Emisell Kurir dicoba dinonaktifkan tanpa pengganti. |
+| `SHIPPING_DISABLED` | Merchant belum mengaktifkan provider pengiriman. |
 
 Pilihan kurir dan layanan tetap dikelola terpisah melalui
 `/api/v1/integrations/shipping-services`.

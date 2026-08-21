@@ -42,7 +42,7 @@ func (repository *memoryRepository) Deactivate(
 
 func TestActivateNormalizesProvider(t *testing.T) {
 	t.Parallel()
-	repository := &memoryRepository{catalog: Catalog{ActiveProviderCode: "rajaongkir"}}
+	repository := &memoryRepository{catalog: Catalog{ActiveProviderCode: stringPointer("rajaongkir")}}
 	service := NewService(repository)
 	version := int64(2)
 
@@ -53,21 +53,49 @@ func TestActivateNormalizesProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ActiveProviderCode != "rajaongkir" ||
+	if result.ActiveProviderCode == nil || *result.ActiveProviderCode != "rajaongkir" ||
 		repository.activatedProvider != "rajaongkir" ||
 		repository.input.UpdatedBy != "tenant:merchant_123" {
 		t.Fatalf("unexpected activation: result=%#v input=%#v", result, repository.input)
 	}
 }
 
-func TestDeactivateRejectsDefaultProvider(t *testing.T) {
+func TestDeactivateAllowsEmisellProvider(t *testing.T) {
 	t.Parallel()
-	service := NewService(&memoryRepository{})
-	_, err := service.Deactivate(context.Background(), "merchant_123", "emisell", ChangeInput{})
-	if !errors.Is(err, ErrDefaultProvider) {
-		t.Fatalf("error=%v want ErrDefaultProvider", err)
+	repository := &memoryRepository{}
+	service := NewService(repository)
+	if _, err := service.Deactivate(context.Background(), "merchant_123", "emisell", ChangeInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.deactivatedProvider != "emisell" {
+		t.Fatalf("deactivated provider=%q want emisell", repository.deactivatedProvider)
 	}
 }
+
+func TestHasActiveProvider(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		active  *string
+		enabled bool
+	}{
+		{name: "inactive", active: nil, enabled: false},
+		{name: "active", active: stringPointer("emisell"), enabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewService(&memoryRepository{catalog: Catalog{ActiveProviderCode: test.active}})
+			enabled, err := service.HasActiveProvider(context.Background(), "merchant_123")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if enabled != test.enabled {
+				t.Fatalf("enabled=%v want=%v", enabled, test.enabled)
+			}
+		})
+	}
+}
+
+func stringPointer(value string) *string { return &value }
 
 func TestChangeRejectsInvalidTenantAndProvider(t *testing.T) {
 	t.Parallel()

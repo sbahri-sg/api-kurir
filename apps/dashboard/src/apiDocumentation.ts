@@ -1671,14 +1671,14 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers",
     title: "Katalog provider dan extension aktif",
     description:
-      "Menampilkan Emisell Kurir sebagai provider bawaan, provider eksternal yang telah memiliki credential valid, kesiapan adapter, dan tepat satu provider efektif yang aktif untuk merchant.",
+      "Menampilkan Emisell Kurir sebagai provider bawaan, provider eksternal yang telah memiliki credential valid, dan provider efektif merchant. Merchant baru berstatus nonaktif sampai seller memilih provider.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/providers
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}`,
     response: `{
   "data": {
-    "active_provider_code": "emisell",
+    "active_provider_code": null,
     "version": 0,
     "providers": [
       {
@@ -1688,7 +1688,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "requires_credential": false,
         "available": true,
         "installed": true,
-        "active": true
+        "active": false
       },
       {
         "code": "rajaongkir",
@@ -1755,12 +1755,12 @@ Content-Type: application/json
     scope: "customer",
     method: "POST",
     path: "/api/v1/integrations/providers/{provider_code}/deactivate",
-    title: "Nonaktifkan provider dan kembali ke Emisell",
+    title: "Nonaktifkan provider merchant",
     description:
-      "Menonaktifkan provider eksternal yang sedang dipakai dan otomatis mengaktifkan Emisell Kurir. Provider yang sudah tidak aktif menghasilkan respons sukses yang sama agar aman diulang.",
+      "Menonaktifkan provider yang sedang dipakai tanpa mengaktifkan pengganti otomatis. Emisell Kurir juga dapat dinonaktifkan. Provider yang sudah tidak aktif menghasilkan respons sukses yang sama agar aman diulang.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     parameters: [
-      "provider_code — provider eksternal yang ingin dinonaktifkan",
+      "provider_code — emisell atau provider eksternal yang ingin dinonaktifkan",
       "expected_version — version terakhir dari GET providers",
     ],
     request: `POST {{base_url}}/api/v1/integrations/providers/rajaongkir/deactivate
@@ -1771,10 +1771,10 @@ Content-Type: application/json
 { "expected_version": 1 }`,
     response: `{
   "data": {
-    "active_provider_code": "emisell",
+    "active_provider_code": null,
     "version": 2,
     "providers": [
-      { "code": "emisell", "active": true, "installed": true },
+      { "code": "emisell", "active": false, "installed": true },
       { "code": "rajaongkir", "active": false, "installed": true }
     ]
   },
@@ -1900,7 +1900,7 @@ Content-Type: application/json
     path: "/api/v1/calculate/district/domestic-cost",
     title: "Cek ongkir dengan key seller",
     description:
-      "Kontrak respons tetap RajaOngkir V2. API Kurir memilih credential dari provider aktif merchant dan mengisolasi snapshot per merchant tanpa credential ID dari Emisell.",
+      "Kontrak respons tetap RajaOngkir V2. API Kurir memilih credential dari provider aktif merchant dan mengisolasi snapshot per merchant tanpa credential ID dari Emisell. Jika seller belum mengaktifkan kurir, respons HTTP 409 menandakan shipping masih nonaktif.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
 key: {{api_key}}

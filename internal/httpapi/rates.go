@@ -85,6 +85,14 @@ func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
 
 		results, err := service.Calculate(c.Request().Context(), request)
 		switch {
+		case errors.Is(err, rates.ErrShippingDisabled):
+			return writeError(
+				c,
+				http.StatusConflict,
+				"SHIPPING_DISABLED",
+				"Pengiriman belum diaktifkan untuk merchant ini.",
+				nil,
+			)
 		case errors.Is(err, rates.ErrRateNotAvailable):
 			return writeError(
 				c,
@@ -436,6 +444,14 @@ func writeRajaOngkirRateError(
 	err error,
 ) error {
 	switch {
+	case errors.Is(err, rates.ErrShippingDisabled):
+		return writeError(
+			c,
+			http.StatusConflict,
+			"SHIPPING_DISABLED",
+			"Shipping provider is not active for this merchant.",
+			nil,
+		)
 	case errors.Is(err, rates.ErrRateNotAvailable):
 		return writeError(
 			c,

@@ -1,6 +1,6 @@
 package merchantproviders
 
-const DefaultProviderCode = "emisell"
+const EmisellProviderCode = "emisell"
 
 type Provider struct {
 	Code               string `json:"code"`
@@ -13,7 +13,7 @@ type Provider struct {
 }
 
 type Catalog struct {
-	ActiveProviderCode string     `json:"active_provider_code"`
+	ActiveProviderCode *string    `json:"active_provider_code"`
 	Version            int64      `json:"version"`
 	Providers          []Provider `json:"providers"`
 }

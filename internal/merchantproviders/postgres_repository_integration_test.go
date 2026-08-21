@@ -64,11 +64,39 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if initial.ActiveProviderCode != DefaultProviderCode || initial.Version != 0 {
+	if initial.ActiveProviderCode != nil || initial.Version != 0 {
 		t.Fatalf("unexpected initial catalog: %#v", initial)
+	}
+	for _, provider := range initial.Providers {
+		if provider.Active {
+			t.Fatalf("new merchant has an active provider: %#v", provider)
+		}
 	}
 
 	version := initial.Version
+	emisell, err := service.Activate(ctx, tenantID, EmisellProviderCode, ChangeInput{
+		ExpectedVersion: &version,
+		UpdatedBy:       "integration-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emisell.ActiveProviderCode == nil || *emisell.ActiveProviderCode != EmisellProviderCode || emisell.Version != 1 {
+		t.Fatalf("unexpected Emisell catalog: %#v", emisell)
+	}
+	version = emisell.Version
+	inactive, err := service.Deactivate(ctx, tenantID, EmisellProviderCode, ChangeInput{
+		ExpectedVersion: &version,
+		UpdatedBy:       "integration-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inactive.ActiveProviderCode != nil || inactive.Version != 2 {
+		t.Fatalf("Emisell provider was not deactivated: %#v", inactive)
+	}
+
+	version = inactive.Version
 	active, err := service.Activate(ctx, tenantID, "rajaongkir", ChangeInput{
 		ExpectedVersion: &version,
 		UpdatedBy:       "integration-test",
@@ -76,7 +104,7 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if active.ActiveProviderCode != "rajaongkir" || active.Version != 1 {
+	if active.ActiveProviderCode == nil || *active.ActiveProviderCode != "rajaongkir" || active.Version != 3 {
 		t.Fatalf("unexpected active catalog: %#v", active)
 	}
 
@@ -99,7 +127,7 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fallback.ActiveProviderCode != DefaultProviderCode || fallback.Version != 2 {
-		t.Fatalf("credential disable did not fallback safely: %#v", fallback)
+	if fallback.ActiveProviderCode != nil || fallback.Version != 4 {
+		t.Fatalf("credential disable did not deactivate shipping safely: %#v", fallback)
 	}
 }

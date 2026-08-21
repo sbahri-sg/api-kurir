@@ -174,7 +174,7 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	var fallbackProvider string
+	var fallbackProvider *string
 	var fallbackCredentialID *string
 	if err := pool.QueryRow(ctx, `
 		SELECT provider_code, credential_id::text
@@ -183,9 +183,9 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 	`, tenantA).Scan(&fallbackProvider, &fallbackCredentialID); err != nil {
 		t.Fatal(err)
 	}
-	if fallbackProvider != "emisell" || fallbackCredentialID != nil {
+	if fallbackProvider != nil || fallbackCredentialID != nil {
 		t.Fatalf(
-			"disabled active credential did not fall back: provider=%q credential=%v",
+			"disabled active credential did not deactivate shipping: provider=%v credential=%v",
 			fallbackProvider,
 			fallbackCredentialID,
 		)

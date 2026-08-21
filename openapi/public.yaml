@@ -260,6 +260,12 @@ paths:
                 $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Merchant belum mengaktifkan provider pengiriman
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "415":
           $ref: "#/components/responses/RajaOngkirUnsupportedMediaType"
         "422":
@@ -315,6 +321,12 @@ paths:
                 $ref: "#/components/schemas/RajaOngkirErrorResponse"
         "401":
           description: API key tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RajaOngkirErrorResponse"
+        "409":
+          description: Merchant belum mengaktifkan provider pengiriman
           content:
             application/json:
               schema:
@@ -915,8 +927,8 @@ paths:
       description: >
         Emisell Kurir selalu terpasang sebagai provider bawaan. Provider
         eksternal dianggap terpasang bila merchant mempunyai credential aktif
-        dan valid. Tepat satu provider efektif aktif; tenant tanpa konfigurasi
-        eksplisit menggunakan Emisell Kurir dengan version 0.
+        dan valid. Maksimal satu provider efektif aktif; tenant tanpa konfigurasi
+        eksplisit tidak mempunyai provider aktif dan memakai version 0.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -988,12 +1000,12 @@ paths:
     post:
       tags: [Emisell Gateway]
       operationId: deactivateTenantShippingProvider
-      summary: Menonaktifkan provider eksternal dan kembali ke Emisell Kurir
+      summary: Menonaktifkan provider shipping merchant
       description: >
-        Bila provider tersebut sedang aktif, pilihan merchant dikembalikan
-        secara atomik ke Emisell Kurir. Menonaktifkan provider yang sudah tidak
-        aktif bersifat idempotent. Emisell Kurir sendiri tidak dapat
-        dinonaktifkan tanpa provider pengganti.
+        Bila provider tersebut sedang aktif, shipping merchant dinonaktifkan
+        secara atomik tanpa memilih provider pengganti. Menonaktifkan provider
+        yang sudah tidak aktif bersifat idempotent. Emisell Kurir juga dapat
+        dinonaktifkan.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1019,7 +1031,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Emisell Kurir wajib aktif atau version sudah berubah
+          description: Version sudah berubah
           content:
             application/json:
               schema:
@@ -2365,12 +2377,13 @@ components:
       required: [active_provider_code, version, providers]
       properties:
         active_provider_code:
-          type: string
-          examples: [emisell]
+          type: [string, "null"]
+          description: Null berarti seller belum mengaktifkan provider pengiriman.
+          examples: [null, emisell]
         version:
           type: integer
           minimum: 0
-          description: Nol berarti tenant masih memakai default implisit Emisell Kurir.
+          description: Nol berarti tenant belum pernah mengubah pilihan provider.
         providers:
           type: array
           items:

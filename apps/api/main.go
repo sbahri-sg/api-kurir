@@ -145,7 +145,7 @@ func run(logger *slog.Logger) error {
 		rateRepository,
 		runtimeLocker,
 		cfg.RajaOngkir.Timeout+2*time.Second,
-	), rates.WithCredentialSelector(providerCredentialService), rates.WithResultPolicy(merchantShippingService), rates.WithServicePolicyCache(
+	), rates.WithCredentialSelector(providerCredentialService), rates.WithShippingProviderGate(merchantProviderService), rates.WithResultPolicy(merchantShippingService), rates.WithServicePolicyCache(
 		runtimeCache,
 		5*time.Minute,
 	)}

@@ -66,9 +66,10 @@ tidak dapat mengakses `/api/v1/integrations/*` atau membawa konteks merchant.
 6. Aktivasi dilakukan dengan provider code dan `expected_version`; API Kurir
    memilih credential aktif secara otomatis.
 
-Merchant dapat memasang beberapa provider, tetapi tepat satu provider shipping
-efektif aktif. Biteship tidak menjadi extension seller dan tetap digunakan
-sebagai fallback tracking internal.
+Merchant dapat memasang beberapa provider, tetapi maksimal satu provider
+shipping efektif aktif. Tenant baru berstatus nonaktif sampai seller memilih
+Emisell Kurir atau provider eksternal. Biteship tidak menjadi extension seller
+dan tetap digunakan sebagai fallback tracking internal.
 
 ## Endpoint utama
 
@@ -79,7 +80,7 @@ sebagai fallback tracking internal.
 | `POST /api/v1/integrations/provider-credentials/{provider_code}/disable` | Putuskan key berdasarkan provider code |
 | `GET /api/v1/integrations/providers` | Katalog provider dan provider efektif aktif |
 | `POST /api/v1/integrations/providers/{provider_code}/activate` | Aktifkan provider; credential dipilih internal |
-| `POST /api/v1/integrations/providers/{provider_code}/deactivate` | Kembali ke Emisell Kurir |
+| `POST /api/v1/integrations/providers/{provider_code}/deactivate` | Nonaktifkan shipping merchant bila provider tersebut sedang aktif |
 | `GET/PUT /api/v1/integrations/shipping-services` | Baca/simpan layanan checkout merchant |
 | `POST /api/v1/integrations/tracking/subscriptions` | Daftarkan AWB fulfillment |
 | `GET /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Baca snapshot tanpa hit provider |
@@ -101,6 +102,9 @@ Content-Type: application/x-www-form-urlencoded
 API Kurir membaca provider aktif merchant lalu memilih credential internal.
 Snapshot dan ledger dipisahkan berdasarkan merchant serta credential internal,
 tetapi ID credential tidak menjadi bagian kontrak Main Service.
+Jika belum ada provider aktif, endpoint rate mengembalikan HTTP `409` dengan
+kode `SHIPPING_DISABLED`; Main Service dapat menyembunyikan opsi pengiriman dan
+menampilkan ajakan mengaktifkan extension kurir.
 
 Tracking sinkron memakai header yang sama pada
 `POST /api/v1/track/waybill`. Untuk fulfillment, gunakan subscription agar

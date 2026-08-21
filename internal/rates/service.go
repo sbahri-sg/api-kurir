@@ -13,7 +13,10 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-var ErrRateNotAvailable = errors.New("rate not available")
+var (
+	ErrRateNotAvailable = errors.New("rate not available")
+	ErrShippingDisabled = errors.New("shipping is not active for tenant")
+)
 
 type Service struct {
 	repository   Repository
@@ -28,6 +31,11 @@ type Service struct {
 	lockTTL      time.Duration
 	resultPolicy ResultPolicy
 	credentials  CredentialSelector
+	providerGate ShippingProviderGate
+}
+
+type ShippingProviderGate interface {
+	HasActiveProvider(ctx context.Context, tenantID string) (bool, error)
 }
 
 type CredentialSelector interface {
@@ -75,6 +83,12 @@ func WithCredentialSelector(selector CredentialSelector) Option {
 	}
 }
 
+func WithShippingProviderGate(gate ShippingProviderGate) Option {
+	return func(service *Service) {
+		service.providerGate = gate
+	}
+}
+
 func WithServicePolicyCache(policyCache cache.Cache, ttl time.Duration) Option {
 	return func(service *Service) {
 		service.policyCache = policyCache
@@ -108,6 +122,15 @@ func (s *Service) Calculate(ctx context.Context, request Request) ([]Result, err
 	resultCh := s.group.DoChan(key, func() (any, error) {
 		operationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.queryTimeout)
 		defer cancel()
+		if request.TenantID != "" && s.providerGate != nil {
+			active, err := s.providerGate.HasActiveProvider(operationCtx, request.TenantID)
+			if err != nil {
+				return nil, err
+			}
+			if !active {
+				return nil, ErrShippingDisabled
+			}
+		}
 		return s.calculate(operationCtx, request, key)
 	})
 

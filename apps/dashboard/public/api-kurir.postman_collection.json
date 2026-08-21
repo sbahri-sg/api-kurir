@@ -1116,7 +1116,7 @@
                 "providers"
               ]
             },
-            "description": "Mengembalikan katalog dan tepat satu provider efektif aktif untuk merchant."
+            "description": "Mengembalikan katalog dan maksimal satu provider efektif aktif. Merchant baru mengembalikan active_provider_code null."
           },
           "response": []
         },
@@ -1219,7 +1219,7 @@
                 "deactivate"
               ]
             },
-            "description": "Mengembalikan provider efektif ke Emisell Kurir."
+            "description": "Menonaktifkan provider efektif tanpa mengaktifkan pengganti otomatis. Emisell Kurir juga dapat dinonaktifkan."
           },
           "response": []
         },

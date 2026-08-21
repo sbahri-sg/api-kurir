@@ -90,8 +90,6 @@ func writeTenantShippingProviderError(c *echo.Context, err error) error {
 		return writeError(c, http.StatusUnprocessableEntity, "PROVIDER_CREDENTIAL_REQUIRED", "Credential provider wajib dipilih.", nil)
 	case errors.Is(err, merchantproviders.ErrCredentialUnavailable):
 		return writeError(c, http.StatusUnprocessableEntity, "PROVIDER_CREDENTIAL_UNAVAILABLE", "Credential tidak valid, tidak aktif, atau bukan milik merchant.", nil)
-	case errors.Is(err, merchantproviders.ErrDefaultProvider):
-		return writeError(c, http.StatusConflict, "DEFAULT_PROVIDER_REQUIRED", "Emisell Kurir tidak dapat dinonaktifkan tanpa provider pengganti.", nil)
 	case errors.Is(err, merchantproviders.ErrVersionConflict):
 		return writeError(c, http.StatusConflict, "SHIPPING_PROVIDER_VERSION_CONFLICT", "Pilihan provider telah berubah. Muat ulang lalu coba kembali.", nil)
 	case err != nil:

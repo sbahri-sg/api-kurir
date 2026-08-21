@@ -461,9 +461,11 @@ provider merchant melalui:
 | POST | `/api/v1/integrations/providers/{provider_code}/activate` | `shipping:write` |
 | POST | `/api/v1/integrations/providers/{provider_code}/deactivate` | `shipping:write` |
 
-Merchant dapat mempunyai beberapa provider terpasang, tetapi tepat satu provider
-efektif aktif. Tenant baru memakai Emisell Kurir secara implisit. Detail state,
-optimistic concurrency, dan fallback credential dijelaskan pada
+Merchant dapat mempunyai beberapa provider terpasang, tetapi maksimal satu
+provider efektif aktif. Tenant baru tidak mempunyai provider aktif; seller harus
+mengaktifkan Emisell Kurir atau provider eksternal. Saat tidak aktif, endpoint
+rate bertenant mengembalikan `SHIPPING_DISABLED`. Detail state, optimistic
+concurrency, dan lifecycle credential dijelaskan pada
 [`merchant-shipping-providers.md`](merchant-shipping-providers.md).
 
 Request bertenant dapat mengatur layanan yang boleh muncul melalui

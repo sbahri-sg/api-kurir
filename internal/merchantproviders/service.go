@@ -14,7 +14,6 @@ var (
 	ErrProviderUnavailable   = errors.New("shipping provider is unavailable")
 	ErrCredentialRequired    = errors.New("provider credential is required")
 	ErrCredentialUnavailable = errors.New("provider credential is unavailable")
-	ErrDefaultProvider       = errors.New("default shipping provider cannot be deactivated")
 	ErrVersionConflict       = errors.New("shipping provider selection version conflict")
 )
 
@@ -32,6 +31,23 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 		return Catalog{}, ErrInvalidTenant
 	}
 	return s.repository.Catalog(ctx, tenantID)
+}
+
+func (s *Service) HasActiveProvider(ctx context.Context, tenantID string) (bool, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if !validTenantID(tenantID) {
+		return false, ErrInvalidTenant
+	}
+	if repository, ok := s.repository.(interface {
+		HasActiveProvider(context.Context, string) (bool, error)
+	}); ok {
+		return repository.HasActiveProvider(ctx, tenantID)
+	}
+	catalog, err := s.repository.Catalog(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	return catalog.ActiveProviderCode != nil, nil
 }
 
 func (s *Service) Activate(
@@ -56,9 +72,6 @@ func (s *Service) Deactivate(
 	tenantID, providerCode, input, err := normalizeChange(tenantID, providerCode, input)
 	if err != nil {
 		return Catalog{}, err
-	}
-	if providerCode == DefaultProviderCode {
-		return Catalog{}, ErrDefaultProvider
 	}
 	return s.repository.Deactivate(ctx, tenantID, providerCode, input)
 }

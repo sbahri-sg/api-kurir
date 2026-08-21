@@ -139,6 +139,74 @@ const EMPTY_WEBHOOK_SETTINGS: WebhookSettings = {
   updated_at: null,
 };
 
+const WEBHOOK_REQUEST_HEADERS = `POST /api/v1/webhooks/tracking HTTP/1.1
+Content-Type: application/json
+X-Emisell-Event-ID: 8fd90a2e-1c2e-4ca2-9b15-4546396d94de
+X-Emisell-Event-Type: tracking.status_changed
+X-Emisell-Webhook-Timestamp: 1787200800
+X-Emisell-Webhook-Signature: v1=<hex-hmac-sha256>`;
+
+const WEBHOOK_TRACKING_PAYLOAD = `{
+  "id": "8fd90a2e-1c2e-4ca2-9b15-4546396d94de",
+  "type": "tracking.status_changed",
+  "api_version": "2026-08-20",
+  "occurred_at": "2026-08-20T10:00:00Z",
+  "data": {
+    "merchant_id": "merchant_123",
+    "order_id": "order_123",
+    "fulfillment_id": "fulfillment_123",
+    "tracking_revision": 2,
+    "shipment": {
+      "courier": "jnt",
+      "waybill": "********0535",
+      "validation_status": "valid",
+      "status": "in_transit",
+      "status_label": "Dalam perjalanan",
+      "provider": "rajaongkir",
+      "provider_fetched_at": "2026-08-20T10:00:00Z",
+      "next_refresh_at": "2026-08-20T22:00:00Z",
+      "is_final": false
+    }
+  }
+}`;
+
+const WEBHOOK_TEST_PAYLOAD = `{
+  "id": "evt_test_123",
+  "type": "tracking.test",
+  "api_version": "2026-08-20",
+  "occurred_at": "2026-08-20T10:00:00Z",
+  "data": {
+    "source": "api-kurir-dashboard",
+    "message": "Webhook test berhasil diterima."
+  }
+}`;
+
+const WEBHOOK_NODE_VERIFICATION = `import {
+  createHmac,
+  timingSafeEqual,
+} from "node:crypto";
+
+export function verifyApiKurirWebhook(rawBody, headers, secret) {
+  const timestamp = headers["x-emisell-webhook-timestamp"];
+  const received = headers["x-emisell-webhook-signature"];
+  const timestampNumber = Number(timestamp);
+  const age = Math.abs(Date.now() / 1000 - timestampNumber);
+  if (!timestamp || !received || !Number.isFinite(timestampNumber) || age > 300) {
+    return false;
+  }
+
+  const expected = "v1=" + createHmac("sha256", secret)
+    .update(timestamp + ".")
+    .update(rawBody)
+    .digest("hex");
+  const left = Buffer.from(received);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+// rawBody wajib Buffer asli sebelum JSON.parse().
+// Setelah valid, simpan X-Emisell-Event-ID untuk deduplikasi.`;
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Terjadi kesalahan.";
 }
@@ -1439,6 +1507,200 @@ function WebhookManagement({
           <small>Timeline dan status fulfillment bergerak otomatis.</small>
         </article>
       </section>
+
+      <section className="panel webhook-guide-card">
+        <div className="webhook-doc-heading">
+          <div>
+            <p className="eyebrow">PANDUAN INTEGRASI</p>
+            <h2>Urutan setup yang aman</h2>
+            <p>
+              Webhook hanya dipanggil oleh worker API Kurir ke backend Emisell.
+              Browser seller tidak perlu mengetahui URL callback maupun secret.
+            </p>
+          </div>
+          <span className="badge">API version 2026-08-20</span>
+        </div>
+        <div className="webhook-setup-steps">
+          <article>
+            <span>1</span>
+            <div>
+              <strong>Buat endpoint penerima</strong>
+              <small>
+                Siapkan endpoint POST HTTPS di backend Emisell dan pertahankan
+                raw request body untuk pemeriksaan signature.
+              </small>
+            </div>
+          </article>
+          <article>
+            <span>2</span>
+            <div>
+              <strong>Generate dan simpan secret</strong>
+              <small>
+                Secret hanya tampil sekali. Simpan di secret manager backend,
+                jangan di database seller atau frontend.
+              </small>
+            </div>
+          </article>
+          <article>
+            <span>3</span>
+            <div>
+              <strong>Simpan URL lalu kirim test</strong>
+              <small>
+                Event <code>tracking.test</code> tidak membawa data pelanggan
+                dan aman dipakai untuk menguji signature serta respons 2xx.
+              </small>
+            </div>
+          </article>
+          <article>
+            <span>4</span>
+            <div>
+              <strong>Aktifkan pengiriman event</strong>
+              <small>
+                Setelah test berhasil, aktifkan webhook. Event status yang
+                menunggu akan diproses oleh worker.
+              </small>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <div className="webhook-doc-grid">
+        <section className="panel webhook-events-card">
+          <div className="webhook-doc-heading">
+            <div>
+              <p className="eyebrow">EVENT PRODUKSI</p>
+              <h2>Kapan event dikirim</h2>
+            </div>
+          </div>
+          <div className="webhook-event-list">
+            <article>
+              <code>tracking.validated</code>
+              <p>Resi berhasil dikonfirmasi provider dan cocok dengan kurir.</p>
+            </article>
+            <article>
+              <code>tracking.status_changed</code>
+              <p>
+                Status canonical berubah. Gunakan <code>shipment.status</code>
+                untuk memperbarui timeline fulfillment.
+              </p>
+            </article>
+            <article>
+              <code>tracking.delivered</code>
+              <p>
+                Paket sampai tujuan. Fulfillment boleh menjadi delivered;
+                order selesai hanya jika semua fulfillment sudah delivered.
+              </p>
+            </article>
+            <article>
+              <code>tracking.invalid</code>
+              <p>
+                Resi dinyatakan tidak valid setelah proses validasi. Tampilkan
+                peringatan ke seller tanpa mengubah status order otomatis.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section className="panel webhook-status-card">
+          <div className="webhook-doc-heading">
+            <div>
+              <p className="eyebrow">STATUS CANONICAL</p>
+              <h2>Nilai shipment.status</h2>
+            </div>
+          </div>
+          <div className="webhook-status-list">
+            <span><code>unknown</code> belum diketahui</span>
+            <span><code>pending_pickup</code> menunggu pickup</span>
+            <span><code>picked_up</code> sudah diambil kurir</span>
+            <span><code>in_transit</code> dalam perjalanan</span>
+            <span><code>out_for_delivery</code> dibawa kurir tujuan</span>
+            <span><code>delivery_failed</code> pengantaran gagal</span>
+            <span><code>delivered</code> terkirim, status final</span>
+            <span><code>returned</code> dikembalikan, status final</span>
+            <span><code>cancelled</code> dibatalkan, status final</span>
+          </div>
+        </section>
+      </div>
+
+      <section className="panel webhook-payload-card">
+        <div className="webhook-doc-heading">
+          <div>
+            <p className="eyebrow">HTTP CONTRACT</p>
+            <h2>Header dan payload yang diterima Emisell</h2>
+            <p>
+              Nomor resi selalu termasking. Cocokkan order menggunakan
+              <code>merchant_id</code>, <code>order_id</code>, dan
+              <code>fulfillment_id</code>, bukan menggunakan nomor resi.
+            </p>
+          </div>
+        </div>
+        <div className="code-grid webhook-code-grid">
+          <CodeExample title="Header request" content={WEBHOOK_REQUEST_HEADERS} />
+          <CodeExample
+            title="Payload tracking.status_changed"
+            content={WEBHOOK_TRACKING_PAYLOAD}
+          />
+          <CodeExample title="Payload tracking.test" content={WEBHOOK_TEST_PAYLOAD} />
+          <CodeExample
+            title="Verifikasi HMAC · Node.js"
+            content={WEBHOOK_NODE_VERIFICATION}
+          />
+        </div>
+      </section>
+
+      <div className="webhook-doc-grid">
+        <section className="panel webhook-security-card">
+          <div className="webhook-doc-heading">
+            <div>
+              <p className="eyebrow">VERIFIKASI WAJIB</p>
+              <h2>Signature, replay, dan urutan event</h2>
+            </div>
+          </div>
+          <ol className="webhook-rules">
+            <li>
+              Hitung HMAC SHA-256 atas
+              <code>{"<timestamp>.<raw-request-body>"}</code> menggunakan
+              webhook secret.
+            </li>
+            <li>
+              Bandingkan dengan header signature secara constant-time dan
+              tolak timestamp yang lebih lama dari lima menit.
+            </li>
+            <li>
+              Simpan <code>X-Emisell-Event-ID</code> sebagai idempotency key;
+              event duplikat harus tetap dibalas 2xx tanpa diproses ulang.
+            </li>
+            <li>
+              Abaikan <code>tracking_revision</code> yang lebih kecil daripada
+              revision aktif atau snapshot yang lebih lama dari data saat ini.
+            </li>
+          </ol>
+        </section>
+
+        <section className="panel webhook-delivery-card">
+          <div className="webhook-doc-heading">
+            <div>
+              <p className="eyebrow">RESPONS & RETRY</p>
+              <h2>Balas cepat dengan status 2xx</h2>
+            </div>
+          </div>
+          <ul className="webhook-rules">
+            <li><code>200/202/204</code> dianggap berhasil dan tidak diulang.</li>
+            <li>
+              Network error, <code>429</code>, dan <code>5xx</code> diulang
+              setelah 1 menit, 5 menit, 30 menit, 2 jam, 6 jam, lalu 24 jam.
+            </li>
+            <li>
+              Respons <code>4xx</code> selain 429 dianggap penolakan permanen
+              dan dipindahkan ke dead-letter.
+            </li>
+            <li>
+              Verifikasi, simpan event, lalu balas 2xx. Proses order yang berat
+              sebaiknya dilanjutkan melalui antrean internal Emisell.
+            </li>
+          </ul>
+        </section>
+      </div>
     </div>
   );
 }
