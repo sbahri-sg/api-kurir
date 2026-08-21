@@ -31,8 +31,8 @@ func TestPostgresTrackingJobLifecycle(t *testing.T) {
 		ctx,
 		"integration-test",
 		hash,
+		"INTEGRATION1234",
 		"******1234",
-		[]byte("encrypted-test-value"),
 		nil,
 	)
 	if err != nil {
@@ -103,8 +103,8 @@ func TestPostgresTrackingSubscriptionCreatesWebhookOutbox(t *testing.T) {
 		tenantCtx,
 		"integration-webhook",
 		hash,
+		"INTEGRATION5678",
 		"******5678",
-		[]byte("encrypted-test-value"),
 		nil,
 	)
 	if err != nil {
@@ -173,14 +173,14 @@ func TestPostgresTrackingSubscriptionReplacementRequiresRevision(t *testing.T) {
 	})
 	first, err := repository.RegisterImmediate(
 		tenantCtx, "jne", "revision-first-"+suffix,
-		"********1111", []byte("encrypted-first"), nil,
+		"REVISION1111", "********1111", nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	second, err := repository.RegisterImmediate(
 		tenantCtx, "jnt", "revision-second-"+suffix,
-		"********2222", []byte("encrypted-second"), nil,
+		"REVISION2222", "********2222", nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +237,7 @@ func TestPostgresTrackingSubscriptionRemovalStopsPollingAndCanReactivate(t *test
 	tenantCtx := tenancy.WithIdentity(ctx, tenancy.Identity{TenantID: "merchant-remove-" + suffix})
 	hash := "remove-" + suffix
 	shipment, err := repository.Register(
-		tenantCtx, "jne", hash, "********3333", []byte("encrypted-remove"), nil,
+		tenantCtx, "jne", hash, "REMOVAL3333", "********3333", nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +277,7 @@ func TestPostgresTrackingSubscriptionRemovalStopsPollingAndCanReactivate(t *test
 	}
 
 	reactivatedShipment, err := repository.Register(
-		tenantCtx, "jnt", hash+"-replacement", "********4444", []byte("encrypted-replacement"), nil,
+		tenantCtx, "jnt", hash+"-replacement", "REPLACEMENT4444", "********4444", nil,
 	)
 	if err != nil {
 		t.Fatal(err)

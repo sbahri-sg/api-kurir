@@ -832,7 +832,7 @@ key: {{api_key}}`,
     response: `{
   "data": {
     "courier": "jne",
-    "waybill": "*********9012",
+    "waybill": "0123456789012",
     "status": "in_transit",
     "status_label": "Dalam perjalanan",
     "summary": {},
@@ -961,7 +961,7 @@ key: {{api_key}}`,
     path: "/v1/admin/track/waybill",
     title: "Cek resi dari dashboard",
     description:
-      "Membaca snapshot tracking atau mengantrikan refresh ke worker. Nomor resi disimpan terenkripsi dan ditampilkan termasking.",
+      "Membaca snapshot tracking atau mengantrikan refresh ke worker. Nomor resi disimpan plaintext untuk integrasi backend Emisell.",
     authentication: "Bearer admin API key",
     parameters: [
       "waybill — nomor resi 6–40 karakter",
@@ -975,7 +975,7 @@ key: {{api_key}}`,
     response: `{
   "data": {
     "courier": "jne",
-    "waybill": "*********9012",
+    "waybill": "0123456789012",
     "status": "in_transit",
     "status_label": "Dalam perjalanan",
     "events": [],
@@ -1503,7 +1503,7 @@ Content-Type: application/json
     "active": true,
     "shipment": {
       "courier": "jne",
-      "waybill": "********6789",
+      "waybill": "JY1224876789",
       "status": "unknown",
       "validation_status": "unverified",
       "provider_hit_count": 0,
@@ -1580,7 +1580,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     "active": true,
     "shipment": {
       "courier": "jne",
-      "waybill": "********6789",
+      "waybill": "JY1224876789",
       "status": "in_transit",
       "status_label": "Dalam perjalanan",
       "validation_status": "valid",

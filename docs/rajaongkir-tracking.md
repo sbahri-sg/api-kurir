@@ -114,14 +114,17 @@ Database menyimpan:
 
 ```text
 waybill_hash
+waybill
 waybill_masked
-waybill_ciphertext
 provider_context_ciphertext
 summary_json
 events_json
 ```
 
-Raw response provider dan nomor telepon lengkap tidak disimpan. Untuk
+`waybill` disimpan plaintext agar dapat dikonsumsi backend Emisell dan payload
+webhook tanpa proses decrypt. `waybill_hash` tetap dipakai untuk deduplikasi dan
+`waybill_masked` untuk log/audit. Kolom ciphertext waybill hanya menjadi jalur
+migrasi data lama. Raw response provider dan nomor telepon lengkap tidak disimpan. Untuk
 kompatibilitas respons V2, snapshot terstruktur dapat memuat nama
 pengirim/penerima serta alamat yang memang dikembalikan provider. Batasi akses
 database, enkripsi volume/backup, terapkan retention, dan jangan mencetak field

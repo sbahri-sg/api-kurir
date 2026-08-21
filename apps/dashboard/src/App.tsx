@@ -158,7 +158,7 @@ const WEBHOOK_TRACKING_PAYLOAD = `{
     "tracking_revision": 2,
     "shipment": {
       "courier": "jnt",
-      "waybill": "********0535",
+      "waybill": "JY1224870535",
       "validation_status": "valid",
       "status": "in_transit",
       "status_label": "Dalam perjalanan",
@@ -245,7 +245,7 @@ function trackingErrorMessage(code?: string) {
     case "PROVIDER_ERROR":
       return "Provider tracking sedang tidak dapat dihubungi. Sistem akan mencoba kembali otomatis.";
     case "DECRYPTION_FAILED":
-      return "Data resi tidak dapat dibaca oleh worker. Kunci enkripsi perlu diperiksa oleh admin.";
+      return "Data legacy atau konteks privat resi tidak dapat dibaca worker. Kunci enkripsi perlu diperiksa oleh admin.";
     default:
       return "";
   }

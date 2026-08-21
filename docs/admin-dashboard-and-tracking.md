@@ -14,7 +14,7 @@ Milestone ini menyediakan:
   dengan endpoint customer;
 - generate, daftar, dan revoke API key customer;
 - audit log untuk mutasi admin;
-- registrasi resi yang terenkripsi dan terdeduplikasi;
+- registrasi resi plaintext yang terdeduplikasi untuk backend Emisell;
 - durable tracking queue yang dapat diproses beberapa worker.
 - adapter tracking API resmi RajaOngkir yang nonaktif secara default.
 
@@ -238,19 +238,18 @@ Nomor resi dianggap data sensitif operasional. Database menyimpan:
 ```text
 courier_code
 waybill_hash
+waybill
 waybill_masked
-waybill_ciphertext
 provider_context_ciphertext
 ```
 
 - `waybill_hash`: SHA-256 untuk deduplikasi;
-- `waybill_masked`: hanya empat karakter terakhir untuk response publik,
-  webhook, audit, dan log;
-- `waybill_ciphertext`: AES-256-GCM dengan nonce acak;
+- `waybill`: nomor resi plaintext untuk response backend Emisell dan webhook;
+- `waybill_masked`: representasi aman untuk audit dan log;
 - `provider_context_ciphertext`: konteks provider opsional untuk kompatibilitas,
   juga terenkripsi;
-- plaintext hanya tersedia sesaat di memory worker ketika memanggil adapter dan
-  di memory API ketika membentuk response **Monitor Resi** untuk staff admin.
+- `waybill_ciphertext` hanya dipertahankan sementara sebagai kolom kompatibilitas
+  migrasi dan dikosongkan setelah resi lama berhasil dipindahkan.
 
 Key:
 
@@ -258,7 +257,8 @@ Key:
 TRACKING_ENCRYPTION_KEY=<base64 yang decode menjadi tepat 32 byte>
 ```
 
-Key tidak disimpan di database, source, dashboard, log, atau arsip.
+Key tidak digunakan untuk mengenkripsi waybill. Key tetap tidak disimpan di
+database, source, dashboard, log, atau arsip karena melindungi konteks provider.
 
 ## 5. Deduplikasi dan concurrency
 
@@ -311,7 +311,7 @@ Respons pertama `202`:
 {
   "data": {
     "courier": "jne",
-    "waybill": "*********9012",
+    "waybill": "0123456789012",
     "status": "unknown",
     "status_label": "",
     "summary": {},

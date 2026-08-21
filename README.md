@@ -80,7 +80,7 @@ Fondasi versi `0.9.0` sudah mencakup:
   256-bit hanya tampil sekali, database hanya menyimpan hash, dan key aktif
   sampai di-revoke tanpa nama atau masa berlaku;
 - versioning rate card dan audit log perubahan admin;
-- registrasi tracking terdeduplikasi dengan resi terenkripsi AES-256-GCM;
+- registrasi tracking terdeduplikasi dengan resi plaintext untuk backend Emisell;
 - durable tracking job menggunakan PostgreSQL `SKIP LOCKED`;
 - concurrency internal worker yang dapat diatur `1–64` consumer;
 - adapter tracking resmi RajaOngkir untuk delapan kurir yang capability AWB-nya
@@ -267,7 +267,7 @@ RajaOngkir hanya disimpan sebagai alat pemulihan legacy di profile Compose
 
 ### Menyiapkan tracking
 
-Tracking tetap nonaktif sampai key enkripsi dan credential provider siap:
+Tracking tetap nonaktif sampai key konteks privat dan credential provider siap:
 
 ```text
 TRACKING_ENABLED=true
@@ -275,10 +275,11 @@ TRACKING_ENCRYPTION_KEY=<base64-32-byte-key>
 RAJAONGKIR_TRACKING_COURIERS=jne,sap,ninja,jnt,tiki,wahana,pos,lion
 ```
 
-Tambahkan provider key dari dashboard sebelum menyalakan worker. Key enkripsi
-tracking dapat dibuat melalui secret manager atau generator kriptografis.
-Jangan menyimpannya pada source code. Request tracking dari dashboard cukup
-menggunakan nomor resi dan kode ekspedisi.
+Tambahkan provider key dari dashboard sebelum menyalakan worker. Nomor resi
+disimpan sebagai plaintext agar dapat dipakai backend Emisell dan webhook.
+`TRACKING_ENCRYPTION_KEY` hanya melindungi konteks provider opsional seperti
+digit telepon penerima dan dipakai untuk migrasi resi legacy. Jangan menyimpan
+key tersebut pada source code.
 
 ## Dokumen
 

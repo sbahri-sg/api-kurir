@@ -46,9 +46,8 @@ func NewService(
 	}
 }
 
-// RevealWaybill decrypts an AWB that has already passed through the tracking
-// repository. It is intentionally used only by the admin monitor handler; the
-// public tracking responses and logs continue to expose the masked value.
+// RevealWaybill exists only for rows created before waybills were stored as
+// plaintext. New tracking rows never use this compatibility path.
 func (s *Service) RevealWaybill(courierCode string, ciphertext []byte) (string, error) {
 	if s == nil || s.cipher == nil {
 		return "", errors.New("tracking cipher is unavailable")
@@ -77,13 +76,6 @@ func (s *Service) Register(
 	tenantID := tenancy.TenantID(ctx)
 	hash := sha256.Sum256([]byte(trackingHashMaterial(tenantID, request)))
 	waybillHash := hex.EncodeToString(hash[:])
-	ciphertext, err := s.cipher.Encrypt(
-		[]byte(request.Waybill),
-		[]byte(request.CourierCode),
-	)
-	if err != nil {
-		return Shipment{}, err
-	}
 	var providerContextCiphertext []byte
 	if request.LastPhoneDigits != "" {
 		contextJSON, err := json.Marshal(map[string]string{
@@ -104,8 +96,8 @@ func (s *Service) Register(
 		ctx,
 		request.CourierCode,
 		waybillHash,
+		request.Waybill,
 		maskWaybill(request.Waybill),
-		ciphertext,
 		providerContextCiphertext,
 	)
 }
@@ -191,7 +183,7 @@ func (s *Service) Verify(
 			verification.DetectedCourier = candidate
 			verification.Message = message
 			verification.Shipment = &Shipment{
-				CourierCode: candidate, WaybillMasked: maskWaybill(request.Waybill),
+				CourierCode: candidate, WaybillMasked: request.Waybill,
 				NormalizedStatus: result.NormalizedStatus, StatusLabel: result.StatusLabel,
 				Summary: result.Summary, Events: result.Events, ProviderCode: result.ProviderCode,
 				ProviderFetchedAt: &result.FetchedAt, NextRefreshAt: result.NextRefreshAt,
@@ -215,13 +207,6 @@ func (s *Service) trackNow(
 	request Request,
 	waybillHash string,
 ) (Result, error) {
-	ciphertext, err := s.cipher.Encrypt(
-		[]byte(request.Waybill),
-		[]byte(request.CourierCode),
-	)
-	if err != nil {
-		return Result{}, err
-	}
 	var providerContextCiphertext []byte
 	if request.LastPhoneDigits != "" {
 		contextJSON, err := json.Marshal(map[string]string{
@@ -243,8 +228,8 @@ func (s *Service) trackNow(
 		ctx,
 		request.CourierCode,
 		waybillHash,
+		request.Waybill,
 		maskWaybill(request.Waybill),
-		ciphertext,
 		providerContextCiphertext,
 	)
 	if err != nil {

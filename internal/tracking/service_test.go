@@ -10,7 +10,8 @@ import (
 )
 
 type trackingRepositoryStub struct {
-	ciphertext                []byte
+	waybill                   string
+	waybillMasked             string
 	providerContextCiphertext []byte
 	job                       Job
 	result                    Result
@@ -23,14 +24,15 @@ func (r *trackingRepositoryStub) Register(
 	_ context.Context,
 	courierCode string,
 	_ string,
+	waybill string,
 	waybillMasked string,
-	waybillCiphertext []byte,
 	providerContextCiphertext []byte,
 ) (Shipment, error) {
-	r.ciphertext = append([]byte(nil), waybillCiphertext...)
+	r.waybill = waybill
+	r.waybillMasked = waybillMasked
 	r.providerContextCiphertext = append([]byte(nil), providerContextCiphertext...)
 	shipment := Shipment{
-		ID: "shipment-1", CourierCode: courierCode, WaybillMasked: waybillMasked,
+		ID: "shipment-1", CourierCode: courierCode, WaybillMasked: waybill,
 		NormalizedStatus: "unknown", ValidationStatus: "unverified",
 		ProviderHitLimit: DefaultProviderHitLimit, RefreshQueued: true,
 	}
@@ -42,8 +44,8 @@ func (r *trackingRepositoryStub) RegisterImmediate(
 	ctx context.Context,
 	courierCode string,
 	waybillHash string,
+	waybill string,
 	waybillMasked string,
-	waybillCiphertext []byte,
 	providerContextCiphertext []byte,
 ) (Shipment, error) {
 	if r.shipment.ID != "" {
@@ -53,8 +55,8 @@ func (r *trackingRepositoryStub) RegisterImmediate(
 		ctx,
 		courierCode,
 		waybillHash,
+		waybill,
 		waybillMasked,
-		waybillCiphertext,
 		providerContextCiphertext,
 	)
 	if err == nil {
@@ -205,7 +207,7 @@ func testCipher(t *testing.T) *Cipher {
 	return cipher
 }
 
-func TestServiceEncryptsAndMasksWaybill(t *testing.T) {
+func TestServiceStoresPlaintextWaybillAndEncryptsProviderContext(t *testing.T) {
 	t.Parallel()
 
 	repository := &trackingRepositoryStub{}
@@ -220,25 +222,14 @@ func TestServiceEncryptsAndMasksWaybill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if shipment.WaybillMasked != "********6789" {
-		t.Fatalf("unexpected mask: %s", shipment.WaybillMasked)
+	if shipment.WaybillMasked != "ABC123456789" {
+		t.Fatalf("unexpected response waybill: %s", shipment.WaybillMasked)
 	}
-	if bytes.Contains(repository.ciphertext, []byte("ABC123456789")) {
-		t.Fatal("ciphertext contains plaintext waybill")
+	if repository.waybill != "ABC123456789" {
+		t.Fatalf("unexpected stored waybill: %s", repository.waybill)
 	}
-	decrypted, err := cipher.Decrypt(repository.ciphertext, []byte("jne"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(decrypted) != "ABC123456789" {
-		t.Fatalf("unexpected decrypted value: %s", decrypted)
-	}
-	revealed, err := service.RevealWaybill("JNE", repository.ciphertext)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if revealed != "ABC123456789" {
-		t.Fatalf("unexpected admin reveal value: %s", revealed)
+	if repository.waybillMasked != "********6789" {
+		t.Fatalf("unexpected internal mask: %s", repository.waybillMasked)
 	}
 	decryptedContext, err := cipher.Decrypt(
 		repository.providerContextCiphertext,
@@ -434,18 +425,14 @@ func TestTrackNowCachesProviderFailureUntilRetryCheckpoint(t *testing.T) {
 	}
 }
 
-func TestRunnerDecryptsOnlyForAdapter(t *testing.T) {
+func TestRunnerUsesPlaintextWaybillForAdapter(t *testing.T) {
 	t.Parallel()
 
 	cipher := testCipher(t)
-	encrypted, err := cipher.Encrypt([]byte("ABC123456789"), []byte("jne"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	repository := &trackingRepositoryStub{
 		job: Job{
 			ID: "job-1", ShipmentID: "shipment-1", CourierCode: "jne",
-			WaybillCiphertext: encrypted, MaxAttempts: 3,
+			Waybill: "ABC123456789", MaxAttempts: 3,
 		},
 	}
 	runner := NewRunner(

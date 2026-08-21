@@ -85,12 +85,14 @@ func adminTrackingOperationListHandler(
 		if trackingService != nil {
 			for index := range result.Items {
 				item := &result.Items[index]
-				waybill, revealErr := trackingService.RevealWaybill(
-					item.CourierCode,
-					item.WaybillCiphertext,
-				)
-				if revealErr == nil {
-					item.WaybillMasked = waybill
+				if len(item.WaybillCiphertext) > 0 {
+					waybill, revealErr := trackingService.RevealWaybill(
+						item.CourierCode,
+						item.WaybillCiphertext,
+					)
+					if revealErr == nil {
+						item.WaybillMasked = waybill
+					}
 				}
 			}
 		}

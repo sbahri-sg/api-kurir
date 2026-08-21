@@ -98,7 +98,7 @@ func (r *PostgresRepository) ListTrackingOperations(
 			       coalesce(subscription.revision, 0) AS subscription_revision,
 			       coalesce(revisions.history_count, 0) AS revision_history_count,
 			       shipment.courier_code,
-			       shipment.waybill_masked,
+			       coalesce(shipment.waybill, shipment.waybill_masked) AS waybill_masked,
 			       shipment.waybill_ciphertext,
 			       shipment.validation_status,
 			       shipment.normalized_status,

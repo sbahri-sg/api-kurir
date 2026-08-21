@@ -623,7 +623,7 @@ Respons:
     "request_id": "req_01J..."
   },
   "data": {
-    "waybill": "*********9012",
+    "waybill": "0123456789012",
     "courier": "jne",
     "status": "in_transit",
     "status_label": "Dalam perjalanan",

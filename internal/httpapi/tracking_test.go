@@ -39,12 +39,12 @@ func (trackingHTTPRepositoryStub) Register(
 	string,
 	string,
 	string,
-	[]byte,
+	string,
 	[]byte,
 ) (tracking.Shipment, error) {
 	return tracking.Shipment{
 		CourierCode:      "jne",
-		WaybillMasked:    "********6789",
+		WaybillMasked:    "TEST123456789",
 		NormalizedStatus: "unknown",
 		RefreshQueued:    true,
 	}, nil
@@ -54,16 +54,16 @@ func (trackingHTTPRepositoryStub) RegisterImmediate(
 	ctx context.Context,
 	courierCode string,
 	waybillHash string,
+	waybill string,
 	waybillMasked string,
-	waybillCiphertext []byte,
 	providerContextCiphertext []byte,
 ) (tracking.Shipment, error) {
 	return trackingHTTPRepositoryStub{}.Register(
 		ctx,
 		courierCode,
 		waybillHash,
+		waybill,
 		waybillMasked,
-		waybillCiphertext,
 		providerContextCiphertext,
 	)
 }

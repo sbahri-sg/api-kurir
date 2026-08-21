@@ -99,6 +99,14 @@ func main() {
 			"biteship_fallback_couriers", len(cfg.Biteship.TrackingCouriers),
 		)
 		trackingRepository := tracking.NewPostgresRepository(pool)
+		migratedWaybills, err := trackingRepository.MigrateLegacyWaybills(
+			ctx,
+			trackingCipher,
+		)
+		if err != nil {
+			logger.Error("migrate legacy tracking waybills", "error", err)
+			os.Exit(1)
+		}
 		runner := tracking.NewRunner(
 			trackingRepository,
 			trackingCipher,
@@ -108,7 +116,10 @@ func main() {
 			cfg.Tracking.PollInterval,
 			logger,
 		)
-		logger.Info("durable tracking worker ready")
+		logger.Info(
+			"durable tracking worker ready",
+			"migrated_legacy_waybills", migratedWaybills,
+		)
 		group, workerCtx := errgroup.WithContext(ctx)
 		group.Go(func() error { return runner.Run(workerCtx) })
 		webhookSettingsService := webhooksettings.NewService(

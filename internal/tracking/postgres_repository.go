@@ -20,20 +20,77 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+// MigrateLegacyWaybills decrypts rows written before the plaintext waybill
+// column existed. The legacy ciphertext is removed after a successful update.
+// It is safe to call this method from more than one application instance.
+func (r *PostgresRepository) MigrateLegacyWaybills(
+	ctx context.Context,
+	cipher *Cipher,
+) (int64, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, courier_code, waybill_ciphertext
+		FROM tracking_shipments
+		WHERE waybill IS NULL AND waybill_ciphertext IS NOT NULL
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("list legacy tracking waybills: %w", err)
+	}
+	type legacyWaybill struct {
+		id, courierCode string
+		ciphertext      []byte
+	}
+	legacy := make([]legacyWaybill, 0)
+	for rows.Next() {
+		var item legacyWaybill
+		if err := rows.Scan(&item.id, &item.courierCode, &item.ciphertext); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan legacy tracking waybill: %w", err)
+		}
+		legacy = append(legacy, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("iterate legacy tracking waybills: %w", err)
+	}
+	rows.Close()
+
+	var migrated int64
+	for _, item := range legacy {
+		plaintext, err := cipher.Decrypt(item.ciphertext, []byte(item.courierCode))
+		if err != nil {
+			return migrated, fmt.Errorf("decrypt legacy tracking waybill %s: %w", item.id, err)
+		}
+		waybill := string(plaintext)
+		zeroBytes(plaintext)
+		tag, err := r.pool.Exec(ctx, `
+			UPDATE tracking_shipments
+			SET waybill = $2,
+			    waybill_ciphertext = NULL,
+			    updated_at = now()
+			WHERE id = $1::uuid AND waybill IS NULL
+		`, item.id, waybill)
+		if err != nil {
+			return migrated, fmt.Errorf("store plaintext tracking waybill %s: %w", item.id, err)
+		}
+		migrated += tag.RowsAffected()
+	}
+	return migrated, nil
+}
+
 func (r *PostgresRepository) Register(
 	ctx context.Context,
 	courierCode string,
 	waybillHash string,
+	waybill string,
 	waybillMasked string,
-	waybillCiphertext []byte,
 	providerContextCiphertext []byte,
 ) (Shipment, error) {
 	return r.register(
 		ctx,
 		courierCode,
 		waybillHash,
+		waybill,
 		waybillMasked,
-		waybillCiphertext,
 		providerContextCiphertext,
 		true,
 	)
@@ -43,16 +100,16 @@ func (r *PostgresRepository) RegisterImmediate(
 	ctx context.Context,
 	courierCode string,
 	waybillHash string,
+	waybill string,
 	waybillMasked string,
-	waybillCiphertext []byte,
 	providerContextCiphertext []byte,
 ) (Shipment, error) {
 	return r.register(
 		ctx,
 		courierCode,
 		waybillHash,
+		waybill,
 		waybillMasked,
-		waybillCiphertext,
 		providerContextCiphertext,
 		false,
 	)
@@ -62,8 +119,8 @@ func (r *PostgresRepository) register(
 	ctx context.Context,
 	courierCode string,
 	waybillHash string,
+	waybill string,
 	waybillMasked string,
-	waybillCiphertext []byte,
 	providerContextCiphertext []byte,
 	enqueue bool,
 ) (Shipment, error) {
@@ -92,14 +149,15 @@ func (r *PostgresRepository) register(
 			provider_credential_id,
 			courier_code,
 			waybill_hash,
+			waybill,
 			waybill_masked,
-			waybill_ciphertext,
 			provider_context_ciphertext
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (tenant_id, courier_code, waybill_hash) DO UPDATE
-		SET waybill_masked = EXCLUDED.waybill_masked,
-		    waybill_ciphertext = EXCLUDED.waybill_ciphertext,
+		SET waybill = EXCLUDED.waybill,
+		    waybill_masked = EXCLUDED.waybill_masked,
+		    waybill_ciphertext = NULL,
 		    polling_enabled = true,
 		    provider_credential_id = CASE
 		        WHEN EXCLUDED.provider_credential_id <> ''
@@ -117,8 +175,8 @@ func (r *PostgresRepository) register(
 		providerCredentialID,
 		courierCode,
 		waybillHash,
+		waybill,
 		waybillMasked,
-		waybillCiphertext,
 		providerContextCiphertext,
 	).Scan(&shipmentID)
 	if err != nil {
@@ -192,6 +250,7 @@ func (r *PostgresRepository) Claim(
 			shipment.tenant_id,
 			shipment.provider_credential_id,
 			shipment.courier_code,
+			coalesce(shipment.waybill, ''),
 			shipment.waybill_ciphertext,
 			shipment.provider_context_ciphertext,
 			job.attempt_count,
@@ -205,6 +264,7 @@ func (r *PostgresRepository) Claim(
 		&job.TenantID,
 		&job.ProviderCredentialID,
 		&job.CourierCode,
+		&job.Waybill,
 		&job.WaybillCiphertext,
 		&job.ProviderContextCiphertext,
 		&job.AttemptCount,
@@ -685,7 +745,7 @@ func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipme
 		SELECT
 			shipment.id::text,
 			shipment.courier_code,
-			shipment.waybill_masked,
+			coalesce(shipment.waybill, shipment.waybill_masked),
 			shipment.normalized_status,
 			coalesce(shipment.status_label, ''),
 			shipment.summary_json,
@@ -1095,7 +1155,7 @@ func enqueueTrackingWebhook(
 				'tracking_revision', subscription.revision,
 				'shipment', jsonb_build_object(
 					'courier', shipment.courier_code,
-					'waybill', shipment.waybill_masked,
+					'waybill', coalesce(shipment.waybill, shipment.waybill_masked),
 					'validation_status', shipment.validation_status,
 					'status', shipment.normalized_status,
 					'status_label', coalesce(shipment.status_label, ''),

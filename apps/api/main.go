@@ -166,6 +166,14 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		trackingRepository := tracking.NewPostgresRepository(pool)
+		migratedWaybills, err := trackingRepository.MigrateLegacyWaybills(
+			rootCtx,
+			trackingCipher,
+		)
+		if err != nil {
+			return err
+		}
 		rajaOngkirTrackingAdapter := rajaongkir.NewDynamicTrackingAdapter(
 			providerResolver,
 			cfg.RajaOngkir.BaseURL,
@@ -188,14 +196,15 @@ func run(logger *slog.Logger) error {
 			biteshipTrackingAdapter,
 		)
 		trackingService = tracking.NewService(
-			tracking.NewPostgresRepository(pool),
+			trackingRepository,
 			trackingCipher,
 			immediateTrackingAdapter.CourierCodes()...,
 		)
 		logger.Info(
-			"tracking registration enabled; waybills encrypted at application layer",
+			"tracking registration enabled; waybills stored as plaintext for Emisell",
 			"rajaongkir_couriers", len(cfg.RajaOngkir.TrackingCouriers),
 			"biteship_fallback_couriers", len(cfg.Biteship.TrackingCouriers),
+			"migrated_legacy_waybills", migratedWaybills,
 		)
 	}
 

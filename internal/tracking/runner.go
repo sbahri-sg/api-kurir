@@ -107,9 +107,12 @@ func (r *Runner) processOneAs(ctx context.Context, workerID string) error {
 	if adapter == nil {
 		return r.failJob(ctx, job, "ADAPTER_UNAVAILABLE", ErrAdapterUnavailable)
 	}
-	waybill, err := r.cipher.Decrypt(job.WaybillCiphertext, []byte(job.CourierCode))
-	if err != nil {
-		return r.failJob(ctx, job, "DECRYPTION_FAILED", err)
+	waybill := []byte(job.Waybill)
+	if job.Waybill == "" {
+		waybill, err = r.cipher.Decrypt(job.WaybillCiphertext, []byte(job.CourierCode))
+		if err != nil {
+			return r.failJob(ctx, job, "DECRYPTION_FAILED", err)
+		}
 	}
 	defer zeroBytes(waybill)
 

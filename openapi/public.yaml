@@ -805,8 +805,8 @@ paths:
       operationId: trackCanonicalWaybill
       summary: Membaca snapshot atau mengantrekan refresh tracking
       description: >
-        Endpoint internal asynchronous. Nomor resi disimpan terenkripsi dan
-        dikembalikan dalam bentuk termasking.
+        Endpoint internal asynchronous. Nomor resi disimpan plaintext agar
+        backend Emisell dan webhook menerima nilai lengkap.
       requestBody:
         required: true
         content:

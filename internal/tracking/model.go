@@ -55,11 +55,14 @@ type Event struct {
 }
 
 type Job struct {
-	ID                        string
-	ShipmentID                string
-	TenantID                  string
-	ProviderCredentialID      string
-	CourierCode               string
+	ID                   string
+	ShipmentID           string
+	TenantID             string
+	ProviderCredentialID string
+	CourierCode          string
+	Waybill              string
+	// WaybillCiphertext is retained only while legacy encrypted rows are
+	// migrated to the plaintext waybill column.
 	WaybillCiphertext         []byte
 	ProviderContextCiphertext []byte
 	AttemptCount              int
@@ -136,16 +139,16 @@ type Repository interface {
 		ctx context.Context,
 		courierCode string,
 		waybillHash string,
+		waybill string,
 		waybillMasked string,
-		waybillCiphertext []byte,
 		providerContextCiphertext []byte,
 	) (Shipment, error)
 	RegisterImmediate(
 		ctx context.Context,
 		courierCode string,
 		waybillHash string,
+		waybill string,
 		waybillMasked string,
-		waybillCiphertext []byte,
 		providerContextCiphertext []byte,
 	) (Shipment, error)
 	Claim(ctx context.Context, workerID string, courierCodes []string) (Job, error)

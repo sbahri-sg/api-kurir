@@ -392,7 +392,7 @@ sama; jangan mencampurkan ID dari provider atau level lain.
 
 Façade `/api/v1/track/waybill` memberikan respons sinkron kompatibel
 RajaOngkir V2 dari snapshot atau provider. Kontrak lama `/v1/track/waybill`
-tetap asynchronous: API mendaftarkan resi terenkripsi, sedangkan worker
+tetap asynchronous: API mendaftarkan resi plaintext untuk backend Emisell, sedangkan worker
 melakukan hit provider satu kali untuk shipment yang due. Konfigurasi dan
 kebijakan polling dijelaskan di
 [Operasional adapter tracking RajaOngkir](rajaongkir-tracking.md).

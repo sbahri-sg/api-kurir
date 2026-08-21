@@ -209,7 +209,7 @@ Payload:
     "tracking_revision": 2,
     "shipment": {
       "courier": "jne",
-      "waybill": "********6789",
+      "waybill": "JY1224876789",
       "validation_status": "valid",
       "status": "delivered",
       "status_label": "Terkirim",
