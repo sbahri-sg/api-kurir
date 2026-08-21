@@ -471,11 +471,11 @@ concurrency, dan lifecycle credential dijelaskan pada
 Request bertenant dapat mengatur layanan yang boleh muncul melalui
 `GET/PUT /api/v1/integrations/shipping-services`. Rate engine menormalisasi kode
 mentah provider ke canonical service terlebih dahulu, lalu menerapkan pilihan
-merchant tanpa mengubah envelope RajaOngkir V2. Merchant lama yang belum
-menyimpan preference tetap memakai perilaku lama agar rollout kompatibel.
+merchant tanpa mengubah envelope RajaOngkir V2. Merchant tanpa preference
+mulai dari nol layanan dan harus menyimpan pilihan custom terlebih dahulu.
 
-Kontrak request, mode `all`/`groups`/`custom`, scope, error, dan pola checkbox
-kurir bertingkat tersedia pada
+Kontrak request custom-only, limit kurir/layanan, scope, error, dan pola
+checkbox kurir bertingkat tersedia pada
 [`merchant-shipping-services.md`](merchant-shipping-services.md).
 
 ## 5. Membaca snapshot tarif otomatis

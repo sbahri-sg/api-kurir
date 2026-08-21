@@ -23,7 +23,7 @@ func (r *PostgresRepository) Get(
 	tenantID string,
 ) (Preference, error) {
 	preference := Preference{
-		Mode:          ModeAll,
+		Mode:          ModeCustom,
 		EnabledGroups: []string{},
 		Services:      []Selection{},
 	}

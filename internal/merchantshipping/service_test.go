@@ -92,8 +92,128 @@ func TestCatalogBuildsTriStateCourierSelection(t *testing.T) {
 	}
 	jne := catalog.Couriers[0]
 	if jne.SelectionState != "partial" || jne.SelectedServiceCount != 1 ||
-		jne.TotalServiceCount != 2 || !jne.Services[0].Selected || jne.Services[1].Selected {
+		jne.TotalServiceCount != 2 || !jne.Selectable || !jne.Services[0].Selected ||
+		jne.Services[1].Selected || !jne.Services[1].Selectable {
 		t.Fatalf("unexpected JNE catalog: %#v", jne)
+	}
+	if !catalog.Limits.Enforced || catalog.Limits.Couriers.Maximum != 5 ||
+		catalog.Limits.Couriers.Selected != 1 || catalog.Limits.Couriers.Remaining != 4 ||
+		catalog.Limits.Services.Maximum != 20 || catalog.Limits.Services.Selected != 1 ||
+		catalog.Limits.Services.Remaining != 19 {
+		t.Fatalf("unexpected catalog limits: %#v", catalog.Limits)
+	}
+}
+
+func TestUpdateOnlyAcceptsCustomMode(t *testing.T) {
+	t.Parallel()
+	service := NewService(&memoryRepository{}, courierRepository{items: testCouriers()})
+	for _, mode := range []string{ModeAll, ModeGroups} {
+		_, err := service.Update(context.Background(), "merchant_123", UpdateInput{
+			Mode:          mode,
+			EnabledGroups: []string{"regular"},
+		})
+		if !errors.Is(err, ErrInvalidPreference) {
+			t.Fatalf("mode=%s error=%v want ErrInvalidPreference", mode, err)
+		}
+	}
+
+	preference, err := service.Update(context.Background(), "merchant_123", UpdateInput{
+		Services: []Selection{{CourierCode: "jne", ServiceCode: "REG"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preference.Mode != ModeCustom {
+		t.Fatalf("mode=%s want custom", preference.Mode)
+	}
+}
+
+func TestUpdateEnforcesCourierAndServiceLimits(t *testing.T) {
+	t.Parallel()
+	catalog := []couriers.Courier{
+		{
+			Code: "jne",
+			Name: "JNE",
+			Services: []couriers.Service{
+				{Code: "REG", Name: "JNE Regular", Group: "regular"},
+				{Code: "YES", Name: "JNE YES", Group: "next_day"},
+				{Code: "SPS", Name: "JNE Super Speed", Group: "express"},
+			},
+		},
+		{
+			Code:     "jnt",
+			Name:     "J&T",
+			Services: []couriers.Service{{Code: "EZ", Name: "J&T EZ", Group: "regular"}},
+		},
+	}
+	service := NewService(
+		&memoryRepository{},
+		courierRepository{items: catalog},
+		WithSelectionLimits(1, 2),
+	)
+
+	_, err := service.Update(context.Background(), "merchant_123", UpdateInput{
+		Mode: ModeCustom,
+		Services: []Selection{
+			{CourierCode: "jne", ServiceCode: "REG"},
+			{CourierCode: "jnt", ServiceCode: "EZ"},
+		},
+	})
+	var limitError *SelectionLimitError
+	if !errors.As(err, &limitError) || limitError.RequestedCouriers != 2 ||
+		limitError.RequestedServices != 2 {
+		t.Fatalf("courier limit error=%#v", err)
+	}
+
+	_, err = service.Update(context.Background(), "merchant_123", UpdateInput{
+		Mode: ModeCustom,
+		Services: []Selection{
+			{CourierCode: "jne", ServiceCode: "REG"},
+			{CourierCode: "jne", ServiceCode: "YES"},
+			{CourierCode: "jne", ServiceCode: "SPS"},
+		},
+	})
+	if !errors.As(err, &limitError) || limitError.RequestedServices != 3 {
+		t.Fatalf("service limit error=%#v", err)
+	}
+}
+
+func TestCatalogDisablesUnselectedOptionsAtLimit(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{preference: Preference{
+		Configured: true,
+		Mode:       ModeCustom,
+		Services:   []Selection{{CourierCode: "jne", ServiceCode: "REG"}},
+	}}
+	service := NewService(
+		repository,
+		courierRepository{items: []couriers.Courier{
+			{
+				Code: "jne",
+				Name: "JNE",
+				Services: []couriers.Service{
+					{Code: "REG", Name: "JNE Regular", Group: "regular"},
+					{Code: "YES", Name: "JNE YES", Group: "next_day"},
+				},
+			},
+			{
+				Code:     "jnt",
+				Name:     "J&T",
+				Services: []couriers.Service{{Code: "EZ", Name: "J&T EZ", Group: "regular"}},
+			},
+		}},
+		WithSelectionLimits(1, 2),
+	)
+
+	catalog, err := service.Catalog(context.Background(), "merchant_123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !catalog.Couriers[0].Selectable || !catalog.Couriers[0].Services[1].Selectable {
+		t.Fatalf("selected courier must still allow its remaining service: %#v", catalog.Couriers[0])
+	}
+	if catalog.Couriers[1].Selectable || catalog.Couriers[1].Services[0].Selectable {
+		t.Fatalf("new courier must be disabled at courier limit: %#v", catalog.Couriers[1])
 	}
 }
 
@@ -136,11 +256,11 @@ func TestFilterUsesCanonicalServiceAndGroup(t *testing.T) {
 	}
 }
 
-func TestUnconfiguredTenantKeepsBackwardCompatibleResults(t *testing.T) {
+func TestUnconfiguredTenantDoesNotExposeServices(t *testing.T) {
 	t.Parallel()
 	repository := &memoryRepository{preference: Preference{
 		Configured: false,
-		Mode:       ModeAll,
+		Mode:       ModeCustom,
 	}}
 	service := NewService(repository, courierRepository{})
 	results := []rates.Result{{Card: rates.RateCard{
@@ -150,8 +270,8 @@ func TestUnconfiguredTenantKeepsBackwardCompatibleResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(filtered) != 1 {
-		t.Fatalf("unconfigured preference changed historical results: %#v", filtered)
+	if len(filtered) != 0 {
+		t.Fatalf("unconfigured preference exposed checkout results: %#v", filtered)
 	}
 }
 

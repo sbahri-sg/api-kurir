@@ -11,20 +11,53 @@ import (
 )
 
 var (
-	ErrInvalidTenant     = errors.New("tenant ID is invalid")
-	ErrInvalidPreference = errors.New("shipping service preference is invalid")
-	ErrUnknownService    = errors.New("shipping service is not in the active catalog")
+	ErrInvalidTenant          = errors.New("tenant ID is invalid")
+	ErrInvalidPreference      = errors.New("shipping service preference is invalid")
+	ErrUnknownService         = errors.New("shipping service is not in the active catalog")
+	ErrSelectionLimitExceeded = errors.New("shipping service selection limit exceeded")
 )
 
-const maxCustomServices = 200
+const (
+	defaultMaxSelectedCouriers = 5
+	defaultMaxSelectedServices = 20
+	absoluteMaxCustomServices  = 200
+)
 
 type Service struct {
-	repository Repository
-	couriers   couriers.Repository
+	repository  Repository
+	couriers    couriers.Repository
+	maxCouriers int
+	maxServices int
 }
 
-func NewService(repository Repository, courierRepository couriers.Repository) *Service {
-	return &Service{repository: repository, couriers: courierRepository}
+type Option func(*Service)
+
+func WithSelectionLimits(maxCouriers, maxServices int) Option {
+	return func(service *Service) {
+		if maxCouriers > 0 {
+			service.maxCouriers = maxCouriers
+		}
+		if maxServices > 0 && maxServices <= absoluteMaxCustomServices {
+			service.maxServices = maxServices
+		}
+	}
+}
+
+func NewService(
+	repository Repository,
+	courierRepository couriers.Repository,
+	options ...Option,
+) *Service {
+	service := &Service{
+		repository:  repository,
+		couriers:    courierRepository,
+		maxCouriers: defaultMaxSelectedCouriers,
+		maxServices: defaultMaxSelectedServices,
+	}
+	for _, option := range options {
+		option(service)
+	}
+	return service
 }
 
 func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error) {
@@ -45,6 +78,10 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 		Groups:     groupOptions(),
 		Couriers:   make([]CatalogCourier, 0, len(courierCatalog)),
 	}
+	selectedCouriers := 0
+	selectedServices := 0
+	availableCouriers := 0
+	availableServices := 0
 	for _, courier := range courierCatalog {
 		item := catalogCourier(courier)
 		for _, service := range courier.Services {
@@ -59,6 +96,7 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 			)
 			if selected {
 				item.SelectedServiceCount++
+				selectedServices++
 			}
 			item.Services = append(item.Services, CatalogService{
 				Code:            service.Code,
@@ -70,6 +108,10 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 			})
 		}
 		item.TotalServiceCount = len(item.Services)
+		availableServices += item.TotalServiceCount
+		if item.TotalServiceCount > 0 {
+			availableCouriers++
+		}
 		switch {
 		case item.SelectedServiceCount == 0:
 			item.SelectionState = "none"
@@ -78,8 +120,17 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 		default:
 			item.SelectionState = "partial"
 		}
+		if item.SelectedServiceCount > 0 {
+			selectedCouriers++
+		}
 		result.Couriers = append(result.Couriers, item)
 	}
+	result.Limits = SelectionLimits{
+		Enforced: true,
+		Couriers: limitUsage(s.maxCouriers, selectedCouriers, availableCouriers),
+		Services: limitUsage(s.maxServices, selectedServices, availableServices),
+	}
+	applySelectability(result.Couriers, result.Limits)
 	return result, nil
 }
 
@@ -99,8 +150,8 @@ func (s *Service) Update(
 	return s.repository.Replace(ctx, tenantID, normalized)
 }
 
-// Filter implements rates.ResultPolicy. Tenants without a saved preference
-// keep the historical allow-all behaviour for backwards compatibility.
+// Filter implements rates.ResultPolicy. A tenant must explicitly save custom
+// services before any rate option is allowed at checkout.
 func (s *Service) Filter(
 	ctx context.Context,
 	tenantID string,
@@ -111,7 +162,7 @@ func (s *Service) Filter(
 		return nil, err
 	}
 	if !preference.Configured {
-		return results, nil
+		return []rates.Result{}, nil
 	}
 	filtered := make([]rates.Result, 0, len(results))
 	for _, result := range results {
@@ -137,7 +188,10 @@ func (s *Service) normalizeUpdate(
 ) (UpdateInput, error) {
 	input.Mode = strings.ToLower(strings.TrimSpace(input.Mode))
 	input.UpdatedBy = strings.TrimSpace(input.UpdatedBy)
-	if input.Mode != ModeAll && input.Mode != ModeGroups && input.Mode != ModeCustom {
+	if input.Mode == "" {
+		input.Mode = ModeCustom
+	}
+	if input.Mode != ModeCustom {
 		return UpdateInput{}, ErrInvalidPreference
 	}
 
@@ -149,22 +203,11 @@ func (s *Service) normalizeUpdate(
 	if !validSelections {
 		return UpdateInput{}, ErrInvalidPreference
 	}
-	switch input.Mode {
-	case ModeAll:
-		if len(groups) != 0 || len(selections) != 0 {
-			return UpdateInput{}, ErrInvalidPreference
-		}
-	case ModeGroups:
-		if len(groups) == 0 || len(selections) != 0 {
-			return UpdateInput{}, ErrInvalidPreference
-		}
-	case ModeCustom:
-		if len(groups) != 0 || len(selections) > maxCustomServices {
-			return UpdateInput{}, ErrInvalidPreference
-		}
+	if len(groups) != 0 || len(selections) > absoluteMaxCustomServices {
+		return UpdateInput{}, ErrInvalidPreference
 	}
 
-	if input.Mode == ModeCustom && len(selections) > 0 {
+	if len(selections) > 0 {
 		catalog, err := s.couriers.List(ctx)
 		if err != nil {
 			return UpdateInput{}, err
@@ -178,12 +221,22 @@ func (s *Service) normalizeUpdate(
 				available[selectionKey(courier.Code, service.Code)] = struct{}{}
 			}
 		}
+		selectedCouriers := make(map[string]struct{}, len(selections))
 		for _, selection := range selections {
 			if _, exists := available[selectionKey(
 				selection.CourierCode,
 				selection.ServiceCode,
 			)]; !exists {
 				return UpdateInput{}, ErrUnknownService
+			}
+			selectedCouriers[selection.CourierCode] = struct{}{}
+		}
+		if len(selectedCouriers) > s.maxCouriers || len(selections) > s.maxServices {
+			return UpdateInput{}, &SelectionLimitError{
+				MaxCouriers:       s.maxCouriers,
+				MaxServices:       s.maxServices,
+				RequestedCouriers: len(selectedCouriers),
+				RequestedServices: len(selections),
 			}
 		}
 	}
@@ -193,6 +246,36 @@ func (s *Service) normalizeUpdate(
 	return input, nil
 }
 
+func limitUsage(maximum, selected, available int) LimitUsage {
+	remaining := maximum - selected
+	if remaining < 0 {
+		remaining = 0
+	}
+	return LimitUsage{
+		Maximum:   maximum,
+		Selected:  selected,
+		Remaining: remaining,
+		Available: available,
+	}
+}
+
+func applySelectability(catalog []CatalogCourier, limits SelectionLimits) {
+	for courierIndex := range catalog {
+		courier := &catalog[courierIndex]
+		courierSelected := courier.SelectedServiceCount > 0
+		courier.Selectable = courier.TotalServiceCount > 0 && (!limits.Enforced ||
+			courierSelected ||
+			(limits.Couriers.Remaining > 0 && limits.Services.Remaining > 0))
+		for serviceIndex := range courier.Services {
+			service := &courier.Services[serviceIndex]
+			service.Selectable = !limits.Enforced ||
+				service.Selected ||
+				(limits.Services.Remaining > 0 &&
+					(courierSelected || limits.Couriers.Remaining > 0))
+		}
+	}
+}
+
 func preferenceAllows(
 	preference Preference,
 	courierCode string,
@@ -200,7 +283,7 @@ func preferenceAllows(
 	serviceGroup string,
 ) bool {
 	if !preference.Configured {
-		return true
+		return false
 	}
 	serviceGroup = strings.ToLower(strings.TrimSpace(serviceGroup))
 	switch preference.Mode {

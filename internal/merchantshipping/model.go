@@ -57,6 +57,7 @@ type CatalogService struct {
 	ServiceType     string `json:"service_type"`
 	CalculationMode string `json:"calculation_mode"`
 	Selected        bool   `json:"selected"`
+	Selectable      bool   `json:"selectable"`
 }
 
 type CatalogCourier struct {
@@ -69,15 +70,45 @@ type CatalogCourier struct {
 	SupportsInternationalCost bool             `json:"supports_international_cost"`
 	SupportsTracking          bool             `json:"supports_tracking"`
 	SelectionState            string           `json:"selection_state"`
+	Selectable                bool             `json:"selectable"`
 	SelectedServiceCount      int              `json:"selected_service_count"`
 	TotalServiceCount         int              `json:"total_service_count"`
 	Services                  []CatalogService `json:"services"`
 }
 
+type LimitUsage struct {
+	Maximum   int `json:"maximum"`
+	Selected  int `json:"selected"`
+	Remaining int `json:"remaining"`
+	Available int `json:"available"`
+}
+
+type SelectionLimits struct {
+	Enforced bool       `json:"enforced"`
+	Couriers LimitUsage `json:"couriers"`
+	Services LimitUsage `json:"services"`
+}
+
 type Catalog struct {
 	Preference Preference       `json:"preference"`
+	Limits     SelectionLimits  `json:"limits"`
 	Groups     []GroupOption    `json:"groups"`
 	Couriers   []CatalogCourier `json:"couriers"`
+}
+
+type SelectionLimitError struct {
+	MaxCouriers       int `json:"max_couriers"`
+	MaxServices       int `json:"max_services"`
+	RequestedCouriers int `json:"requested_couriers"`
+	RequestedServices int `json:"requested_services"`
+}
+
+func (e *SelectionLimitError) Error() string {
+	return "shipping service selection limit exceeded"
+}
+
+func (e *SelectionLimitError) Unwrap() error {
+	return ErrSelectionLimitExceeded
 }
 
 func catalogCourier(source couriers.Courier) CatalogCourier {

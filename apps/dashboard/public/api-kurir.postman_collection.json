@@ -1283,7 +1283,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"mode\": \"custom\",\n  \"enabled_groups\": [],\n  \"services\": [\n    { \"courier_code\": \"jne\", \"service_code\": \"REG\" },\n    { \"courier_code\": \"jne\", \"service_code\": \"YES\" },\n    { \"courier_code\": \"jnt\", \"service_code\": \"EZ\" }\n  ]\n}",
+              "raw": "{\n  \"services\": [\n    { \"courier_code\": \"jne\", \"service_code\": \"REG\" },\n    { \"courier_code\": \"jne\", \"service_code\": \"YES\" },\n    { \"courier_code\": \"jnt\", \"service_code\": \"EZ\" }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1302,7 +1302,7 @@
                 "shipping-services"
               ]
             },
-            "description": "Mengganti seluruh pilihan merchant secara atomik; merchant berasal dari header backend."
+            "description": "Mengganti seluruh pilihan custom merchant secara atomik. Mode all/groups ditolak dan limit aktual dibaca dari GET shipping-services."
           },
           "response": []
         },

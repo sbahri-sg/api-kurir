@@ -1788,7 +1788,7 @@ Content-Type: application/json
     path: "/api/v1/integrations/shipping-services",
     title: "Katalog dan pilihan layanan checkout",
     description:
-      "Mengembalikan kurir canonical, grup layanan, capability yang tersedia, serta status none/partial/all berdasarkan preferensi merchant. Merchant lama yang belum menyimpan preferensi tetap memakai perilaku allow-all.",
+      "Mengembalikan kurir canonical, layanan, capability, status pilihan, limit maksimum, pemakaian, sisa, dan selectable. Merchant baru mulai dari nol pilihan dan wajib menyimpan layanan custom sebelum checkout menampilkan ongkir.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/shipping-services
 key: {{api_key}}
@@ -1806,6 +1806,21 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
       "version": 2,
       "updated_at": "2026-08-19T10:00:00Z"
     },
+    "limits": {
+      "enforced": true,
+      "couriers": {
+        "maximum": 5,
+        "selected": 1,
+        "remaining": 4,
+        "available": 14
+      },
+      "services": {
+        "maximum": 20,
+        "selected": 2,
+        "remaining": 18,
+        "available": 88
+      }
+    },
     "groups": [
       { "code": "regular", "name": "Regular" },
       { "code": "next_day", "name": "Next Day" },
@@ -1819,6 +1834,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "rate_provider_code": "rajaongkir",
         "tracking_provider_code": "rajaongkir",
         "selection_state": "partial",
+        "selectable": true,
         "selected_service_count": 2,
         "total_service_count": 9,
         "supports_domestic_cost": true,
@@ -1831,7 +1847,8 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
             "group": "regular",
             "service_type": "parcel",
             "calculation_mode": "provider_quote",
-            "selected": true
+            "selected": true,
+            "selectable": true
           },
           {
             "code": "SPS",
@@ -1839,7 +1856,8 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
             "group": "express",
             "service_type": "parcel",
             "calculation_mode": "provider_quote",
-            "selected": false
+            "selected": false,
+            "selectable": true
           }
         ]
       }
@@ -1855,12 +1873,13 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/shipping-services",
     title: "Simpan layanan yang tampil di checkout",
     description:
-      "Mengganti preferensi merchant secara atomik. Gunakan custom untuk checkbox per layanan seperti Tokopedia, groups untuk aktivasi otomatis berdasarkan kategori, atau all untuk seluruh layanan canonical yang sudah dikenali.",
+      "Mengganti pilihan custom merchant secara atomik. Mode all dan groups tidak diterima. Server menolak request yang melebihi limit kurir atau layanan tanpa mengubah pilihan lama.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     parameters: [
-      "mode — all, groups, atau custom",
-      "enabled_groups — wajib hanya pada mode groups",
-      "services — pasangan courier_code + canonical service_code, dipakai hanya pada mode custom",
+      "services — seluruh pasangan courier_code + canonical service_code yang dipilih",
+      "mode — opsional; bila dikirim hanya boleh custom",
+      "enabled_groups — legacy opsional dan harus berupa array kosong",
+      "maksimum default 5 kurir dan 20 layanan; baca limit aktual dari GET",
       "merchant_id dikirim melalui header dan tidak diterima dari body",
     ],
     request: `PUT {{base_url}}/api/v1/integrations/shipping-services
@@ -1869,8 +1888,6 @@ X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/json
 
 {
-  "mode": "custom",
-  "enabled_groups": [],
   "services": [
     { "courier_code": "jne", "service_code": "REG" },
     { "courier_code": "jne", "service_code": "YES" },

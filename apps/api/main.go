@@ -84,6 +84,10 @@ func run(logger *slog.Logger) error {
 	merchantShippingService := merchantshipping.NewService(
 		merchantshipping.NewPostgresRepository(pool),
 		courierRepository,
+		merchantshipping.WithSelectionLimits(
+			cfg.MerchantShipping.MaxSelectedCouriers,
+			cfg.MerchantShipping.MaxSelectedServices,
+		),
 	)
 	merchantProviderService := merchantproviders.NewService(
 		merchantproviders.NewPostgresRepository(pool),

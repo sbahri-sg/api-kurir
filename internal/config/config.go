@@ -25,6 +25,7 @@ type Config struct {
 	RajaOngkir          RajaOngkirConfig
 	Biteship            BiteshipConfig
 	ProviderCredentials ProviderCredentialConfig
+	MerchantShipping    MerchantShippingConfig
 	Tracking            TrackingConfig
 }
 
@@ -69,6 +70,11 @@ type TrackingConfig struct {
 
 type ProviderCredentialConfig struct {
 	EncryptionKey string
+}
+
+type MerchantShippingConfig struct {
+	MaxSelectedCouriers int
+	MaxSelectedServices int
 }
 
 func Load() (Config, error) {
@@ -147,6 +153,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	maxSelectedCouriers, err := intEnv("MERCHANT_SHIPPING_MAX_COURIERS", 5)
+	if err != nil {
+		return Config{}, err
+	}
+	maxSelectedServices, err := intEnv("MERCHANT_SHIPPING_MAX_SERVICES", 20)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		AppEnv:          envOr("APP_ENV", "development"),
@@ -187,6 +201,10 @@ func Load() (Config, error) {
 		},
 		ProviderCredentials: ProviderCredentialConfig{
 			EncryptionKey: strings.TrimSpace(os.Getenv("PROVIDER_CREDENTIAL_ENCRYPTION_KEY")),
+		},
+		MerchantShipping: MerchantShippingConfig{
+			MaxSelectedCouriers: maxSelectedCouriers,
+			MaxSelectedServices: maxSelectedServices,
 		},
 		Tracking: TrackingConfig{
 			Enabled:             trackingEnabled,
@@ -239,6 +257,14 @@ func Load() (Config, error) {
 	}
 	if cfg.Biteship.Timeout <= 0 {
 		return Config{}, errors.New("BITESHIP_TIMEOUT must be positive")
+	}
+	if cfg.MerchantShipping.MaxSelectedCouriers < 1 ||
+		cfg.MerchantShipping.MaxSelectedCouriers > 50 {
+		return Config{}, errors.New("MERCHANT_SHIPPING_MAX_COURIERS must be between 1 and 50")
+	}
+	if cfg.MerchantShipping.MaxSelectedServices < 1 ||
+		cfg.MerchantShipping.MaxSelectedServices > 200 {
+		return Config{}, errors.New("MERCHANT_SHIPPING_MAX_SERVICES must be between 1 and 200")
 	}
 	if overlap := overlappingValues(
 		cfg.RajaOngkir.TrackingCouriers,

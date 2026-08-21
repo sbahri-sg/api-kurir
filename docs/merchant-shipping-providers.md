@@ -135,7 +135,8 @@ memiliki `active=false`. Permintaan ongkir bertenant akan mengembalikan HTTP
 6. Saat seller mematikan extension kurir, panggil endpoint deactivate untuk
    provider yang sedang aktif.
 7. Render kurir/service dari `GET /integrations/shipping-services` hanya ketika
-   `active_provider_code` tidak `null`.
+   `active_provider_code` tidak `null`; patuhi `limits` dan `selectable` dari
+   response agar checkbox tidak melewati batas merchant.
 
 ## Error kontrak
 

@@ -43,13 +43,27 @@ func tenantShippingServiceUpdateHandler(
 			Services:      request.Services,
 			UpdatedBy:     "tenant:" + identity.TenantID,
 		})
+		var limitError *merchantshipping.SelectionLimitError
 		switch {
+		case errors.As(err, &limitError):
+			return writeError(
+				c,
+				http.StatusUnprocessableEntity,
+				"SHIPPING_SERVICE_LIMIT_EXCEEDED",
+				"Pilihan kurir atau layanan melebihi limit merchant.",
+				map[string]any{
+					"max_couriers":       limitError.MaxCouriers,
+					"max_services":       limitError.MaxServices,
+					"requested_couriers": limitError.RequestedCouriers,
+					"requested_services": limitError.RequestedServices,
+				},
+			)
 		case errors.Is(err, merchantshipping.ErrInvalidPreference):
 			return writeError(
 				c,
 				http.StatusBadRequest,
 				"INVALID_SHIPPING_SERVICE_PREFERENCE",
-				"Mode, kelompok, atau pilihan layanan tidak valid.",
+				"Hanya mode custom yang didukung dan enabled_groups harus kosong.",
 				nil,
 			)
 		case errors.Is(err, merchantshipping.ErrUnknownService):

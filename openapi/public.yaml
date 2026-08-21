@@ -1044,8 +1044,10 @@ paths:
       summary: Membaca katalog dan pilihan layanan checkout merchant
       description: >
         Mengembalikan katalog canonical beserta selected dan selection_state
-        untuk membangun checkbox kurir bertingkat. Tenant lama tanpa preference
-        tersimpan tetap menggunakan perilaku allow-all.
+        untuk membangun checkbox kurir bertingkat. Response juga memuat limit,
+        pemakaian, sisa pilihan, dan selectable pada setiap kurir/layanan.
+        Tenant tanpa preference mulai dari nol pilihan dan tidak memperoleh
+        opsi checkout sebelum menyimpan layanan custom.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1065,10 +1067,11 @@ paths:
       operationId: replaceTenantShippingServices
       summary: Mengganti pilihan layanan checkout merchant
       description: >
-        Update atomik. Mode custom menyimpan pasangan courier_code dan canonical
-        service_code; mode groups memilih kategori; mode all mengaktifkan semua
-        layanan canonical yang sudah dikenali. Merchant selalu berasal dari
-        header dan tidak diterima dari body.
+        Update atomik untuk pilihan custom per layanan. Mode groups dan all tidak
+        diterima. mode boleh dihilangkan atau diisi custom untuk kompatibilitas;
+        enabled_groups harus kosong. Merchant selalu berasal dari header dan
+        tidak diterima dari body. Request yang melampaui limit kurir atau layanan
+        ditolak tanpa mengubah preference lama.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1092,7 +1095,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "422":
-          description: Layanan tidak tersedia pada katalog canonical aktif
+          description: Layanan tidak tersedia atau pilihan melampaui limit merchant
           content:
             application/json:
               schema:
@@ -2422,7 +2425,7 @@ components:
           description: False hanya bila merchant belum pernah menyimpan preference.
         mode:
           type: string
-          enum: [all, groups, custom]
+          enum: [custom]
         enabled_groups:
           type: array
           uniqueItems: true
@@ -2456,26 +2459,21 @@ components:
     TenantShippingPreferenceUpdateRequest:
       type: object
       additionalProperties: false
-      required: [mode, enabled_groups, services]
+      required: [services]
       properties:
         mode:
           type: string
-          enum: [all, groups, custom]
+          enum: [custom]
+          default: custom
+          description: Opsional untuk kompatibilitas; nilai efektif selalu custom.
         enabled_groups:
           type: array
+          maxItems: 0
           uniqueItems: true
+          deprecated: true
+          description: Harus kosong. Gunakan services untuk seluruh pilihan.
           items:
             type: string
-            enum:
-              - economy
-              - regular
-              - next_day
-              - express
-              - same_day
-              - instant
-              - cargo
-              - international
-              - special
         services:
           type: array
           maxItems: 200
@@ -2496,10 +2494,13 @@ components:
       allOf:
         - $ref: "#/components/schemas/CourierService"
         - type: object
-          required: [selected]
+          required: [selected, selectable]
           properties:
             selected:
               type: boolean
+            selectable:
+              type: boolean
+              description: False bila pilihan baru akan melampaui limit merchant.
 
     TenantShippingCatalogCourier:
       type: object
@@ -2513,6 +2514,7 @@ components:
         - supports_international_cost
         - supports_tracking
         - selection_state
+        - selectable
         - selected_service_count
         - total_service_count
         - services
@@ -2536,6 +2538,11 @@ components:
         selection_state:
           type: string
           enum: [none, partial, all]
+        selectable:
+          type: boolean
+          description: >
+            False bila kurir belum dipilih dan penambahan kurir akan melampaui
+            limit. Kurir yang sudah dipilih tetap selectable agar dapat diedit.
         selected_service_count:
           type: integer
           minimum: 0
@@ -2547,6 +2554,36 @@ components:
           items:
             $ref: "#/components/schemas/TenantShippingCatalogService"
 
+    TenantShippingLimitUsage:
+      type: object
+      required: [maximum, selected, remaining, available]
+      properties:
+        maximum:
+          type: integer
+          minimum: 1
+        selected:
+          type: integer
+          minimum: 0
+        remaining:
+          type: integer
+          minimum: 0
+        available:
+          type: integer
+          minimum: 0
+
+    TenantShippingSelectionLimits:
+      type: object
+      required: [enforced, couriers, services]
+      properties:
+        enforced:
+          type: boolean
+          enum: [true]
+          description: Limit selalu diberlakukan untuk semua merchant.
+        couriers:
+          $ref: "#/components/schemas/TenantShippingLimitUsage"
+        services:
+          $ref: "#/components/schemas/TenantShippingLimitUsage"
+
     TenantShippingCatalogResponse:
       type: object
       required: [meta, data]
@@ -2555,10 +2592,12 @@ components:
           $ref: "#/components/schemas/RequestMeta"
         data:
           type: object
-          required: [preference, groups, couriers]
+          required: [preference, limits, groups, couriers]
           properties:
             preference:
               $ref: "#/components/schemas/TenantShippingPreference"
+            limits:
+              $ref: "#/components/schemas/TenantShippingSelectionLimits"
             groups:
               type: array
               items:

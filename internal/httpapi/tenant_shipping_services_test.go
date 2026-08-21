@@ -119,6 +119,80 @@ func TestTenantShippingServicesRejectsUnknownService(t *testing.T) {
 	}
 }
 
+func TestTenantShippingServicesOnlyAcceptsCustomMode(t *testing.T) {
+	t.Parallel()
+	service := merchantshipping.NewService(
+		&shippingPreferenceRepository{},
+		shippingCourierRepository{},
+	)
+	e := echo.New()
+	e.PUT("/api/v1/integrations/shipping-services", withTenantIdentity(
+		tenantShippingServiceUpdateHandler(service),
+	))
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/integrations/shipping-services",
+		bytes.NewBufferString(`{
+			"mode":"groups",
+			"enabled_groups":["regular"],
+			"services":[]
+		}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest ||
+		!bytes.Contains(response.Body.Bytes(), []byte("INVALID_SHIPPING_SERVICE_PREFERENCE")) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTenantShippingServicesReturnsAndEnforcesLimits(t *testing.T) {
+	t.Parallel()
+	service := merchantshipping.NewService(
+		&shippingPreferenceRepository{},
+		shippingCourierRepository{},
+		merchantshipping.WithSelectionLimits(1, 1),
+	)
+	e := echo.New()
+	e.PUT("/api/v1/integrations/shipping-services", withTenantIdentity(
+		tenantShippingServiceUpdateHandler(service),
+	))
+	e.GET("/api/v1/integrations/shipping-services", withTenantIdentity(
+		tenantShippingServiceCatalogHandler(service),
+	))
+
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/integrations/shipping-services",
+		bytes.NewBufferString(`{
+			"mode":"custom",
+			"enabled_groups":[],
+			"services":[
+				{"courier_code":"jne","service_code":"REG"},
+				{"courier_code":"jne","service_code":"SPS"}
+			]
+		}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity ||
+		!bytes.Contains(response.Body.Bytes(), []byte("SHIPPING_SERVICE_LIMIT_EXCEEDED")) ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"max_services":1`)) {
+		t.Fatalf("PUT status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/integrations/shipping-services", nil)
+	response = httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusOK ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"maximum":1`)) ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"selectable":true`)) {
+		t.Fatalf("GET status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestRegisterTenantIntegrationRoutesUsesCanonicalAPIPath(t *testing.T) {
 	t.Parallel()
 	e := echo.New()

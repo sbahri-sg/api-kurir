@@ -35,15 +35,13 @@ dan proses klasifikasi otomatis.
 
 ## 3. Mode pilihan
 
-### `custom` — direkomendasikan
-
-Seller memilih setiap layanan secara eksplisit. Layanan baru hasil sinkronisasi
-provider tidak otomatis tampil di checkout.
+API hanya menerima mode `custom`. Seller memilih setiap layanan secara
+eksplisit sehingga layanan baru hasil sinkronisasi provider tidak otomatis
+tampil di checkout.
 
 ```json
 {
   "mode": "custom",
-  "enabled_groups": [],
   "services": [
     { "courier_code": "jne", "service_code": "REG" },
     { "courier_code": "jne", "service_code": "YES" },
@@ -52,37 +50,16 @@ provider tidak otomatis tampil di checkout.
 }
 ```
 
-### `groups`
+Field `mode` boleh dihilangkan; server tetap menyimpan `custom`. Payload lama
+yang masih mengirim `mode: custom` dan `enabled_groups: []` tetap diterima.
+Nilai `all` atau `groups` ditolak agar checkbox seller selalu menjadi sumber
+pilihan yang eksplisit.
 
-Semua layanan dalam kelompok terpilih diaktifkan. Layanan baru yang kemudian
-masuk kelompok tersebut ikut aktif, sehingga mode ini harus menjadi pilihan
-sadar seller.
-
-```json
-{
-  "mode": "groups",
-  "enabled_groups": ["regular", "next_day"],
-  "services": []
-}
-```
-
-### `all`
-
-Semua layanan canonical yang sudah dikenali aktif. Layanan `unknown` tetap
-ditahan.
-
-```json
-{
-  "mode": "all",
-  "enabled_groups": [],
-  "services": []
-}
-```
-
-Merchant lama yang belum pernah memanggil endpoint PUT mempunyai
-`configured=false`. API mempertahankan perilaku allow-all lama agar rollout
-tidak memutus checkout. Setelah konfigurasi pertama disimpan, filter baru mulai
-berlaku.
+Merchant yang belum pernah memanggil endpoint PUT mempunyai `configured=false`,
+mode `custom`, dan nol layanan terpilih. Cek ongkir tidak menampilkan opsi
+hingga seller menyimpan setidaknya satu layanan. Saat deployment, preference
+lama `all/groups` dikonversi ke pasangan custom yang ekuivalen agar pilihan
+aktif tidak hilang.
 
 ## 4. Autentikasi
 
@@ -119,6 +96,21 @@ Response utama:
       "version": 2,
       "updated_at": "2026-08-19T10:00:00Z"
     },
+    "limits": {
+      "enforced": true,
+      "couriers": {
+        "maximum": 5,
+        "selected": 1,
+        "remaining": 4,
+        "available": 14
+      },
+      "services": {
+        "maximum": 20,
+        "selected": 2,
+        "remaining": 18,
+        "available": 88
+      }
+    },
     "groups": [
       { "code": "regular", "name": "Regular" },
       { "code": "next_day", "name": "Next Day" },
@@ -135,6 +127,7 @@ Response utama:
         "supports_international_cost": true,
         "supports_tracking": true,
         "selection_state": "partial",
+        "selectable": true,
         "selected_service_count": 2,
         "total_service_count": 9,
         "services": [
@@ -144,7 +137,8 @@ Response utama:
             "group": "regular",
             "service_type": "parcel",
             "calculation_mode": "provider_quote",
-            "selected": true
+            "selected": true,
+            "selectable": true
           },
           {
             "code": "SPS",
@@ -152,7 +146,8 @@ Response utama:
             "group": "express",
             "service_type": "parcel",
             "calculation_mode": "provider_quote",
-            "selected": false
+            "selected": false,
+            "selectable": true
           }
         ]
       }
@@ -168,6 +163,12 @@ Response utama:
 - `partial`: sebagian layanan anak dipilih;
 - `all`: seluruh layanan anak dipilih.
 
+`limits.couriers` dan `limits.services` memberi nilai `maximum`, `selected`,
+`remaining`, dan jumlah `available` pada katalog. Dashboard wajib mematuhi
+`selectable`: pilihan yang sudah aktif selalu dapat dilepas, sementara pilihan
+baru menjadi nonaktif saat limit terkait habis. Backend tetap melakukan
+validasi yang sama sehingga limit tidak dapat dilewati dengan request manual.
+
 ## 6. Menyimpan pilihan
 
 ```http
@@ -180,14 +181,15 @@ pilihan terbaru, bukan delta satu checkbox.
 
 ```json
 {
-  "mode": "custom",
-  "enabled_groups": [],
   "services": [
     { "courier_code": "jne", "service_code": "REG" },
     { "courier_code": "jne", "service_code": "YES" }
   ]
 }
 ```
+
+Payload dengan `"mode": "custom"` tetap valid. `enabled_groups` hanya diterima
+bila berupa array kosong untuk kompatibilitas client lama.
 
 Response mengembalikan preferensi yang sudah dinormalisasi dan nomor `version`
 baru. Kode kurir dinormalisasi lowercase dan kode layanan uppercase. Duplikasi
@@ -253,16 +255,19 @@ Detail pemisahan minimum penerimaan dan minimum tagihan tersedia pada
 
 | HTTP | Kode | Arti |
 |---|---|---|
-| 400 | `INVALID_SHIPPING_SERVICE_PREFERENCE` | kombinasi mode, groups, atau services tidak valid |
+| 400 | `INVALID_SHIPPING_SERVICE_PREFERENCE` | mode bukan custom, enabled_groups terisi, atau services tidak valid |
 | 400 | `MERCHANT_ID_REQUIRED` / `INVALID_MERCHANT_ID` | header merchant hilang atau tidak valid |
 | 403 | `MERCHANT_CONTEXT_FORBIDDEN` | public key mencoba membawa konteks merchant |
 | 401 | `UNAUTHORIZED` | Main Service key tidak aktif/tidak valid atau tidak memiliki gateway:access |
 | 422 | `SHIPPING_SERVICE_NOT_FOUND` | pasangan courier/service tidak ada pada katalog aktif |
+| 422 | `SHIPPING_SERVICE_LIMIT_EXCEEDED` | jumlah kurir atau layanan melebihi limit merchant |
 | 400/422 | `RATE_NOT_AVAILABLE` | tidak ada hasil rute yang lolos konfigurasi |
 
 ## 10. Batas dan keamanan
 
-- Maksimal 200 layanan pada mode `custom`.
+- Default production adalah maksimal 5 kurir dan 20 layanan per merchant.
+- Operator dapat mengubahnya melalui `MERCHANT_SHIPPING_MAX_COURIERS` dan
+  `MERCHANT_SHIPPING_MAX_SERVICES`; batas keras layanan adalah 200.
 - Update disimpan dalam satu transaksi database.
 - Service `unknown` tidak dapat dipilih pada konfigurasi baru.
 - Secret provider tidak pernah menjadi bagian preference atau response katalog.
