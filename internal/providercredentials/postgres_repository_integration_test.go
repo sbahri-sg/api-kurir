@@ -29,6 +29,10 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 	tenantB := fmt.Sprintf("merchant_b_%d", suffix)
 	defer func() {
 		_, _ = pool.Exec(context.Background(), `
+			DELETE FROM tenant_active_shipping_providers
+			WHERE tenant_id = ANY($1::text[])
+		`, []string{tenantA, tenantB})
+		_, _ = pool.Exec(context.Background(), `
 			DELETE FROM provider_quota_ledger WHERE tenant_id = ANY($1::text[])
 		`, []string{tenantA, tenantB})
 		_, _ = pool.Exec(context.Background(), `
@@ -70,6 +74,17 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenant_active_shipping_providers (
+			tenant_id,
+			provider_code,
+			credential_id,
+			updated_by
+		)
+		VALUES ($1, 'rajaongkir', $2::uuid, 'integration-test')
+	`, tenantA, credentialA.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	items, err := service.ListForTenant(ctx, tenantA)
 	if err != nil || len(items) != 1 || items[0].ID != credentialA.ID {
@@ -81,6 +96,12 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 	})
 	if _, _, _, err := service.ResolveProviderCredential(wrongCredentialCtx, "rajaongkir"); !errors.Is(err, ErrNoActiveCredential) {
 		t.Fatalf("tenant A resolved tenant B credential: %v", err)
+	}
+	inactiveCredentialCtx := tenancy.WithIdentity(ctx, tenancy.Identity{
+		TenantID: tenantB, IntegrationID: credentialB.ID,
+	})
+	if _, _, _, err := service.ResolveProviderCredential(inactiveCredentialCtx, "rajaongkir"); !errors.Is(err, ErrNoActiveCredential) {
+		t.Fatalf("tenant B resolved an installed but inactive credential: %v", err)
 	}
 
 	ownedCredentialCtx := tenancy.WithIdentity(ctx, tenancy.Identity{

@@ -924,6 +924,142 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/integrations/providers:
+    get:
+      tags: [Emisell Gateway]
+      operationId: getTenantShippingProviders
+      summary: Membaca katalog extension provider dan provider aktif merchant
+      description: >
+        Emisell Kurir selalu terpasang sebagai provider bawaan. Provider
+        eksternal dianggap terpasang bila merchant mempunyai credential aktif
+        dan valid. Tepat satu provider efektif aktif; tenant tanpa konfigurasi
+        eksplisit menggunakan Emisell Kurir dengan version 0.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      responses:
+        "200":
+          description: Katalog provider dan pilihan aktif merchant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantShippingProviderCatalogResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope shipping:read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/integrations/providers/{provider_code}/activate:
+    post:
+      tags: [Emisell Gateway]
+      operationId: activateTenantShippingProvider
+      summary: Mengaktifkan satu extension provider untuk checkout merchant
+      description: >
+        Operasi atomik dan idempotent. Aktivasi provider eksternal memerlukan
+        UUID credential aktif milik merchant yang sama. expected_version
+        mencegah dua perubahan dashboard saling menimpa.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantShippingProviderChangeRequest"
+      responses:
+        "200":
+          description: Provider aktif sudah diganti
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantShippingProviderCatalogResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope shipping:write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Provider tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Provider belum tersedia atau version sudah berubah
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Credential wajib, tidak valid, atau bukan milik merchant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/integrations/providers/{provider_code}/deactivate:
+    post:
+      tags: [Emisell Gateway]
+      operationId: deactivateTenantShippingProvider
+      summary: Menonaktifkan provider eksternal dan kembali ke Emisell Kurir
+      description: >
+        Bila provider tersebut sedang aktif, pilihan merchant dikembalikan
+        secara atomik ke Emisell Kurir. Menonaktifkan provider yang sudah tidak
+        aktif bersifat idempotent. Emisell Kurir sendiri tidak dapat
+        dinonaktifkan tanpa provider pengganti.
+      security:
+        - bearerAuth: []
+          tenantContextAuth: []
+        - rajaOngkirKeyAuth: []
+          tenantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantShippingProviderChangeRequest"
+      responses:
+        "200":
+          description: Provider efektif merchant sesudah penonaktifan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantShippingProviderCatalogResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Tenant token tidak memiliki scope shipping:write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Emisell Kurir wajib aktif atau version sudah berubah
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/integrations/shipping-services:
     get:
       tags: [Emisell Gateway]
@@ -1741,6 +1877,14 @@ components:
       bearerFormat: Admin API key
 
   parameters:
+    ShippingProviderCode:
+      name: provider_code
+      in: path
+      required: true
+      description: Kode provider extension pada katalog, misalnya emisell atau rajaongkir.
+      schema:
+        type: string
+        pattern: "^[a-z0-9_-]{2,48}$"
     TenantContextToken:
       name: X-Emisell-Tenant-Token
       in: header
@@ -2215,6 +2359,81 @@ components:
           minLength: 1
           maxLength: 64
           examples: [REG]
+
+    TenantShippingProvider:
+      type: object
+      required:
+        - code
+        - name
+        - built_in
+        - requires_credential
+        - available
+        - installed
+        - active
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9_-]{2,48}$"
+        name:
+          type: string
+        built_in:
+          type: boolean
+        requires_credential:
+          type: boolean
+        available:
+          type: boolean
+          description: False berarti provider masih tercatat tetapi adapter belum siap dipakai.
+        installed:
+          type: boolean
+          description: Provider bawaan selalu true; eksternal true jika mempunyai credential valid.
+        active:
+          type: boolean
+        credential_id:
+          type: string
+          format: uuid
+          description: Hanya muncul pada provider eksternal yang sedang aktif.
+
+    TenantShippingProviderCatalog:
+      type: object
+      required: [active_provider_code, version, providers]
+      properties:
+        active_provider_code:
+          type: string
+          examples: [emisell]
+        active_credential_id:
+          type: string
+          format: uuid
+          description: Diisi hanya saat provider eksternal aktif.
+        version:
+          type: integer
+          minimum: 0
+          description: Nol berarti tenant masih memakai default implisit Emisell Kurir.
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantShippingProvider"
+
+    TenantShippingProviderCatalogResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TenantShippingProviderCatalog"
+
+    TenantShippingProviderChangeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        credential_id:
+          type: string
+          format: uuid
+          description: Wajib saat mengaktifkan provider eksternal; kosong untuk Emisell Kurir.
+        expected_version:
+          type: integer
+          minimum: 0
+          description: Version dari GET providers untuk optimistic concurrency.
 
     TenantShippingPreference:
       type: object

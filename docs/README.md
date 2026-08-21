@@ -11,6 +11,7 @@ provider yang sedang aktif atau jenis header autentikasi.
 | RajaOngkir V2 compatible | Emisell/SDK RajaOngkir | `/api/v1` | Integer snapshot RajaOngkir lokal | Stable | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Emisell Legacy | Modul region-service lama | `/regions`, `/shipping` | Integer dump region-service | Compatibility | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Pilihan layanan merchant | Extension Kurir Emisell | `/api/v1/integrations/shipping-services` | `courier_code:canonical_service_code` | Stable | [`merchant-shipping-services.md`](merchant-shipping-services.md) |
+| Provider aktif merchant | Backend Extension Kurir Emisell | `/api/v1/integrations/providers` | `merchant_id` + `provider_code` | Stable | [`merchant-shipping-providers.md`](merchant-shipping-providers.md) |
 | Canonical/Internal | Dashboard dan service internal | `/v1` | `loc_idn_*` | Internal | [Kontrak API publik](api-contract.md) |
 | Emisell Merchant Gateway | Backend Emisell | `/api/v1` | `merchant_id` + UUID credential | Internal | [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) |
 | Tracking fulfillment | Backend Emisell | `/api/v1/integrations/tracking` | `merchant_id` + `fulfillment_id` | Internal | [Checkpoint tracking dan webhook](tracking-checkpoint-and-webhooks.md) |

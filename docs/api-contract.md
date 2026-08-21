@@ -452,6 +452,20 @@ asynchronous. Default tetap mencoba memberi hasil sinkron dalam batas timeout.
 
 ### Filter layanan checkout per merchant
 
+Sebelum memilih kurir dan service, backend Emisell dapat mengelola extension
+provider merchant melalui:
+
+| Method | Endpoint | Scope |
+|---|---|---|
+| GET | `/api/v1/integrations/providers` | `shipping:read` |
+| POST | `/api/v1/integrations/providers/{provider_code}/activate` | `shipping:write` |
+| POST | `/api/v1/integrations/providers/{provider_code}/deactivate` | `shipping:write` |
+
+Merchant dapat mempunyai beberapa provider terpasang, tetapi tepat satu provider
+efektif aktif. Tenant baru memakai Emisell Kurir secara implisit. Detail state,
+optimistic concurrency, dan fallback credential dijelaskan pada
+[`merchant-shipping-providers.md`](merchant-shipping-providers.md).
+
 Request bertenant dapat mengatur layanan yang boleh muncul melalui
 `GET/PUT /api/v1/integrations/shipping-services`. Rate engine menormalisasi kode
 mentah provider ke canonical service terlebih dahulu, lalu menerapkan pilihan

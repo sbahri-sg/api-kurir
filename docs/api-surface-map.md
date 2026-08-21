@@ -18,6 +18,7 @@ tenant, dan tanggung jawab operasional tidak tercampur.
 | Emisell Legacy | Modul region-service lama | API Kurir | `/regions`, `/shipping`, `openapi/public.yaml` |
 | Canonical/Internal | Dashboard atau service internal | API Kurir | `/v1`, `openapi/public.yaml` |
 | Merchant Shipping Services | Backend Extension Kurir Emisell | API Kurir | `/api/v1/integrations/shipping-services`, `openapi/public.yaml` |
+| Merchant Shipping Provider | Backend Extension Kurir Emisell | API Kurir | `/api/v1/integrations/providers`, `openapi/public.yaml` |
 | Admin | Operator API Kurir | API Kurir | `/v1/admin`, `openapi/public.yaml` |
 | Provider Account API | Seller/admin Emisell | API Kurir | `openapi/provider-account-v1.yaml` |
 | Partner Connector API | API Kurir | Sistem partner | `openapi/partner-v1.yaml` |

@@ -15,6 +15,7 @@ import (
 	"github.com/emisell/api-kurir/internal/database"
 	"github.com/emisell/api-kurir/internal/httpapi"
 	"github.com/emisell/api-kurir/internal/locations"
+	"github.com/emisell/api-kurir/internal/merchantproviders"
 	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/platform/cache"
 	"github.com/emisell/api-kurir/internal/providercredentials"
@@ -84,6 +85,9 @@ func run(logger *slog.Logger) error {
 	merchantShippingService := merchantshipping.NewService(
 		merchantshipping.NewPostgresRepository(pool),
 		courierRepository,
+	)
+	merchantProviderService := merchantproviders.NewService(
+		merchantproviders.NewPostgresRepository(pool),
 	)
 	providerCredentialCipher, err := providercredentials.NewCipher(
 		cfg.ProviderCredentials.EncryptionKey,
@@ -216,6 +220,7 @@ func run(logger *slog.Logger) error {
 		customerAPIKeyService,
 		providerCredentialService,
 		webhookSettingsService,
+		merchantProviderService,
 		merchantShippingService,
 		tenantVerifier,
 		cfg.APIKeys,

@@ -898,6 +898,120 @@
           "response": []
         },
         {
+          "name": "Get Merchant Shipping Providers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Katalog provider terbaca', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data) {",
+                  "  pm.environment.set('shipping_provider_version', payload.data.version);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/providers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "integrations", "providers"]
+            },
+            "description": "Memerlukan scope shipping:read. Emisell Kurir selalu installed; provider eksternal installed bila credential aktif dan valid."
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Seller RajaOngkir Provider",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('RajaOngkir aktif', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.data) {",
+                  "  pm.environment.set('shipping_provider_version', payload.data.version);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"credential_id\": \"{{seller_provider_credential_id}}\",\n  \"expected_version\": {{shipping_provider_version}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/providers/rajaongkir/activate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "integrations", "providers", "rajaongkir", "activate"]
+            },
+            "description": "Memerlukan scope shipping:write. Credential harus aktif, valid, provider cocok, dan dimiliki tenant yang sama."
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Seller RajaOngkir Provider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Emisell-Tenant-Token",
+                "value": "{{tenant_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_version\": {{shipping_provider_version}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/providers/rajaongkir/deactivate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "integrations", "providers", "rajaongkir", "deactivate"]
+            },
+            "description": "Memerlukan scope shipping:write. Provider efektif otomatis kembali ke Emisell Kurir."
+          },
+          "response": []
+        },
+        {
           "name": "Get Merchant Checkout Services",
           "request": {
             "method": "GET",

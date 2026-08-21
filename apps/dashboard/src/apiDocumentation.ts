@@ -1671,6 +1671,130 @@ X-Emisell-Tenant-Token: {{tenant_token}}`,
     contract: "gateway",
     scope: "customer",
     method: "GET",
+    path: "/api/v1/integrations/providers",
+    title: "Katalog provider dan extension aktif",
+    description:
+      "Menampilkan Emisell Kurir sebagai provider bawaan, provider eksternal yang telah memiliki credential valid, kesiapan adapter, dan tepat satu provider efektif yang aktif untuk merchant.",
+    authentication:
+      "Customer API key + tenant token dengan scope shipping:read",
+    request: `GET {{base_url}}/api/v1/integrations/providers
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}`,
+    response: `{
+  "data": {
+    "active_provider_code": "emisell",
+    "version": 0,
+    "providers": [
+      {
+        "code": "emisell",
+        "name": "Emisell Kurir",
+        "built_in": true,
+        "requires_credential": false,
+        "available": true,
+        "installed": true,
+        "active": true
+      },
+      {
+        "code": "rajaongkir",
+        "name": "RajaOngkir",
+        "built_in": false,
+        "requires_credential": true,
+        "available": true,
+        "installed": true,
+        "active": false
+      },
+      {
+        "code": "kiriminaja",
+        "name": "KiriminAja",
+        "built_in": false,
+        "requires_credential": true,
+        "available": false,
+        "installed": false,
+        "active": false
+      }
+    ]
+  },
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/integrations/providers/{provider_code}/activate",
+    title: "Aktifkan satu provider merchant",
+    description:
+      "Mengganti provider aktif secara atomik. RajaOngkir memerlukan credential_id merchant yang valid; Emisell Kurir tidak memerlukan credential. expected_version mencegah perubahan paralel saling menimpa.",
+    authentication:
+      "Customer API key + tenant token dengan scope shipping:write",
+    parameters: [
+      "provider_code — emisell atau provider eksternal yang available",
+      "credential_id — wajib untuk provider eksternal",
+      "expected_version — version terakhir dari GET providers",
+    ],
+    request: `POST {{base_url}}/api/v1/integrations/providers/rajaongkir/activate
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}
+Content-Type: application/json
+
+{
+  "credential_id": "11111111-2222-4333-8444-555555555555",
+  "expected_version": 0
+}`,
+    response: `{
+  "data": {
+    "active_provider_code": "rajaongkir",
+    "active_credential_id": "11111111-2222-4333-8444-555555555555",
+    "version": 1,
+    "providers": [
+      { "code": "emisell", "active": false, "installed": true },
+      {
+        "code": "rajaongkir",
+        "active": true,
+        "installed": true,
+        "credential_id": "11111111-2222-4333-8444-555555555555"
+      }
+    ]
+  },
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/integrations/providers/{provider_code}/deactivate",
+    title: "Nonaktifkan provider dan kembali ke Emisell",
+    description:
+      "Menonaktifkan provider eksternal yang sedang dipakai dan otomatis mengaktifkan Emisell Kurir. Provider yang sudah tidak aktif menghasilkan respons sukses yang sama agar aman diulang.",
+    authentication:
+      "Customer API key + tenant token dengan scope shipping:write",
+    parameters: [
+      "provider_code — provider eksternal yang ingin dinonaktifkan",
+      "expected_version — version terakhir dari GET providers",
+    ],
+    request: `POST {{base_url}}/api/v1/integrations/providers/rajaongkir/deactivate
+key: {{api_key}}
+X-Emisell-Tenant-Token: {{tenant_token}}
+Content-Type: application/json
+
+{ "expected_version": 1 }`,
+    response: `{
+  "data": {
+    "active_provider_code": "emisell",
+    "version": 2,
+    "providers": [
+      { "code": "emisell", "active": true, "installed": true },
+      { "code": "rajaongkir", "active": false, "installed": true }
+    ]
+  },
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "GET",
     path: "/api/v1/integrations/shipping-services",
     title: "Katalog dan pilihan layanan checkout",
     description:

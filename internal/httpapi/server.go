@@ -16,6 +16,7 @@ import (
 	"github.com/emisell/api-kurir/internal/apikeys"
 	"github.com/emisell/api-kurir/internal/couriers"
 	"github.com/emisell/api-kurir/internal/locations"
+	"github.com/emisell/api-kurir/internal/merchantproviders"
 	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/rates"
@@ -46,6 +47,7 @@ func New(
 	customerAPIKeyService *apikeys.Service,
 	providerCredentialService *providercredentials.Service,
 	webhookSettingsService *webhooksettings.Service,
+	merchantProviderService *merchantproviders.Service,
 	merchantShippingService *merchantshipping.Service,
 	tenantVerifier *tenancy.Verifier,
 	apiKeys []string,
@@ -124,6 +126,7 @@ func New(
 		e.Group("/api/v1/integrations"),
 		customerAPIKeyService,
 		providerCredentialService,
+		merchantProviderService,
 		merchantShippingService,
 		trackingService,
 		tenantVerifier,
@@ -136,6 +139,7 @@ func New(
 		e.Group("/v1/integrations"),
 		customerAPIKeyService,
 		providerCredentialService,
+		merchantProviderService,
 		merchantShippingService,
 		trackingService,
 		tenantVerifier,
@@ -208,6 +212,7 @@ func registerTenantIntegrationRoutes(
 	integrationGroup *echo.Group,
 	customerAPIKeyService *apikeys.Service,
 	providerCredentialService *providercredentials.Service,
+	merchantProviderService *merchantproviders.Service,
 	merchantShippingService *merchantshipping.Service,
 	trackingService *tracking.Service,
 	tenantVerifier *tenancy.Verifier,
@@ -239,6 +244,21 @@ func registerTenantIntegrationRoutes(
 		"/provider-credentials/:id/disable",
 		tenantProviderCredentialDisableHandler(providerCredentialService),
 		tenantScopeMiddleware("provider-credentials:write"),
+	)
+	integrationGroup.GET(
+		"/providers",
+		tenantShippingProviderCatalogHandler(merchantProviderService),
+		tenantScopeMiddleware("shipping:read"),
+	)
+	integrationGroup.POST(
+		"/providers/:provider_code/activate",
+		tenantShippingProviderActivateHandler(merchantProviderService),
+		tenantScopeMiddleware("shipping:write"),
+	)
+	integrationGroup.POST(
+		"/providers/:provider_code/deactivate",
+		tenantShippingProviderDeactivateHandler(merchantProviderService),
+		tenantScopeMiddleware("shipping:write"),
 	)
 	integrationGroup.GET(
 		"/shipping-services",

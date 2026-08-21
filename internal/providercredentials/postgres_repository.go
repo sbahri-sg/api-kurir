@@ -255,6 +255,15 @@ func (r *PostgresRepository) ResolveActive(
 			WHERE credential.provider_code = $1
 			  AND credential.tenant_id = $2
 			  AND ($3 = '' OR credential.id::text = $3)
+			  AND (
+				$2 = '' OR EXISTS (
+					SELECT 1
+					FROM tenant_active_shipping_providers selection
+					WHERE selection.tenant_id = credential.tenant_id
+					  AND selection.provider_code = credential.provider_code
+					  AND selection.credential_id = credential.id
+				)
+			  )
 			  AND credential.active
 			  AND credential.validation_status = 'valid'
 			  AND coalesce(quota.used_count + quota.reserved_count, 0)
@@ -312,6 +321,15 @@ func (r *PostgresRepository) ResolveActive(
 				WHERE provider_code = $1
 				  AND tenant_id = $2
 				  AND ($3 = '' OR id::text = $3)
+				  AND (
+					$2 = '' OR EXISTS (
+						SELECT 1
+						FROM tenant_active_shipping_providers selection
+						WHERE selection.tenant_id = provider_credentials.tenant_id
+						  AND selection.provider_code = provider_credentials.provider_code
+						  AND selection.credential_id = provider_credentials.id
+					)
+				  )
 				  AND active
 				  AND validation_status = 'valid'
 			)

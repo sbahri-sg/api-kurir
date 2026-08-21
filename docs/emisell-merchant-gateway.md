@@ -59,6 +59,14 @@ memakai credential berbayar milik seller maupun platform secara implisit.
    hit validasi, dan mengembalikan UUID credential sebagai `integration_id`.
 6. Emisell menyimpan UUID tersebut pada konfigurasi extension seller. Secret
    provider tidak disimpan di browser atau log Emisell.
+7. Backend membaca `GET /api/v1/integrations/providers`, lalu mengaktifkan
+   RajaOngkir melalui `POST /api/v1/integrations/providers/rajaongkir/activate`
+   dengan UUID credential dan `expected_version` terbaru.
+
+Lifecycle install dan active adalah dua state berbeda. Merchant boleh mempunyai
+banyak provider terpasang, tetapi API Kurir hanya menyimpan satu provider
+shipping aktif. Kontrak lengkap tersedia pada
+[`merchant-shipping-providers.md`](merchant-shipping-providers.md).
 
 Seluruh endpoint Emisell Gateway memakai base path canonical `/api/v1`.
 Path lama `/v1/integrations` dipertahankan sementara sebagai alias kompatibilitas,
@@ -105,7 +113,7 @@ terjadi hit provider.
 | `provider-credentials:read` | Membaca metadata key milik merchant |
 | `provider-credentials:write` | Menambah atau menonaktifkan key merchant |
 | `shipping:read` | Mengambil tarif dengan credential merchant |
-| `shipping:write` | Mengatur kurir dan layanan yang boleh tampil di checkout |
+| `shipping:write` | Memilih provider aktif serta mengatur kurir dan layanan checkout |
 | `tracking:read` | Melacak AWB dengan credential merchant |
 | `tracking:write` | Mendaftarkan fulfillment untuk checkpoint tracking |
 
