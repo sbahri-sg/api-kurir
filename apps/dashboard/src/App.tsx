@@ -2948,6 +2948,8 @@ function ApiDocumentation({
         );
   const isPartner = view === "partner";
   const isGateway = view === "gateway";
+  const hasCheckoutWeightSop =
+    view === "rajaongkir-v2" || view === "canonical" || view === "gateway";
 
   return (
     <div className="documentation-page">
@@ -3064,6 +3066,8 @@ function ApiDocumentation({
             </ol>
           </section>
 
+          {hasCheckoutWeightSop && <ShippingWeightSopDocumentation />}
+
           <section className="docs-section-heading">
             <div>
               <p className="eyebrow">ENDPOINT TERSEDIA</p>
@@ -3101,6 +3105,153 @@ function ApiDocumentation({
         </p>
       </section>
     </div>
+  );
+}
+
+function ShippingWeightSopDocumentation() {
+  return (
+    <section className="panel shipping-weight-sop">
+      <div className="shipping-weight-sop-heading">
+        <div>
+          <p className="eyebrow">SOP CHECKOUT · ELIGIBILITY BERAT</p>
+          <h2>Tampilkan hanya layanan yang sanggup menerima paket</h2>
+        </div>
+        <p>
+          Emisell mengirim berat final dalam gram. API Kurir menyaring hasil
+          provider berdasarkan minimum diterima, minimum tagihan, maksimum,
+          dan service yang diaktifkan seller.
+        </p>
+      </div>
+
+      <div className="shipping-weight-sop-steps">
+        <article>
+          <span>01</span>
+          <strong>Terima berat final</strong>
+          <p>Dimensi dan berat volumetrik sudah diselesaikan oleh Emisell.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <strong>Ambil quote</strong>
+          <p>Harga dibaca dari snapshot atau provider, bukan diketik manual.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <strong>Filter service</strong>
+          <p>Service di luar batas min–max tidak dikirim ke checkout.</p>
+        </article>
+        <article>
+          <span>04</span>
+          <strong>Terapkan pilihan seller</strong>
+          <p>Hanya service eligible yang memang diaktifkan seller.</p>
+        </article>
+      </div>
+
+      <div className="table-scroll shipping-weight-sop-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Contoh</th>
+              <th>Minimum diterima</th>
+              <th>Minimum tagihan</th>
+              <th>Maksimum</th>
+              <th>Keputusan</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Paket 1 kg · cargo</td>
+              <td>3 kg</td>
+              <td>Mengikuti service</td>
+              <td>Mengikuti service</td>
+              <td><strong>Sembunyikan cargo</strong></td>
+            </tr>
+            <tr>
+              <td>Paket 3 kg · Anteraja Cargo</td>
+              <td>3 kg</td>
+              <td>5 kg</td>
+              <td>100 kg</td>
+              <td><strong>Tampilkan; quote minimal 5 kg</strong></td>
+            </tr>
+            <tr>
+              <td>Paket 80 kg · parcel</td>
+              <td>1 gram</td>
+              <td>Mengikuti quote</td>
+              <td>50 kg default</td>
+              <td><strong>Sembunyikan regular/economy/next day</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <details className="shipping-weight-sop-matrix">
+        <summary>Lihat matriks referensi layanan kargo</summary>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Layanan canonical</th>
+                <th>Minimum diterima</th>
+                <th>Minimum tagihan</th>
+                <th>Maksimum</th>
+                <th>Status sumber</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Anteraja BIG</td><td>3 kg</td><td>5 kg</td><td>100 kg</td>
+                <td>Referensi kanal · konfirmasi kontrak</td>
+              </tr>
+              <tr>
+                <td>JNE JTR</td><td>3 kg</td><td>5 kg</td><td>600 kg</td>
+                <td>Referensi kanal · konfirmasi kontrak</td>
+              </tr>
+              <tr>
+                <td>SiCepat GOKIL</td><td>3 kg</td><td>5 kg</td><td>50 kg</td>
+                <td>Referensi kanal · konfirmasi kontrak</td>
+              </tr>
+              <tr>
+                <td>Sentral DARAT/LAUT/UDARA</td><td>5 kg</td>
+                <td>Mengikuti quote</td><td>Mengikuti quote</td>
+                <td>Referensi kanal · konfirmasi kontrak</td>
+              </tr>
+              <tr>
+                <td>Wahana KARGO</td><td>10 kg</td><td>10 kg</td><td>50 kg</td>
+                <td>Publik resmi</td>
+              </tr>
+              <tr>
+                <td>TIKI TRC</td><td>10 kg</td><td>10 kg</td>
+                <td>Mengikuti quote</td><td>Publik resmi</td>
+              </tr>
+              <tr>
+                <td>RPX HWP</td><td>20 kg</td><td>20 kg</td><td>50 kg</td>
+                <td>Publik resmi</td>
+              </tr>
+              <tr>
+                <td>SAPX CARGO</td><td>5 kg</td><td>Mengikuti quote</td>
+                <td>Mengikuti quote</td><td>Perlu konfirmasi kontrak</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          J&amp;T Cargo Shopee tidak disamakan dengan J&amp;T HBO RajaOngkir.
+          Service baru hanya masuk master setelah code provider terverifikasi.
+        </p>
+      </details>
+
+      <div className="shipping-weight-sop-notes">
+        <p>
+          <strong>Minimum diterima</strong> menentukan tampil atau tidak.
+          <strong> Minimum tagihan</strong> hanya menentukan dasar biaya dan
+          tidak boleh dipakai untuk menyembunyikan layanan.
+        </p>
+        <p>
+          Aturan Shopee adalah referensi kebijakan kanal, bukan kontrak
+          universal provider. Exact quote provider tetap menjadi sumber harga;
+          aturan kontrak seller harus menggantikan referensi bila tersedia.
+        </p>
+      </div>
+    </section>
   );
 }
 

@@ -199,6 +199,97 @@ func TestServiceFiltersWeightAboveServiceMaximum(t *testing.T) {
 	}
 }
 
+func TestServiceShowsOnlyCargoForEightyKilogramCheckout(t *testing.T) {
+	t.Parallel()
+
+	repository := eligibilityRepository{
+		cards: []RateCard{
+			policyTestRateCard("REG", "regular", "parcel"),
+			policyTestRateCard("OKE", "economy", "parcel"),
+			policyTestRateCard("YES", "next_day", "parcel"),
+			policyTestRateCard("JTR", "cargo", "cargo"),
+		},
+		policies: []ServicePolicy{
+			{
+				ServiceGroup:               "regular",
+				MinimumAcceptedWeightGrams: 1,
+				MaximumAcceptedWeightGrams: int64Pointer(50_000),
+			},
+			{
+				ServiceGroup:               "economy",
+				MinimumAcceptedWeightGrams: 1,
+				MaximumAcceptedWeightGrams: int64Pointer(50_000),
+			},
+			{
+				ServiceGroup:               "next_day",
+				MinimumAcceptedWeightGrams: 1,
+				MaximumAcceptedWeightGrams: int64Pointer(50_000),
+			},
+			{
+				ServiceGroup:               "cargo",
+				MinimumAcceptedWeightGrams: 3_000,
+			},
+		},
+	}
+	service := NewService(repository, time.Second)
+
+	results, err := service.Calculate(context.Background(), Request{
+		Origin:            "loc_origin",
+		Destination:       "loc_destination",
+		ActualWeightGrams: 80_000,
+		Couriers:          []string{"jne"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Card.ServiceGroup != "cargo" {
+		t.Fatalf("80 kg checkout must only expose eligible cargo: %#v", results)
+	}
+}
+
+func TestAnterajaCargoUsesSeparateAcceptedAndBillableMinimums(t *testing.T) {
+	t.Parallel()
+
+	repository := eligibilityRepository{
+		cards: []RateCard{policyTestRateCardForCourier(
+			"anteraja", "BIG", "cargo", "cargo",
+		)},
+		policies: []ServicePolicy{
+			{
+				CourierCode:                "anteraja",
+				ServiceCode:                "BIG",
+				MinimumAcceptedWeightGrams: 3_000,
+				MinimumBillableWeightGrams: int64Pointer(5_000),
+				MaximumAcceptedWeightGrams: int64Pointer(100_000),
+			},
+		},
+	}
+	service := NewService(repository, time.Second)
+
+	results, err := service.Calculate(context.Background(), Request{
+		Origin:            "loc_origin",
+		Destination:       "loc_destination",
+		ActualWeightGrams: 3_000,
+		Couriers:          []string{"anteraja"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Weight.BillingGrams != 5_000 {
+		t.Fatalf("3 kg Anteraja Cargo must be billed from 5 kg: %#v", results)
+	}
+
+	_, err = service.Calculate(context.Background(), Request{
+		Origin:            "loc_origin",
+		Destination:       "loc_destination",
+		ActualWeightGrams: 100_001,
+		Couriers:          []string{"anteraja"},
+	})
+	if !errors.Is(err, ErrRateNotAvailable) {
+		t.Fatalf("Anteraja Cargo over 100 kg must be filtered, got %v", err)
+	}
+}
+
 func TestServicePolicyUsesProvidedWeightWithoutDimensionCalculation(t *testing.T) {
 	t.Parallel()
 
@@ -223,6 +314,20 @@ func policyTestRateCard(serviceCode, serviceGroup, serviceType string) RateCard 
 	if serviceCode == "HBO" {
 		courierCode = "jnt"
 	}
+	return policyTestRateCardForCourier(
+		courierCode,
+		serviceCode,
+		serviceGroup,
+		serviceType,
+	)
+}
+
+func policyTestRateCardForCourier(
+	courierCode,
+	serviceCode,
+	serviceGroup,
+	serviceType string,
+) RateCard {
 	return RateCard{
 		CourierCode:            courierCode,
 		CourierName:            "Courier",
