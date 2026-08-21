@@ -256,7 +256,8 @@ Operator memantau data ini melalui menu **Operasional → Monitor Resi**. Tabel
 bersumber dari `GET /v1/admin/tracking-operations`, diperbarui setiap
 15 detik, dan dapat difilter berdasarkan merchant/order, courier, validasi,
 serta antrean `pending`, `running`, `dead`, `final`, atau `idle`. Plaintext AWB
-tidak pernah ditampilkan.
+ditampilkan penuh hanya pada response endpoint admin ini setelah didekripsi di
+memory. Endpoint customer, webhook, audit, dan log tetap memakai AWB termasking.
 
 Untuk pembersihan data development, staff dapat memanggil
 `DELETE /v1/admin/tracking-operations/{id}` dari action **Hapus permanen**.

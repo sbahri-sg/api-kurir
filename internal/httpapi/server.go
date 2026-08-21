@@ -161,7 +161,10 @@ func New(
 	adminGroup.GET("/couriers", courierListHandler(courierRepository))
 	adminGroup.POST("/calculate/domestic-cost", calculateRateHandler(rateService))
 	adminGroup.POST("/track/waybill", trackingHandler(trackingService))
-	adminGroup.GET("/tracking-operations", adminTrackingOperationListHandler(adminRepository))
+	adminGroup.GET(
+		"/tracking-operations",
+		adminTrackingOperationListHandler(adminRepository, trackingService),
+	)
 	adminGroup.DELETE("/tracking-operations/:id", adminTrackingOperationDeleteHandler(adminRepository))
 	adminGroup.GET("/rate-snapshots", adminRateSnapshotListHandler(adminRepository))
 	adminGroup.GET("/location-mappings", adminLocationMappingListHandler(adminRepository))

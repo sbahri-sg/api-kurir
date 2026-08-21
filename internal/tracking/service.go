@@ -46,6 +46,21 @@ func NewService(
 	}
 }
 
+// RevealWaybill decrypts an AWB that has already passed through the tracking
+// repository. It is intentionally used only by the admin monitor handler; the
+// public tracking responses and logs continue to expose the masked value.
+func (s *Service) RevealWaybill(courierCode string, ciphertext []byte) (string, error) {
+	if s == nil || s.cipher == nil {
+		return "", errors.New("tracking cipher is unavailable")
+	}
+	courierCode = strings.ToLower(strings.TrimSpace(courierCode))
+	plaintext, err := s.cipher.Decrypt(ciphertext, []byte(courierCode))
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
+}
+
 func (s *Service) Register(
 	ctx context.Context,
 	courierCode, waybill, lastPhoneDigits string,

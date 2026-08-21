@@ -997,10 +997,10 @@ key: {{api_key}}`,
     path: "/v1/admin/tracking-operations",
     title: "Monitor resi dan antrean worker",
     description:
-      "Sumber tabel operasional untuk melihat AWB masuk, validasi, merchant/order, revision, snapshot, provider hit, job pending/running/dead, serta jadwal refresh.",
+      "Sumber tabel operasional staff untuk melihat AWB penuh, validasi, merchant/order, revision, snapshot, provider hit, job pending/running/dead, serta jadwal refresh. AWB penuh hanya dibuka pada endpoint admin ini.",
     authentication: "Bearer admin API key",
     parameters: [
-      "search — merchant, order, fulfillment, resi termasking, courier, atau provider",
+      "search — merchant, order, fulfillment, empat karakter akhir resi, courier, atau provider",
       "courier — filter kode ekspedisi",
       "validation_status — unverified, valid, not_found, atau invalid",
       "queue_status — pending, running, dead, final, atau idle",
@@ -1011,7 +1011,7 @@ key: {{api_key}}`,
   "data": {
     "items": [{
       "courier": "jnt",
-      "waybill": "********0535",
+      "waybill": "JY1224870535",
       "validation_status": "valid",
       "status": "in_transit",
       "queue_status": "running",

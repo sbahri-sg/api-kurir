@@ -1338,6 +1338,12 @@ paths:
       tags: [Admin]
       operationId: listAdminTrackingOperations
       summary: Monitor AWB, snapshot, dan antrean worker
+      description: >-
+        Endpoint internal staff yang menampilkan AWB penuh setelah didekripsi
+        di memory API. Endpoint customer, webhook, audit, dan log tetap
+        menggunakan AWB termasking.
+      security:
+        - adminBearerAuth: []
       parameters:
         - name: search
           in: query

@@ -117,7 +117,9 @@ Menu **Monitor Resi** berbentuk tabel operasional. Data diperbarui setiap 15
 detik dari PostgreSQL, bukan dari provider, sehingga halaman admin tidak
 mengurangi kuota tracking. Operator dapat memfilter merchant/order, courier,
 validasi, dan status job `pending`, `running`, `dead`, `final`, atau `idle`.
-AWB selalu ditampilkan termasking.
+Khusus tabel ini AWB didekripsi di memory API dan ditampilkan penuh kepada staff
+yang lolos `ADMIN_API_KEYS`. Endpoint customer, webhook, audit, dan log aplikasi
+tetap menggunakan AWB termasking.
 
 Staff dapat memakai aksi **Hapus permanen** untuk membersihkan data development
 atau data uji. Aksi ini tersedia juga saat backend berstatus production karena
@@ -240,11 +242,13 @@ provider_context_ciphertext
 ```
 
 - `waybill_hash`: SHA-256 untuk deduplikasi;
-- `waybill_masked`: hanya empat karakter terakhir untuk dashboard/log;
+- `waybill_masked`: hanya empat karakter terakhir untuk response publik,
+  webhook, audit, dan log;
 - `waybill_ciphertext`: AES-256-GCM dengan nonce acak;
 - `provider_context_ciphertext`: konteks provider opsional untuk kompatibilitas,
   juga terenkripsi;
-- plaintext hanya tersedia sesaat di memory worker ketika memanggil adapter.
+- plaintext hanya tersedia sesaat di memory worker ketika memanggil adapter dan
+  di memory API ketika membentuk response **Monitor Resi** untuk staff admin.
 
 Key:
 

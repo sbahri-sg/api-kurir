@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/emisell/api-kurir/internal/admin"
+	"github.com/emisell/api-kurir/internal/tracking"
 	"github.com/labstack/echo/v5"
 )
 
@@ -64,7 +65,10 @@ func adminOverviewHandler(repository admin.Repository) echo.HandlerFunc {
 	}
 }
 
-func adminTrackingOperationListHandler(repository admin.Repository) echo.HandlerFunc {
+func adminTrackingOperationListHandler(
+	repository admin.Repository,
+	trackingService *tracking.Service,
+) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		limit, offset, err := adminPagination(c)
 		if err != nil {
@@ -77,6 +81,18 @@ func adminTrackingOperationListHandler(repository admin.Repository) echo.Handler
 		})
 		if err != nil {
 			return err
+		}
+		if trackingService != nil {
+			for index := range result.Items {
+				item := &result.Items[index]
+				waybill, revealErr := trackingService.RevealWaybill(
+					item.CourierCode,
+					item.WaybillCiphertext,
+				)
+				if revealErr == nil {
+					item.WaybillMasked = waybill
+				}
+			}
 		}
 		return c.JSON(http.StatusOK, adminResponse(c, result))
 	}

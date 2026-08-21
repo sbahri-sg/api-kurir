@@ -217,6 +217,13 @@ func TestServiceEncryptsAndMasksWaybill(t *testing.T) {
 	if string(decrypted) != "ABC123456789" {
 		t.Fatalf("unexpected decrypted value: %s", decrypted)
 	}
+	revealed, err := service.RevealWaybill("JNE", repository.ciphertext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revealed != "ABC123456789" {
+		t.Fatalf("unexpected admin reveal value: %s", revealed)
+	}
 	decryptedContext, err := cipher.Decrypt(
 		repository.providerContextCiphertext,
 		[]byte("jne:provider-context"),

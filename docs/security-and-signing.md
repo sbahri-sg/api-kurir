@@ -164,7 +164,8 @@ Data sensitif:
 Kontrol:
 
 - field-level encryption untuk AWB/telepon bila diperlukan;
-- masking pada dashboard;
+- masking pada endpoint customer, webhook, audit, dan log; hanya Monitor Resi
+  staff dengan `ADMIN_API_KEYS` yang dapat membuka AWB penuh;
 - akses berbasis seller;
 - log redaction;
 - audit akses POD;

@@ -51,6 +51,7 @@ type TrackingOperation struct {
 	RevisionHistoryCount int        `json:"revision_history_count"`
 	CourierCode          string     `json:"courier"`
 	WaybillMasked        string     `json:"waybill"`
+	WaybillCiphertext    []byte     `json:"-"`
 	ValidationStatus     string     `json:"validation_status"`
 	NormalizedStatus     string     `json:"status"`
 	StatusLabel          string     `json:"status_label"`

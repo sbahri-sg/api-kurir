@@ -76,6 +76,20 @@ func TestDeleteTrackingOperationCascadesAndKeepsAudit(t *testing.T) {
 	}
 
 	repository := NewPostgresRepository(pool)
+	page, err := repository.ListTrackingOperations(ctx, TrackingOperationFilter{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundCiphertext := false
+	for _, item := range page.Items {
+		if item.ID == shipmentID {
+			foundCiphertext = len(item.WaybillCiphertext) > 0
+			break
+		}
+	}
+	if !foundCiphertext {
+		t.Fatal("expected encrypted waybill in internal admin repository result")
+	}
 	if err := repository.DeleteTrackingOperation(ctx, shipmentID, "integration-admin", "req-delete"); err != nil {
 		t.Fatal(err)
 	}
