@@ -61,6 +61,7 @@ func (shippingCourierRepository) List(context.Context) ([]couriers.Courier, erro
 	return []couriers.Courier{{
 		Code: "jne",
 		Name: "JNE",
+		Logo: "https://api-kurir.emisell.com/courier-logos/jne.webp",
 		Services: []couriers.Service{
 			{Code: "REG", Name: "JNE Regular", Group: "regular", ServiceType: "parcel"},
 			{Code: "JTR", Name: "JNE Trucking", Group: "cargo", ServiceType: "cargo"},
@@ -104,6 +105,7 @@ func TestTenantShippingServicesPutAndGet(t *testing.T) {
 		t.Fatalf("GET status=%d body=%s", response.Code, response.Body.String())
 	}
 	if body := response.Body.String(); !bytes.Contains([]byte(body), []byte(`"selection_state":"partial"`)) ||
+		!bytes.Contains([]byte(body), []byte(`"logo":"https://api-kurir.emisell.com/courier-logos/jne.webp"`)) ||
 		!bytes.Contains([]byte(body), []byte(`"service_code":"REG"`)) ||
 		bytes.Contains([]byte(body), []byte(`"code":"SPS"`)) ||
 		bytes.Contains([]byte(body), []byte(`"code":"express"`)) {

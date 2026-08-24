@@ -217,7 +217,7 @@ Query opsional:
 - `service_type`: `parcel`, `cargo`, `same_day`, atau `instant`;
 - `active`: default `true`.
 
-Respons memuat `code`, `name`, provider utama, `rate_provider_code`,
+Respons memuat `code`, `name`, URL `logo` permanen, provider utama, `rate_provider_code`,
 `tracking_provider_code`, kemampuan domestik/internasional/tracking, tanggal
 verifikasi katalog, layanan lokal aktif, dan mode kalkulasinya. Nilai provider
 dipisahkan agar Biteship fallback tracking tidak pernah dianggap sebagai
@@ -234,6 +234,7 @@ alias/snapshot untuk audit, tetapi tidak langsung dipublikasikan ke seller.
     {
       "code": "jne",
       "name": "JNE",
+      "logo": "https://api-kurir.emisell.com/courier-logos/jne.webp",
       "provider_code": "rajaongkir",
       "rate_provider_code": "rajaongkir",
       "tracking_provider_code": "rajaongkir",

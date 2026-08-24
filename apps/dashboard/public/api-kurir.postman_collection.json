@@ -1254,7 +1254,7 @@
                 "shipping-services"
               ]
             },
-            "description": "Mengembalikan katalog canonical dan pilihan checkout merchant hanya untuk grup regular, next_day, economy, dan cargo."
+            "description": "Mengembalikan katalog canonical, URL logo ekspedisi, dan pilihan checkout merchant hanya untuk grup regular, next_day, economy, dan cargo."
           },
           "response": []
         },

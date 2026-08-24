@@ -233,6 +233,7 @@ type Catalog struct {
 type CatalogCourier struct {
 	Code     string           `json:"code"`
 	Name     string           `json:"name"`
+	Logo     string           `json:"logo"`
 	Services []CatalogService `json:"services"`
 }
 

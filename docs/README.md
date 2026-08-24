@@ -31,13 +31,15 @@ Mulai dari dokumen berikut:
    quota, snapshot, dan mapping legacy.
 3. [Katalog ekspedisi dan layanan](provider-service-catalog.md) untuk kode kurir,
    layanan, dan kelompok canonical.
-4. [Model tarif dan aturan berat](rate-and-weight-engine.md) serta
+4. [Aset logo ekspedisi](courier-logo-assets.md) untuk URL logo stabil dan
+   provenance aset yang dirender Emisell.
+5. [Model tarif dan aturan berat](rate-and-weight-engine.md) serta
    [matriks pembulatan berat](weight-rounding-matrix.md).
-5. [Kelayakan berat layanan checkout](service-weight-eligibility.md) untuk
+6. [Kelayakan berat layanan checkout](service-weight-eligibility.md) untuk
    minimum diterima, minimum tagihan, maksimum, dan filter cargo.
-6. [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) untuk
+7. [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) untuk
    tenant authentication, credential seller, kuota, dan multi-domain.
-7. [Checkpoint tracking dan webhook](tracking-checkpoint-and-webhooks.md) untuk
+8. [Checkpoint tracking dan webhook](tracking-checkpoint-and-webhooks.md) untuk
    scheduler hemat, validasi AWB, snapshot, dan update fulfillment otomatis.
 
 Postman Collection pada dashboard memakai placeholder. Isi nilai secret hanya

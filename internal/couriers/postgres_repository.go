@@ -20,6 +20,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]Courier, error) {
 		SELECT
 			c.code,
 			c.name,
+			c.logo_url,
 			c.provider_code,
 			coalesce(c.rate_provider_code, ''),
 			coalesce(c.tracking_provider_code, ''),
@@ -64,6 +65,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]Courier, error) {
 		if err := rows.Scan(
 			&courier.Code,
 			&courier.Name,
+			&courier.Logo,
 			&courier.ProviderCode,
 			&courier.RateProviderCode,
 			&courier.TrackingProviderCode,
@@ -89,6 +91,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]Courier, error) {
 			result = append(result, Courier{
 				Code:                      courier.Code,
 				Name:                      courier.Name,
+				Logo:                      courier.Logo,
 				ProviderCode:              courier.ProviderCode,
 				RateProviderCode:          courier.RateProviderCode,
 				TrackingProviderCode:      courier.TrackingProviderCode,

@@ -1336,6 +1336,39 @@ function ProviderLogo({
   );
 }
 
+function CourierLogo({
+  source,
+  code,
+  alt,
+}: {
+  source: string;
+  code: string;
+  alt: string;
+}) {
+  const bundledSource = `/courier-logos/${code === "rex" ? "rex.png" : `${code}.webp`}`;
+  const fallbackSources = [
+    bundledSource,
+    source,
+    "/courier-logos/default.svg",
+  ].filter((item, index, items) => item && items.indexOf(item) === index);
+  const [sourceIndex, setSourceIndex] = useState(0);
+
+  useEffect(() => setSourceIndex(0), [source, code]);
+
+  return (
+    <img
+      src={fallbackSources[sourceIndex]}
+      alt={alt}
+      loading="lazy"
+      onError={() =>
+        setSourceIndex((current) =>
+          Math.min(current + 1, fallbackSources.length - 1),
+        )
+      }
+    />
+  );
+}
+
 function ProviderManagement({
   api,
   items,
@@ -2226,7 +2259,11 @@ function CourierCatalog({
             <article className="courier-card" key={courier.code}>
               <header>
                 <span className="courier-card-mark">
-                  {courier.code.slice(0, 3).toUpperCase()}
+                  <CourierLogo
+                    source={courier.logo}
+                    code={courier.code}
+                    alt={`Logo ${courier.name}`}
+                  />
                 </span>
                 <div>
                   <span className="courier-provider">

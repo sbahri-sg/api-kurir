@@ -62,6 +62,7 @@ export type CourierService = {
 export type Courier = {
   code: string;
   name: string;
+  logo: string;
   provider_code: string;
   rate_provider_code: string;
   tracking_provider_code: string;

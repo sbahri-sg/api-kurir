@@ -115,6 +115,9 @@ func TestCatalogBuildsTriStateCourierSelection(t *testing.T) {
 		t.Fatalf("unexpected courier count: %d", len(catalog.Couriers))
 	}
 	jne := catalog.Couriers[0]
+	if jne.Logo != "https://api-kurir.emisell.com/courier-logos/jne.webp" {
+		t.Fatalf("unexpected JNE logo: %q", jne.Logo)
+	}
 	if jne.SelectionState != "partial" || jne.SelectedServiceCount != 1 ||
 		jne.TotalServiceCount != 2 || !jne.Selectable || !jne.Services[0].Selected ||
 		jne.Services[1].Selected || !jne.Services[1].Selectable {
@@ -387,6 +390,7 @@ func testCouriers() []couriers.Courier {
 	return []couriers.Courier{{
 		Code: "jne",
 		Name: "JNE",
+		Logo: "https://api-kurir.emisell.com/courier-logos/jne.webp",
 		Services: []couriers.Service{
 			{Code: "REG", Name: "JNE Regular", Group: "regular", ServiceType: "parcel"},
 			{Code: "JTR", Name: "JNE Trucking", Group: "cargo", ServiceType: "cargo"},

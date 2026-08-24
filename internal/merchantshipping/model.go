@@ -58,6 +58,7 @@ type CatalogService struct {
 type CatalogCourier struct {
 	Code                      string           `json:"code"`
 	Name                      string           `json:"name"`
+	Logo                      string           `json:"logo"`
 	ProviderCode              string           `json:"provider_code"`
 	RateProviderCode          string           `json:"rate_provider_code"`
 	TrackingProviderCode      string           `json:"tracking_provider_code"`
@@ -110,6 +111,7 @@ func catalogCourier(source couriers.Courier) CatalogCourier {
 	return CatalogCourier{
 		Code:                      source.Code,
 		Name:                      source.Name,
+		Logo:                      source.Logo,
 		ProviderCode:              source.ProviderCode,
 		RateProviderCode:          source.RateProviderCode,
 		TrackingProviderCode:      source.TrackingProviderCode,

@@ -2420,6 +2420,7 @@ components:
       required:
         - code
         - name
+        - logo
         - provider_code
         - rate_provider_code
         - tracking_provider_code
@@ -2435,6 +2436,12 @@ components:
           type: string
         name:
           type: string
+        logo:
+          type: string
+          format: uri
+          pattern: "^https://"
+          description: URL HTTPS permanen logo ekspedisi yang di-host API Kurir.
+          examples: ["https://api-kurir.emisell.com/courier-logos/jne.webp"]
         provider_code:
           type: string
           description: Provider utama yang memasok capability kurir ke katalog.
@@ -2661,6 +2668,7 @@ components:
       required:
         - code
         - name
+        - logo
         - provider_code
         - rate_provider_code
         - tracking_provider_code
@@ -2677,6 +2685,11 @@ components:
           type: string
         name:
           type: string
+        logo:
+          type: string
+          format: uri
+          pattern: "^https://"
+          description: Logo ekspedisi untuk dirender pada pengaturan shipping Emisell.
         provider_code:
           type: string
         rate_provider_code:

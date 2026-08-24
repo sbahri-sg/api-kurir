@@ -117,6 +117,7 @@ Response utama:
       {
         "code": "jne",
         "name": "JNE",
+        "logo": "https://api-kurir.emisell.com/courier-logos/jne.webp",
         "provider_code": "rajaongkir",
         "rate_provider_code": "rajaongkir",
         "tracking_provider_code": "rajaongkir",
@@ -210,6 +211,11 @@ Badge seperti tracking, domestic cost, atau international cost berasal dari
 capability katalog. `AWB Otomatis`, pickup, COD, dan pembayaran hanya boleh
 ditampilkan setelah capability provider tersebut tersedia; jangan di-hardcode
 berdasarkan nama kurir.
+
+Logo kurir selalu dibaca dari field `couriers[].logo`. Emisell tidak perlu
+menyimpan pemetaan gambar per kode kurir dan harus memakai fallback visual bila
+URL gagal dimuat. Aset di-host API Kurir agar perubahan sumber eksternal tidak
+mengubah kontrak maupun tampilan extension.
 
 ## 8. Enforcement pada cek ongkir
 

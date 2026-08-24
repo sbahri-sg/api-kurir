@@ -11,6 +11,7 @@ type Service struct {
 type Courier struct {
 	Code                      string    `json:"code"`
 	Name                      string    `json:"name"`
+	Logo                      string    `json:"logo"`
 	ProviderCode              string    `json:"provider_code"`
 	RateProviderCode          string    `json:"rate_provider_code"`
 	TrackingProviderCode      string    `json:"tracking_provider_code"`

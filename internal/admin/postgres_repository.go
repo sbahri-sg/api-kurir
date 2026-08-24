@@ -745,7 +745,7 @@ func (r *PostgresRepository) Catalog(ctx context.Context) (Catalog, error) {
 		RoundingProfiles: make([]CatalogRoundingProfile, 0),
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT c.code, c.name, cs.code, cs.name, cs.service_group, cs.service_type
+		SELECT c.code, c.name, c.logo_url, cs.code, cs.name, cs.service_group, cs.service_type
 		FROM couriers c
 		JOIN courier_services cs ON cs.courier_id = c.id
 		WHERE c.active AND cs.active
@@ -756,11 +756,12 @@ func (r *PostgresRepository) Catalog(ctx context.Context) (Catalog, error) {
 	}
 	courierIndexes := make(map[string]int)
 	for rows.Next() {
-		var courierCode, courierName string
+		var courierCode, courierName, courierLogo string
 		var service CatalogService
 		if err := rows.Scan(
 			&courierCode,
 			&courierName,
+			&courierLogo,
 			&service.Code,
 			&service.Name,
 			&service.Group,
@@ -774,7 +775,8 @@ func (r *PostgresRepository) Catalog(ctx context.Context) (Catalog, error) {
 			index = len(result.Couriers)
 			courierIndexes[courierCode] = index
 			result.Couriers = append(result.Couriers, CatalogCourier{
-				Code: courierCode, Name: courierName, Services: make([]CatalogService, 0),
+				Code: courierCode, Name: courierName, Logo: courierLogo,
+				Services: make([]CatalogService, 0),
 			})
 		}
 		result.Couriers[index].Services = append(result.Couriers[index].Services, service)

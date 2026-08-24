@@ -882,13 +882,14 @@ key: {{api_key}}`,
     path: "/v1/admin/couriers",
     title: "Kurir untuk alat operasional",
     description:
-      "Membaca katalog kemampuan, sumber tarif RajaOngkir, dan provider tracking untuk menu Ekspedisi & Service.",
+      "Membaca katalog kemampuan, logo ekspedisi, sumber tarif RajaOngkir, dan provider tracking untuk menu Ekspedisi & Service.",
     authentication: "Bearer admin API key",
     response: `{
   "data": [
     {
       "code": "jne",
       "name": "JNE",
+      "logo": "https://api-kurir.emisell.com/courier-logos/jne.webp",
       "provider_code": "rajaongkir",
       "rate_provider_code": "rajaongkir",
       "tracking_provider_code": "rajaongkir",
@@ -1923,7 +1924,7 @@ Content-Type: application/json
     path: "/api/v1/integrations/shipping-services",
     title: "Katalog dan pilihan layanan checkout",
     description:
-      "Mengembalikan kurir canonical dan layanan dari grup regular, next_day, economy, atau cargo beserta capability, status pilihan, limit, dan selectable. Grup lain tidak dikirim ke Emisell dan tidak dapat dipilih.",
+      "Mengembalikan kurir canonical beserta logo permanen dan layanan dari grup regular, next_day, economy, atau cargo, termasuk capability, status pilihan, limit, dan selectable. Grup lain tidak dikirim ke Emisell dan tidak dapat dipilih.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/shipping-services
 key: {{api_key}}
@@ -1966,6 +1967,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
       {
         "code": "jne",
         "name": "JNE",
+        "logo": "https://api-kurir.emisell.com/courier-logos/jne.webp",
         "provider_code": "rajaongkir",
         "rate_provider_code": "rajaongkir",
         "tracking_provider_code": "rajaongkir",
