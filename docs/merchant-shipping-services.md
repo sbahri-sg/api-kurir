@@ -248,6 +248,12 @@ AND berat final Emisell memenuhi minimum/maksimum layanan
 AND layanan lolos preferensi merchant
 ```
 
+Untuk provider bawaan `emisell`, tidak adanya `credential_id` tenant berarti
+API Kurir memakai pool credential platform setelah memastikan provider Emisell
+aktif untuk merchant tersebut. Main Service tetap hanya mengirim merchant ID,
+origin, destination, dan berat. Provider BYOK tetap wajib memakai credential
+milik merchant dan tidak pernah meminjam pool platform.
+
 Provider dapat mengirim `REG23`, tetapi jika canonical-nya `REG`, pilihan
 `jne:REG` tetap meloloskan hasil tersebut. Bentuk response RajaOngkir V2 tidak
 berubah; hanya daftar opsi di dalam `data` yang difilter.

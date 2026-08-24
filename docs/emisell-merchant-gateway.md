@@ -112,6 +112,11 @@ client lama, nilainya diabaikan agar tidak dapat melewati konfigurasi seller.
 API Kurir lalu membaca provider aktif merchant dan memilih credential internal.
 Snapshot dan ledger dipisahkan berdasarkan merchant serta credential internal,
 tetapi ID credential tidak menjadi bagian kontrak Main Service.
+Jika provider aktif adalah `emisell`, credential merchant memang kosong dan API
+Kurir meneruskan request memakai pool credential platform yang telah
+diotorisasi. Nilai kosong tersebut bukan kondisi error dan Main Service tidak
+perlu mengirim `credential_id`. Jika provider aktif adalah `rajaongkir`, API
+Kurir memakai credential BYOK milik merchant yang dipilih secara internal.
 Jika belum ada provider aktif, endpoint rate mengembalikan HTTP `409` dengan
 kode `SHIPPING_DISABLED`; Main Service dapat menyembunyikan opsi pengiriman dan
 menampilkan ajakan mengaktifkan extension kurir.

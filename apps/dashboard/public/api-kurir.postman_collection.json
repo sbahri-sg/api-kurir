@@ -1376,7 +1376,7 @@
                 "domestic-cost"
               ]
             },
-            "description": "Main Service tidak mengirim courier. API Kurir mengambil kurir dan service dari konfigurasi merchant, lalu mengabaikan field courier bila masih dikirim client lama."
+            "description": "Main Service tidak mengirim courier atau credential_id. API Kurir mengambil kurir dan service dari konfigurasi merchant, memakai pool platform untuk provider Emisell atau credential BYOK milik tenant, lalu mengabaikan field courier bila masih dikirim client lama."
           },
           "response": []
         },

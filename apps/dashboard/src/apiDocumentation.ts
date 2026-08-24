@@ -2056,7 +2056,7 @@ Content-Type: application/json
     path: "/api/v1/calculate/district/domestic-cost",
     title: "Cek ongkir dengan key seller",
     description:
-      "Kontrak respons tetap RajaOngkir V2. Main Service tidak mengirim courier; API Kurir mengambil kurir dari service yang dipilih merchant, memilih credential provider aktif, lalu memfilter hasil sesuai pilihan seller. Courier dari client lama diabaikan. Jika seller belum mengaktifkan kurir, respons HTTP 409 menandakan shipping masih nonaktif.",
+      "Kontrak respons tetap RajaOngkir V2. Main Service tidak mengirim courier atau credential_id; API Kurir mengambil kurir dari service yang dipilih merchant, memakai pool platform untuk provider Emisell atau credential BYOK untuk RajaOngkir, lalu memfilter hasil sesuai pilihan seller. Courier dari client lama diabaikan. Jika seller belum mengaktifkan kurir, respons HTTP 409 menandakan shipping masih nonaktif.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
 key: {{api_key}}

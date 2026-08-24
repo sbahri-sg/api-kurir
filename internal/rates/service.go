@@ -277,10 +277,12 @@ func (s *Service) calculateProviderFallback(
 		if err != nil {
 			return nil, err
 		}
-		if credentialID == "" {
-			return nil, ErrRateNotAvailable
+		// An empty credential ID represents the built-in Emisell provider.
+		// The provider resolver authorizes that tenant and selects the shared
+		// platform pool. BYOK integrations still return their pinned ID here.
+		if credentialID != "" {
+			request.ProviderCredentialID = credentialID
 		}
-		request.ProviderCredentialID = credentialID
 	}
 	key := requestKey(request)
 

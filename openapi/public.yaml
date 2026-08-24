@@ -296,7 +296,9 @@ paths:
         Pada public API tanpa X-Emisell-Merchant-ID, courier wajib dikirim seperti
         RajaOngkir V2. Pada Emisell Gateway dengan Merchant ID, courier tidak
         diperlukan dan nilai dari client lama diabaikan; API Kurir mengambil
-        kurir dari service yang dipilih merchant.
+        kurir dari service yang dipilih merchant. Provider bawaan Emisell memakai
+        pool credential platform secara internal, sedangkan provider RajaOngkir
+        BYOK memakai credential tenant; credential_id tidak dikirim Main Service.
       security:
         - bearerAuth: []
         - rajaOngkirKeyAuth: []

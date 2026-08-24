@@ -174,6 +174,61 @@ func (p *quoteProvider) Quote(context.Context, Request) ([]ProviderQuote, error)
 	}}, nil
 }
 
+type credentialSelectorStub struct {
+	id           string
+	err          error
+	tenantID     string
+	providerCode string
+}
+
+func (s *credentialSelectorStub) SelectedCredentialID(
+	_ context.Context,
+	tenantID, providerCode string,
+) (string, error) {
+	s.tenantID = tenantID
+	s.providerCode = providerCode
+	return s.id, s.err
+}
+
+func TestServiceUsesAuthorizedPlatformCredentialWhenTenantCredentialIDIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	snapshots := &memorySnapshots{}
+	provider := &quoteProvider{}
+	selector := &credentialSelectorStub{}
+	service := NewService(
+		emptyRepository{},
+		time.Second,
+		WithProviderFallback(provider, snapshots, immediateLocker{}, time.Second),
+		WithCredentialSelector(selector),
+	)
+	request := Request{
+		TenantID:          "merchant_123",
+		Origin:            "loc_origin",
+		Destination:       "loc_destination",
+		ActualWeightGrams: 1_000,
+		Couriers:          []string{"jne"},
+	}
+
+	results, err := service.Calculate(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Cost.Total != 18_000 {
+		t.Fatalf("unexpected platform quote results: %#v", results)
+	}
+	if calls := provider.calls.Load(); calls != 1 {
+		t.Fatalf("provider calls=%d want=1", calls)
+	}
+	if selector.tenantID != "merchant_123" || selector.providerCode != "rajaongkir" {
+		t.Fatalf(
+			"credential selector tenant=%q provider=%q",
+			selector.tenantID,
+			selector.providerCode,
+		)
+	}
+}
+
 type immediateLocker struct{}
 
 func (immediateLocker) WithLock(
