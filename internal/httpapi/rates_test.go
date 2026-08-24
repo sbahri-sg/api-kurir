@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/labstack/echo/v5"
 )
@@ -21,6 +22,33 @@ type staticRateRepository struct {
 
 func (r staticRateRepository) FindActiveRateCards(context.Context, rates.Request) ([]rates.RateCard, error) {
 	return r.cards, nil
+}
+
+type capturingRateRepository struct {
+	request rates.Request
+	cards   []rates.RateCard
+}
+
+func (r *capturingRateRepository) FindActiveRateCards(
+	_ context.Context,
+	request rates.Request,
+) ([]rates.RateCard, error) {
+	r.request = request
+	return r.cards, nil
+}
+
+type tenantCourierSelectorStub struct {
+	codes    []string
+	err      error
+	tenantID string
+}
+
+func (s *tenantCourierSelectorStub) SelectedCourierCodes(
+	_ context.Context,
+	tenantID string,
+) ([]string, error) {
+	s.tenantID = tenantID
+	return s.codes, s.err
 }
 
 func TestCalculateHandlerRejectsMultipleJSONValues(t *testing.T) {
@@ -174,6 +202,149 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 	}
 	if _, exists := payload.Meta["request_id"]; exists {
 		t.Fatalf("compatibility meta contains internal extension: %#v", payload.Meta)
+	}
+}
+
+func TestGatewayCalculateUsesMerchantConfiguredCouriersAndIgnoresCallerValue(t *testing.T) {
+	t.Parallel()
+
+	repository := &capturingRateRepository{cards: []rates.RateCard{{
+		CourierCode:            "jne",
+		CourierName:            "JNE",
+		ServiceCode:            "REG",
+		ServiceName:            "Layanan Reguler",
+		PricingModel:           "flat",
+		BasePrice:              15_000,
+		WeightIncrementGrams:   1_000,
+		RoundingMode:           "ceil",
+		RoundingIncrementGrams: 1_000,
+	}}}
+	selector := &tenantCourierSelectorStub{codes: []string{"jnt", "jne"}}
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.Use(customerAPIKeyMiddleware([]string{"gateway-key"}, nil))
+	e.Use(merchantContextMiddleware(false))
+	e.POST(
+		"/api/v1/calculate/district/domestic-cost",
+		calculatePublicRateHandler(
+			rates.NewService(repository, time.Second),
+			legacyHTTPRepositoryStub{},
+			"district",
+			selector,
+		),
+	)
+
+	for _, callerCourier := range []string{"", "not-selected!"} {
+		form := url.Values{
+			"origin":      {"442"},
+			"destination": {"1354"},
+			"weight":      {"1200"},
+		}
+		if callerCourier != "" {
+			form.Set("courier", callerCourier)
+		}
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/calculate/district/domestic-cost",
+			bytes.NewBufferString(form.Encode()),
+		)
+		request.Header.Set("key", "gateway-key")
+		request.Header.Set(merchantIDHeader, "merchant_123")
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		response := httptest.NewRecorder()
+		e.ServeHTTP(response, request)
+
+		if response.Code != http.StatusOK {
+			t.Fatalf("caller courier=%q status=%d body=%s", callerCourier, response.Code, response.Body)
+		}
+	}
+	if selector.tenantID != "merchant_123" || repository.request.TenantID != "merchant_123" {
+		t.Fatalf("merchant context was not propagated: selector=%q request=%q", selector.tenantID, repository.request.TenantID)
+	}
+	if len(repository.request.Couriers) != 2 ||
+		repository.request.Couriers[0] != "jne" ||
+		repository.request.Couriers[1] != "jnt" {
+		t.Fatalf("request did not use saved merchant couriers: %#v", repository.request.Couriers)
+	}
+}
+
+func TestGatewayCalculateRejectsEmptySelectionEvenWhenCourierProvided(t *testing.T) {
+	t.Parallel()
+
+	selector := &tenantCourierSelectorStub{err: merchantshipping.ErrNoSelectedServices}
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.Use(customerAPIKeyMiddleware([]string{"gateway-key"}, nil))
+	e.Use(merchantContextMiddleware(false))
+	e.POST(
+		"/api/v1/calculate/district/domestic-cost",
+		calculatePublicRateHandler(
+			rates.NewService(staticRateRepository{}, time.Second),
+			legacyHTTPRepositoryStub{},
+			"district",
+			selector,
+		),
+	)
+
+	form := url.Values{
+		"origin":      {"442"},
+		"destination": {"1354"},
+		"weight":      {"1200"},
+		"courier":     {"jne"},
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/calculate/district/domestic-cost",
+		bytes.NewBufferString(form.Encode()),
+	)
+	request.Header.Set("key", "gateway-key")
+	request.Header.Set(merchantIDHeader, "merchant_123")
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body)
+	}
+	var payload struct {
+		Meta struct {
+			Message string `json:"message"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Meta.Message != "Merchant belum memilih layanan pengiriman untuk checkout." {
+		t.Fatalf("unexpected error response: %s", response.Body)
+	}
+}
+
+func TestPublicRajaOngkirCalculateStillRequiresCourier(t *testing.T) {
+	t.Parallel()
+
+	e := echo.New()
+	e.Use(rajaOngkirV2CompatibilityMiddleware())
+	e.POST(
+		"/api/v1/calculate/district/domestic-cost",
+		calculatePublicRateHandler(
+			rates.NewService(staticRateRepository{}, time.Second),
+			legacyHTTPRepositoryStub{},
+			"district",
+		),
+	)
+	form := url.Values{
+		"origin": {"442"}, "destination": {"1354"}, "weight": {"1200"},
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/calculate/district/domestic-cost",
+		bytes.NewBufferString(form.Encode()),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body)
 	}
 }
 

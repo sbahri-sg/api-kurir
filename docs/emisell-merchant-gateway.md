@@ -101,9 +101,15 @@ POST /api/v1/calculate/district/domestic-cost
 key: <dedicated-emisell-service-key>
 X-Emisell-Merchant-ID: merchant_123
 Content-Type: application/x-www-form-urlencoded
+
+origin=442&destination=1354&weight=1200
 ```
 
-API Kurir membaca provider aktif merchant lalu memilih credential internal.
+Main Service tidak mengirim `courier`. API Kurir membentuk daftar kurir dari
+service yang telah disimpan merchant melalui `PUT
+/api/v1/integrations/shipping-services`. Bila field `courier` masih dikirim oleh
+client lama, nilainya diabaikan agar tidak dapat melewati konfigurasi seller.
+API Kurir lalu membaca provider aktif merchant dan memilih credential internal.
 Snapshot dan ledger dipisahkan berdasarkan merchant serta credential internal,
 tetapi ID credential tidak menjadi bagian kontrak Main Service.
 Jika belum ada provider aktif, endpoint rate mengembalikan HTTP `409` dengan
@@ -128,7 +134,7 @@ refresh provider. Webhook HMAC mengirim perubahan status ke Emisell.
 | `PROVIDER_CREDENTIAL_UNAVAILABLE` | Provider tidak mempunyai key aktif dan valid |
 | `SHIPPING_PROVIDER_VERSION_CONFLICT` | State berubah sejak katalog terakhir dibaca |
 | `PROVIDER_QUOTA_EXHAUSTED` | Kuota provider habis |
-| `RATE_NOT_AVAILABLE` | Tarif atau provider aktif tidak tersedia |
+| `RATE_NOT_AVAILABLE` | Merchant belum memilih service atau tarif rute tidak tersedia |
 
 Kontrak mesin tersedia di [`openapi/public.yaml`](../openapi/public.yaml), dan
 contoh siap pakai tersedia pada dashboard **Dokumentasi API → Emisell Gateway**.

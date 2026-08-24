@@ -1315,6 +1315,72 @@
           "response": []
         },
         {
+          "name": "Calculate Merchant District Cost",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Gateway tidak membutuhkan field courier', function () {",
+                  "  pm.expect([200, 409, 422, 502, 503]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "origin",
+                  "value": "442",
+                  "type": "text"
+                },
+                {
+                  "key": "destination",
+                  "value": "1354",
+                  "type": "text"
+                },
+                {
+                  "key": "weight",
+                  "value": "{{weight_grams}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/calculate/district/domestic-cost",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "calculate",
+                "district",
+                "domestic-cost"
+              ]
+            },
+            "description": "Main Service tidak mengirim courier. API Kurir mengambil kurir dan service dari konfigurasi merchant, lalu mengabaikan field courier bila masih dikirim client lama."
+          },
+          "response": []
+        },
+        {
           "name": "Register Fulfillment Tracking",
           "request": {
             "method": "POST",

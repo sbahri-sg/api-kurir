@@ -17,6 +17,22 @@ type shippingPreferenceRepository struct {
 	preference merchantshipping.Preference
 }
 
+func (repository *shippingPreferenceRepository) SelectedCourierCodes(
+	context.Context,
+	string,
+) ([]string, error) {
+	codes := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, selection := range repository.preference.Services {
+		if _, exists := seen[selection.CourierCode]; exists {
+			continue
+		}
+		seen[selection.CourierCode] = struct{}{}
+		codes = append(codes, selection.CourierCode)
+	}
+	return codes, nil
+}
+
 func (repository *shippingPreferenceRepository) Get(
 	context.Context,
 	string,

@@ -292,6 +292,11 @@ paths:
       tags: [RajaOngkir V2 - Rates]
       operationId: calculateDistrictDomesticCost
       summary: Menghitung ongkir berdasarkan ID kecamatan seperti RajaOngkir V2
+      description: >
+        Pada public API tanpa X-Emisell-Merchant-ID, courier wajib dikirim seperti
+        RajaOngkir V2. Pada Emisell Gateway dengan Merchant ID, courier tidak
+        diperlukan dan nilai dari client lama diabaikan; API Kurir mengambil
+        kurir dari service yang dipilih merchant.
       security:
         - bearerAuth: []
         - rajaOngkirKeyAuth: []
@@ -334,7 +339,7 @@ paths:
         "415":
           $ref: "#/components/responses/RajaOngkirUnsupportedMediaType"
         "422":
-          description: Courier tidak valid
+          description: Courier public tidak valid atau merchant belum memilih service checkout
           content:
             application/json:
               schema:
@@ -2792,7 +2797,7 @@ components:
 
     RajaOngkirCalculateCostRequest:
       type: object
-      required: [origin, destination, weight, courier]
+      required: [origin, destination, weight]
       properties:
         origin:
           type: integer
@@ -2811,6 +2816,10 @@ components:
         courier:
           type: string
           pattern: "^[a-z0-9_-]+(:[a-z0-9_-]+)*$"
+          description: >
+            Wajib untuk public API tanpa Merchant ID. Tidak diperlukan dan
+            diabaikan pada Emisell Gateway karena kurir berasal dari konfigurasi
+            service merchant.
         price:
           type: string
           enum: [lowest, highest]

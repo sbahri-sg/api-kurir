@@ -72,6 +72,45 @@ func (r *PostgresRepository) Get(
 	return preference, nil
 }
 
+func (r *PostgresRepository) SelectedCourierCodes(
+	ctx context.Context,
+	tenantID string,
+) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT courier.code
+		FROM tenant_shipping_service_selections selection
+		JOIN tenant_shipping_preferences preference
+		  ON preference.tenant_id = selection.tenant_id
+		JOIN courier_services service
+		  ON service.id = selection.courier_service_id
+		JOIN couriers courier
+		  ON courier.id = service.courier_id
+		WHERE selection.tenant_id = $1
+		  AND preference.selection_mode = 'custom'
+		  AND courier.active
+		  AND service.active
+		  AND service.service_group = ANY($2::text[])
+		ORDER BY courier.code
+	`, tenantID, SupportedGroups)
+	if err != nil {
+		return nil, fmt.Errorf("list selected tenant shipping couriers: %w", err)
+	}
+	defer rows.Close()
+
+	codes := make([]string, 0)
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, fmt.Errorf("scan selected tenant shipping courier: %w", err)
+		}
+		codes = append(codes, code)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate selected tenant shipping couriers: %w", err)
+	}
+	return codes, nil
+}
+
 func (r *PostgresRepository) Replace(
 	ctx context.Context,
 	tenantID string,

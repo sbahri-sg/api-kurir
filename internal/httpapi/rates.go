@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/emisell/api-kurir/internal/locations"
+	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/labstack/echo/v5"
@@ -50,6 +51,10 @@ type calculateDimension struct {
 type calculateOptions struct {
 	IncludeInsurance  bool `json:"include_insurance,omitempty"`
 	IncludeUnverified bool `json:"include_unverified,omitempty"`
+}
+
+type tenantRateCourierSelector interface {
+	SelectedCourierCodes(ctx context.Context, tenantID string) ([]string, error)
 }
 
 func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
@@ -197,8 +202,13 @@ func calculatePublicRateHandler(
 	service *rates.Service,
 	locationRepository locations.Repository,
 	granularity string,
+	courierSelectors ...tenantRateCourierSelector,
 ) echo.HandlerFunc {
 	legacyHandler := calculateRateHandler(service)
+	var courierSelector tenantRateCourierSelector
+	if len(courierSelectors) > 0 {
+		courierSelector = courierSelectors[0]
+	}
 	return func(c *echo.Context) error {
 		if !rajaOngkirV2Compatibility(c) {
 			return legacyHandler(c)
@@ -208,6 +218,7 @@ func calculatePublicRateHandler(
 			service,
 			locationRepository,
 			granularity,
+			courierSelector,
 		)
 	}
 }
@@ -217,6 +228,7 @@ func calculateRajaOngkirV2Rate(
 	service *rates.Service,
 	locationRepository locations.Repository,
 	granularity string,
+	courierSelector tenantRateCourierSelector,
 ) error {
 	c.Request().Body = http.MaxBytesReader(
 		c.Response(),
@@ -281,7 +293,28 @@ func calculateRajaOngkirV2Rate(
 		}
 	}
 	courierValue := strings.TrimSpace(c.Request().FormValue("courier"))
-	if courierValue == "" {
+	if identity, tenantScoped := tenancy.FromContext(c.Request().Context()); tenantScoped {
+		if courierSelector == nil {
+			return errors.New("tenant rate courier selector is not configured")
+		}
+		courierCodes, err := courierSelector.SelectedCourierCodes(
+			c.Request().Context(),
+			identity.TenantID,
+		)
+		if errors.Is(err, merchantshipping.ErrNoSelectedServices) {
+			return writeError(
+				c,
+				http.StatusUnprocessableEntity,
+				"RATE_NOT_AVAILABLE",
+				"Merchant belum memilih layanan pengiriman untuk checkout.",
+				nil,
+			)
+		}
+		if err != nil {
+			return err
+		}
+		courierValue = strings.Join(courierCodes, ":")
+	} else if courierValue == "" {
 		return writeError(
 			c,
 			http.StatusBadRequest,

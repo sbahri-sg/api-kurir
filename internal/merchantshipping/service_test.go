@@ -18,6 +18,22 @@ func (repository *memoryRepository) Get(context.Context, string) (Preference, er
 	return repository.preference, nil
 }
 
+func (repository *memoryRepository) SelectedCourierCodes(
+	context.Context,
+	string,
+) ([]string, error) {
+	seen := make(map[string]struct{})
+	codes := make([]string, 0)
+	for _, selection := range repository.preference.Services {
+		if _, exists := seen[selection.CourierCode]; exists {
+			continue
+		}
+		seen[selection.CourierCode] = struct{}{}
+		codes = append(codes, selection.CourierCode)
+	}
+	return codes, nil
+}
+
 func (repository *memoryRepository) Replace(
 	_ context.Context,
 	_ string,
@@ -109,6 +125,43 @@ func TestCatalogBuildsTriStateCourierSelection(t *testing.T) {
 		catalog.Limits.Services.Maximum != 20 || catalog.Limits.Services.Selected != 1 ||
 		catalog.Limits.Services.Remaining != 19 {
 		t.Fatalf("unexpected catalog limits: %#v", catalog.Limits)
+	}
+}
+
+func TestSelectedCourierCodesUsesSavedServiceConfiguration(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{preference: Preference{
+		Configured: true,
+		Mode:       ModeCustom,
+		Services: []Selection{
+			{CourierCode: "jnt", ServiceCode: "EZ"},
+			{CourierCode: "jne", ServiceCode: "REG"},
+			{CourierCode: "jne", ServiceCode: "JTR"},
+		},
+	}}
+	service := NewService(repository, courierRepository{items: append(
+		testCouriers(),
+		couriers.Courier{
+			Code: "jnt",
+			Name: "J&T",
+			Services: []couriers.Service{{
+				Code: "EZ", Name: "J&T EZ", Group: "regular", ServiceType: "parcel",
+			}},
+		},
+	)})
+
+	codes, err := service.SelectedCourierCodes(context.Background(), "merchant_123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(codes) != 2 || codes[0] != "jne" || codes[1] != "jnt" {
+		t.Fatalf("unexpected selected couriers: %#v", codes)
+	}
+
+	repository.preference = Preference{Configured: true, Mode: ModeCustom}
+	_, err = service.SelectedCourierCodes(context.Background(), "merchant_123")
+	if !errors.Is(err, ErrNoSelectedServices) {
+		t.Fatalf("empty selection error=%v want ErrNoSelectedServices", err)
 	}
 }
 

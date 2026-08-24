@@ -251,6 +251,7 @@ func TestRajaOngkirV2OfficialBasePathAlias(t *testing.T) {
 		nil,
 		nil,
 		[]string{"sdk-key"},
+		nil,
 	)
 	request := httptest.NewRequest(
 		http.MethodGet,
@@ -344,6 +345,7 @@ func TestCustomerLocationContractUsesPathNotAuthenticationHeader(t *testing.T) {
 		nil,
 		nil,
 		[]string{"sdk-key"},
+		nil,
 	)
 	rajaOngkirGroup := e.Group("/api/v1")
 	rajaOngkirGroup.Use(rajaOngkirV2CompatibilityMiddleware())
@@ -356,6 +358,7 @@ func TestCustomerLocationContractUsesPathNotAuthenticationHeader(t *testing.T) {
 		nil,
 		nil,
 		[]string{"sdk-key"},
+		nil,
 	)
 
 	tests := []struct {

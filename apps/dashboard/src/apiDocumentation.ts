@@ -2054,15 +2054,15 @@ Content-Type: application/json
     path: "/api/v1/calculate/district/domestic-cost",
     title: "Cek ongkir dengan key seller",
     description:
-      "Kontrak respons tetap RajaOngkir V2. API Kurir memilih credential dari provider aktif merchant dan mengisolasi snapshot per merchant tanpa credential ID dari Emisell. Jika seller belum mengaktifkan kurir, respons HTTP 409 menandakan shipping masih nonaktif.",
+      "Kontrak respons tetap RajaOngkir V2. Main Service tidak mengirim courier; API Kurir mengambil kurir dari service yang dipilih merchant, memilih credential provider aktif, lalu memfilter hasil sesuai pilihan seller. Courier dari client lama diabaikan. Jika seller belum mengaktifkan kurir, respons HTTP 409 menandakan shipping masih nonaktif.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/x-www-form-urlencoded
 
-origin=442&destination=1354&weight=1200&courier=jne`,
-    response: `Respons 1:1 RajaOngkir V2. Jika merchant tidak mempunyai credential aktif, API mengembalikan RATE_NOT_AVAILABLE tanpa meminjam key platform atau seller lain.`,
+origin=442&destination=1354&weight=1200`,
+    response: `Respons 1:1 RajaOngkir V2 dan hanya memuat service yang dipilih merchant. Jika belum ada service terpilih, API mengembalikan HTTP 422 RATE_NOT_AVAILABLE. Public API tanpa Merchant ID tetap mewajibkan courier.`,
   },
   {
     contract: "gateway",

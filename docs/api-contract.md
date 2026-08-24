@@ -290,6 +290,11 @@ respons tetap 1:1 dengan field RajaOngkir V2. Field `service` selalu menyimpan
 kode mentah provider, sedangkan `canonical_service` menormalkan varian seperti
 `JTR>130` menjadi `JTR` agar Emisell mudah melakukan pengelompokan.
 
+Khusus pemanggilan Main Service yang membawa `X-Emisell-Merchant-ID`, field
+`courier` tidak dikirim. API Kurir mengambil kurir dari konfigurasi service
+merchant dan mengabaikan nilai `courier` dari client lama. Pemanggilan public
+tanpa Merchant ID tetap wajib mengirim `courier` seperti kontrak RajaOngkir V2.
+
 Kalkulasi berdasarkan kecamatan tersedia pada:
 
 ```http

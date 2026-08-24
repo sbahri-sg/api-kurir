@@ -235,7 +235,7 @@ exact quote provider
 Syarat sebuah hasil tampil:
 
 ```text
-kurir diminta
+kurir berasal dari service yang dipilih merchant
 AND layanan tersedia pada rute
 AND credential/provider aktif
 AND berat final Emisell memenuhi minimum/maksimum layanan
@@ -245,6 +245,11 @@ AND layanan lolos preferensi merchant
 Provider dapat mengirim `REG23`, tetapi jika canonical-nya `REG`, pilihan
 `jne:REG` tetap meloloskan hasil tersebut. Bentuk response RajaOngkir V2 tidak
 berubah; hanya daftar opsi di dalam `data` yang difilter.
+
+Pada request Main Service dengan `X-Emisell-Merchant-ID`, parameter `courier`
+tidak diperlukan dan diabaikan bila dikirim. API Kurir mengambil kumpulan kode
+kurir langsung dari konfigurasi service merchant. Public API tanpa Merchant ID
+tetap mewajibkan `courier` agar kompatibel dengan RajaOngkir V2.
 
 Detail pemisahan minimum penerimaan dan minimum tagihan tersedia pada
 [`service-weight-eligibility.md`](service-weight-eligibility.md).

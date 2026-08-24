@@ -15,6 +15,7 @@ var (
 	ErrInvalidPreference      = errors.New("shipping service preference is invalid")
 	ErrUnknownService         = errors.New("shipping service is not in the active catalog")
 	ErrSelectionLimitExceeded = errors.New("shipping service selection limit exceeded")
+	ErrNoSelectedServices     = errors.New("merchant has no selected shipping services")
 )
 
 const (
@@ -134,6 +135,28 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 	}
 	applySelectability(result.Couriers, result.Limits)
 	return result, nil
+}
+
+// SelectedCourierCodes returns the couriers implied by the merchant's saved
+// service selections. Gateway rate requests use this as their source of truth
+// instead of accepting a caller-supplied courier filter.
+func (s *Service) SelectedCourierCodes(
+	ctx context.Context,
+	tenantID string,
+) ([]string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if !validTenantID(tenantID) {
+		return nil, ErrInvalidTenant
+	}
+	codes, err := s.repository.SelectedCourierCodes(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if len(codes) == 0 {
+		return nil, ErrNoSelectedServices
+	}
+	sort.Strings(codes)
+	return codes, nil
 }
 
 func (s *Service) Update(

@@ -107,6 +107,7 @@ func New(
 		immediateTrackingAdapter,
 		customerAPIKeyService,
 		apiKeys,
+		merchantShippingService,
 	)
 	rajaOngkirGroup := e.Group("/api/v1")
 	rajaOngkirGroup.Use(rajaOngkirV2CompatibilityMiddleware())
@@ -119,6 +120,7 @@ func New(
 		immediateTrackingAdapter,
 		customerAPIKeyService,
 		apiKeys,
+		merchantShippingService,
 	)
 	registerTenantIntegrationRoutes(
 		e.Group("/api/v1/integrations"),
@@ -281,6 +283,7 @@ func registerCustomerRoutes(
 	immediateTrackingAdapter tracking.Adapter,
 	customerAPIKeyService customerKeyAuthenticator,
 	apiKeys []string,
+	merchantShippingService *merchantshipping.Service,
 ) {
 	group.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
 	group.Use(merchantContextMiddleware(false))
@@ -328,6 +331,7 @@ func registerCustomerRoutes(
 			rateService,
 			locationRepository,
 			"subdistrict",
+			merchantShippingService,
 		),
 	)
 	group.POST(
@@ -336,6 +340,7 @@ func registerCustomerRoutes(
 			rateService,
 			locationRepository,
 			"district",
+			merchantShippingService,
 		),
 	)
 	group.POST(
