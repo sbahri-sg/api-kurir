@@ -101,6 +101,34 @@ func (r *PostgresRepository) Create(
 		`, input.TenantID, input.ProviderCode).Scan(&wasSelected); err != nil {
 			return Credential{}, fmt.Errorf("inspect active merchant provider: %w", err)
 		}
+	}
+
+	var existingID, existingTenantID string
+	var existingActive bool
+	err = tx.QueryRow(ctx, `
+		SELECT id::text, tenant_id, active
+		FROM provider_credentials
+		WHERE provider_code = $1
+		  AND secret_fingerprint = $2
+		FOR UPDATE
+	`, input.ProviderCode, input.SecretFingerprint).Scan(
+		&existingID,
+		&existingTenantID,
+		&existingActive,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		existingID = ""
+	} else if err != nil {
+		return Credential{}, fmt.Errorf("find existing provider credential: %w", err)
+	} else if existingTenantID != input.TenantID {
+		return Credential{}, ErrDuplicate
+	}
+
+	var existingIDArg any
+	if existingID != "" {
+		existingIDArg = existingID
+	}
+	if input.TenantID != "" {
 		if _, err := tx.Exec(ctx, `
 			UPDATE provider_credentials
 			SET active = false,
@@ -109,43 +137,80 @@ func (r *PostgresRepository) Create(
 			WHERE tenant_id = $1
 			  AND provider_code = $2
 			  AND active
-		`, input.TenantID, input.ProviderCode); err != nil {
+			  AND ($3::uuid IS NULL OR id <> $3::uuid)
+		`, input.TenantID, input.ProviderCode, existingIDArg); err != nil {
 			return Credential{}, fmt.Errorf("replace merchant provider credential: %w", err)
 		}
 	}
 
-	_, err = tx.Exec(ctx, `
-		INSERT INTO provider_credentials (
-			id,
-			tenant_id,
-			provider_code,
-			credential_alias,
-			secret_ciphertext,
-			secret_fingerprint,
-			key_prefix,
-			key_last_four,
-			daily_limit,
-			created_by
-		)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`,
-		input.ID,
-		input.TenantID,
-		input.ProviderCode,
-		input.CredentialAlias,
-		input.SecretCiphertext,
-		input.SecretFingerprint,
-		input.KeyPrefix,
-		input.KeyLastFour,
-		input.DailyLimit,
-		input.CreatedBy,
-	)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return Credential{}, ErrDuplicate
+	recordID := input.ID
+	auditAction := "create"
+	if existingID != "" {
+		recordID = existingID
+		if existingActive {
+			auditAction = "refresh"
+		} else {
+			auditAction = "reactivate"
 		}
-		return Credential{}, fmt.Errorf("insert provider credential: %w", err)
+		_, err = tx.Exec(ctx, `
+			UPDATE provider_credentials
+			SET credential_alias = $2,
+			    secret_ciphertext = $3,
+			    key_prefix = $4,
+			    key_last_four = $5,
+			    daily_limit = $6,
+			    active = true,
+			    validation_status = 'valid',
+			    last_validated_at = now(),
+			    disabled_by = NULL,
+			    disabled_at = NULL,
+			    updated_at = now()
+			WHERE id = $1::uuid
+		`,
+			recordID,
+			input.CredentialAlias,
+			input.SecretCiphertext,
+			input.KeyPrefix,
+			input.KeyLastFour,
+			input.DailyLimit,
+		)
+		if err != nil {
+			return Credential{}, fmt.Errorf("reactivate provider credential: %w", err)
+		}
+	} else {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO provider_credentials (
+				id,
+				tenant_id,
+				provider_code,
+				credential_alias,
+				secret_ciphertext,
+				secret_fingerprint,
+				key_prefix,
+				key_last_four,
+				daily_limit,
+				created_by
+			)
+			VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`,
+			recordID,
+			input.TenantID,
+			input.ProviderCode,
+			input.CredentialAlias,
+			input.SecretCiphertext,
+			input.SecretFingerprint,
+			input.KeyPrefix,
+			input.KeyLastFour,
+			input.DailyLimit,
+			input.CreatedBy,
+		)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return Credential{}, ErrDuplicate
+			}
+			return Credential{}, fmt.Errorf("insert provider credential: %w", err)
+		}
 	}
 	if wasSelected {
 		if _, err := tx.Exec(ctx, `
@@ -156,7 +221,11 @@ func (r *PostgresRepository) Create(
 			    updated_by = $4,
 			    updated_at = now()
 			WHERE tenant_id = $1
-		`, input.TenantID, input.ProviderCode, input.ID, input.CreatedBy); err != nil {
+			  AND (
+				provider_code IS DISTINCT FROM $2
+				OR credential_id IS DISTINCT FROM $3::uuid
+			  )
+		`, input.TenantID, input.ProviderCode, recordID, input.CreatedBy); err != nil {
 			return Credential{}, fmt.Errorf("select replacement merchant credential: %w", err)
 		}
 	}
@@ -204,8 +273,8 @@ func (r *PostgresRepository) Create(
 		ctx,
 		tx,
 		input.CreatedBy,
-		"create",
-		input.ID,
+		auditAction,
+		recordID,
 		input.RequestID,
 		map[string]any{
 			"tenant_id":        input.TenantID,
@@ -219,7 +288,7 @@ func (r *PostgresRepository) Create(
 	if err := tx.Commit(ctx); err != nil {
 		return Credential{}, fmt.Errorf("commit provider credential create: %w", err)
 	}
-	return r.get(ctx, input.ID)
+	return r.get(ctx, recordID)
 }
 
 func (r *PostgresRepository) Disable(

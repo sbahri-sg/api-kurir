@@ -2,7 +2,7 @@
 
 Status: **contract-first**
 Versi: **1.0**
-Terakhir ditinjau: **19 Agustus 2026**
+Terakhir ditinjau: **24 Agustus 2026**
 
 ## 1. Tujuan
 
@@ -62,12 +62,18 @@ provider.
 ### 2.3 Partner Connector API
 
 Partner Connector API adalah kontrak canonical yang harus disediakan vendor
-baru seperti Mengantar atau Lincah. API Kurir memanggil endpoint partner untuk
-rate, booking, pickup, label, rekonsiliasi, dan fungsi opsional lainnya.
+baru seperti KiriminAja, Lincah, atau Mengantar. API Kurir memanggil endpoint
+partner untuk rate, booking, pickup, label, rekonsiliasi, dan fungsi opsional
+lainnya.
 
 Partner boleh mempertahankan API native yang sudah ada, tetapi translation
 layer ke kontrak canonical dibuat dan dioperasikan oleh partner sendiri.
 API Kurir tidak memelihara adapter per vendor.
+
+RajaOngkir dan Biteship dapat menjadi provider bawaan yang adapter-nya
+dioperasikan API Kurir. Batas, capability, dan urutan implementasi keduanya
+dibandingkan dengan partner pada
+[Strategi Provider Fulfillment](fulfillment-provider-landscape.md).
 
 ## 3. Routing multi-provider
 

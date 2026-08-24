@@ -1743,7 +1743,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/provider-credentials",
     title: "Hubungkan key RajaOngkir seller",
     description:
-      "Memvalidasi key ke provider, mengenkripsinya dengan AES-256-GCM, dan mengikat credential ke merchant dari header. Key baru otomatis menggantikan key aktif lama untuk provider yang sama.",
+      "Memvalidasi key ke provider, mengenkripsinya dengan AES-256-GCM, dan mengikat credential ke merchant dari header. Key baru otomatis menggantikan key aktif lama. Key merchant yang sama yang pernah diputuskan akan diaktifkan kembali, tetapi provider shipping tetap perlu diaktifkan secara eksplisit.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}

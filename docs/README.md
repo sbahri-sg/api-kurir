@@ -41,6 +41,9 @@ Mulai dari dokumen berikut:
    tenant authentication, credential seller, kuota, dan multi-domain.
 8. [Checkpoint tracking dan webhook](tracking-checkpoint-and-webhooks.md) untuk
    scheduler hemat, validasi AWB, snapshot, dan update fulfillment otomatis.
+9. [Strategi provider fulfillment](fulfillment-provider-landscape.md) untuk
+   booking, pickup, label, COD, saldo, fallback transaksi, dan perbandingan
+   RajaOngkir, Biteship, KiriminAja, Lincah, serta Mengantar.
 
 Postman Collection pada dashboard memakai placeholder. Isi nilai secret hanya
 pada Postman Environment lokal, bukan pada Collection atau repository.
@@ -51,12 +54,14 @@ Vendor baru tidak memakai endpoint customer dan tidak meminta API Kurir
 membuat adapter native. Vendor menyediakan Partner Connector yang dipanggil
 API Kurir.
 
-1. [Partner Integration Contract v1](partner-api-v1.md).
-2. [Partner Event Webhook v1](partner-webhooks-v1.md).
-3. [Keamanan dan request signing](security-and-signing.md).
-4. [Sertifikasi partner](partner-certification.md).
-5. [Partner Portal dan publikasi extension](partner-portal.md).
-6. [Provider Account API](provider-account-api-v1.md) untuk aktivasi koneksi
+1. [Strategi provider fulfillment](fulfillment-provider-landscape.md) untuk
+   model built-in dan Certified Partner Connector.
+2. [Partner Integration Contract v1](partner-api-v1.md).
+3. [Partner Event Webhook v1](partner-webhooks-v1.md).
+4. [Keamanan dan request signing](security-and-signing.md).
+5. [Sertifikasi partner](partner-certification.md).
+6. [Partner Portal dan publikasi extension](partner-portal.md).
+7. [Provider Account API](provider-account-api-v1.md) untuk aktivasi koneksi
    seller setelah partner tersedia.
 
 Status `Draft` atau `contract-first` berarti spesifikasi target belum otomatis
@@ -71,6 +76,7 @@ dipublikasikan.
 - [Operasional adapter tracking RajaOngkir](rajaongkir-tracking.md)
 - [Checkpoint tracking hemat dan webhook Emisell](tracking-checkpoint-and-webhooks.md)
 - [Biteship sebagai fallback Emisell Kurir](biteship-tracking-fallback.md)
+- [Strategi provider fulfillment dan pickup](fulfillment-provider-landscape.md)
 - [Operasional, kuota, dan compliance](operations-and-compliance.md)
 - [Stack teknologi dan concurrency](technology-stack.md)
 - [Register sumber resmi](source-register.md)

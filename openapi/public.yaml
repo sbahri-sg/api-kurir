@@ -863,7 +863,10 @@ paths:
       description: >
         Merchant ditentukan dari X-Emisell-Merchant-ID. Validasi key memakai
         satu hit provider lalu secret dienkripsi AES-256-GCM. Key baru
-        menggantikan key aktif lama untuk merchant dan provider yang sama.
+        menggantikan key aktif lama untuk merchant dan provider yang sama. Key
+        milik merchant yang sama yang pernah dinonaktifkan akan diaktifkan
+        kembali tanpa membuat credential duplikat dan tanpa mengaktifkan
+        provider shipping secara otomatis.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -887,7 +890,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Credential sudah tersimpan
+          description: Credential terikat pada scope atau merchant lain
           content:
             application/json:
               schema:
@@ -1725,7 +1728,8 @@ paths:
       summary: Memvalidasi dan menyimpan API key provider
       description: >
         Key divalidasi ke provider, dienkripsi AES-256-GCM, dan langsung
-        tersedia untuk resolver runtime tanpa restart API.
+        tersedia untuk resolver runtime tanpa restart API. Key platform yang
+        pernah dinonaktifkan akan diaktifkan kembali pada record yang sama.
       security:
         - adminBearerAuth: []
       parameters:
@@ -1748,7 +1752,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Credential sudah tersimpan
+          description: Credential terikat pada scope merchant lain
           content:
             application/json:
               schema:

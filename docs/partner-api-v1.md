@@ -47,6 +47,10 @@ API native, partner sendiri yang membuat connector/translation layer menuju
 kontrak canonical v1. API Kurir tidak membuat adapter khusus per vendor dan
 tidak menerima token API native yang dipakai partner ke sistem internalnya.
 
+Perbedaan pola ini dengan provider bawaan RajaOngkir/Biteship, matriks fitur
+KiriminAja/Lincah/Mengantar, serta aturan fallback transaksi dijelaskan pada
+[Strategi Provider Fulfillment](fulfillment-provider-landscape.md).
+
 ### 2.2 Batas kepemilikan
 
 | Sistem | Data dan tanggung jawab |

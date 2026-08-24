@@ -165,6 +165,43 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 			err,
 		)
 	}
+	var selectionVersion int64
+	if err := pool.QueryRow(ctx, `
+		SELECT version
+		FROM tenant_active_shipping_providers
+		WHERE tenant_id = $1
+	`, tenantA).Scan(&selectionVersion); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := service.AddForTenant(
+		ctx,
+		tenantA,
+		"rajaongkir",
+		replacementSecret,
+		75_000,
+		"integration-test",
+		"req_refresh",
+	)
+	if err != nil || refreshed.ID != replacement.ID || !refreshed.Active {
+		t.Fatalf("active credential refresh failed: item=%#v err=%v", refreshed, err)
+	}
+	var refreshedSelectionVersion int64
+	if err := pool.QueryRow(ctx, `
+		SELECT credential_id::text, version
+		FROM tenant_active_shipping_providers
+		WHERE tenant_id = $1
+	`, tenantA).Scan(&selectedCredentialID, &refreshedSelectionVersion); err != nil {
+		t.Fatal(err)
+	}
+	if selectedCredentialID != replacement.ID ||
+		refreshedSelectionVersion != selectionVersion {
+		t.Fatalf(
+			"refresh changed active provider selection: credential=%q version=%d want=%d",
+			selectedCredentialID,
+			refreshedSelectionVersion,
+			selectionVersion,
+		)
+	}
 	if err := service.DisableForTenantProvider(
 		ctx,
 		tenantA,
@@ -189,6 +226,51 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 			fallbackProvider,
 			fallbackCredentialID,
 		)
+	}
+
+	reactivated, err := service.AddForTenant(
+		ctx,
+		tenantA,
+		"rajaongkir",
+		replacementSecret,
+		80_000,
+		"integration-test",
+		"req_reactivate",
+	)
+	if err != nil {
+		t.Fatalf("re-add disabled merchant credential: %v", err)
+	}
+	if reactivated.ID != replacement.ID || !reactivated.Active ||
+		reactivated.DisabledAt != nil || reactivated.DailyLimit != 80_000 {
+		t.Fatalf(
+			"disabled credential was not reactivated in place: %#v",
+			reactivated,
+		)
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT provider_code, credential_id::text
+		FROM tenant_active_shipping_providers
+		WHERE tenant_id = $1
+	`, tenantA).Scan(&fallbackProvider, &fallbackCredentialID); err != nil {
+		t.Fatal(err)
+	}
+	if fallbackProvider != nil || fallbackCredentialID != nil {
+		t.Fatalf(
+			"credential reactivation must not activate shipping automatically: provider=%v credential=%v",
+			fallbackProvider,
+			fallbackCredentialID,
+		)
+	}
+	if _, err := service.AddForTenant(
+		ctx,
+		tenantB,
+		"rajaongkir",
+		replacementSecret,
+		50_000,
+		"integration-test",
+		"req_duplicate_owner",
+	); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("credential owned by another merchant was not rejected: %v", err)
 	}
 
 	if err := service.DisableForTenantProvider(

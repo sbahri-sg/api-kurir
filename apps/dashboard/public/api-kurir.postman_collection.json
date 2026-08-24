@@ -1043,7 +1043,7 @@
                 "provider-credentials"
               ]
             },
-            "description": "Memvalidasi dan menyimpan key RajaOngkir. Key baru menggantikan key aktif lama untuk merchant yang sama."
+            "description": "Memvalidasi dan menyimpan key RajaOngkir. Key baru menggantikan key aktif lama untuk merchant yang sama. Key yang pernah dinonaktifkan dapat ditambahkan kembali; provider shipping tetap perlu diaktifkan secara eksplisit."
           },
           "response": []
         },

@@ -64,6 +64,9 @@ POST /api/v1/integrations/provider-credentials/rajaongkir/disable
 
 Jika key sedang digunakan, database otomatis menonaktifkan shipping merchant.
 Seller dapat memilih Emisell Kurir atau memasang key provider lain setelahnya.
+Key yang sama dapat dipasang kembali oleh merchant yang sama. API Kurir
+mengaktifkan kembali record credential lama agar audit dan kuota tetap
+konsisten; provider shipping tidak ikut aktif sampai endpoint aktivasi dipanggil.
 
 ## Membaca katalog
 

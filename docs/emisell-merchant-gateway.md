@@ -62,6 +62,9 @@ tidak dapat mengakses `/api/v1/integrations/*` atau membawa konteks merchant.
    dikembalikan.
 4. Satu merchant hanya mempunyai satu credential aktif per provider. Key baru
    menggantikan key lama secara atomik.
+   Jika key yang sama pernah dinonaktifkan, record lama diaktifkan kembali.
+   Tindakan ini hanya memasang credential dan tidak otomatis mengaktifkan
+   provider shipping merchant.
 5. Main Service membaca `GET /api/v1/integrations/providers`; `logo` dan
    `description` pada setiap item dapat langsung dipakai untuk listing extension.
    Endpoint hanya mengirim provider berstatus tersedia; provider yang dimatikan
@@ -137,7 +140,7 @@ refresh provider. Webhook HMAC mengirim perubahan status ke Emisell.
 | `MERCHANT_CONTEXT_FORBIDDEN` | Public API key mencoba membawa merchant header |
 | `UNAUTHORIZED` | Key bukan Main Service, tidak aktif, atau tidak valid |
 | `INVALID_PROVIDER_KEY` | Key ditolak provider |
-| `PROVIDER_KEY_EXISTS` | Key yang sama sudah pernah disimpan |
+| `PROVIDER_KEY_EXISTS` | Key sudah terikat pada scope atau merchant lain |
 | `PROVIDER_CREDENTIAL_UNAVAILABLE` | Provider tidak mempunyai key aktif dan valid |
 | `SHIPPING_PROVIDER_VERSION_CONFLICT` | State berubah sejak katalog terakhir dibaca |
 | `PROVIDER_QUOTA_EXHAUSTED` | Kuota provider habis |

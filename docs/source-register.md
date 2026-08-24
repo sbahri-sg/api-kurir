@@ -1,6 +1,6 @@
 # Register Sumber dan Verifikasi
 
-Tanggal peninjauan: **20 Agustus 2026**.
+Tanggal peninjauan: **24 Agustus 2026**.
 
 Dokumen ini mencatat sumber publik yang dipakai untuk membangun katalog awal.
 Harga rute produksi tetap harus berasal dari API/rate sheet/kontrak yang masih
@@ -53,6 +53,7 @@ Partner Connector API dan menangani API native mereka sendiri.
 | Biteship | [Public Tracking](https://biteship.com/id/docs/api/trackings/status), [Overview](https://biteship.com/id/docs/api/trackings/overview) | Fallback tracking Emisell Kurir saat RajaOngkir tidak mencakup kurir atau gagal | Endpoint public tracking berbayar per hit; snapshot dan refresh konservatif wajib dipakai |
 | Biteship | [Courier catalog](https://biteship.com/id/docs/api/couriers/overview) | Verifikasi kode kurir dan service fallback tarif/tracking | Instant courier tidak masuk cakupan; hanya alias service yang telah ditinjau yang boleh dikirim ke Emisell |
 | Biteship | [Authentication](https://biteship.com/id/docs/api/authentication), [biaya mode testing](https://help.biteship.com/hc/id/articles/58286997471513-Kebijakan-Biaya-Mode-Testing) | Validasi token dan model biaya | Token terenkripsi di database; validasi credential tidak memanggil endpoint tracking |
+| Biteship | [Create Order](https://biteship.com/en/docs/api/orders/create), [Order Overview](https://biteship.com/id/docs/api/orders/overview) | Kandidat create shipment, pickup/drop-off, cancel, label, dan order webhook | Baru target sandbox; kode saat ini hanya mengimplementasikan fallback tarif/tracking |
 | KiriminAja | [Mitra API](https://developer.kiriminaja.com/docs/introduction) | Referensi rate, order, pickup, cancel, tracking, COD, dan sandbox | Referensi capability; onboarding tetap melalui connector canonical milik partner |
 | KiriminAja | [Webhook Express](https://developer.kiriminaja.com/docs/webhook/event) | Event AWB/status, Bearer callback, dedup AWB + order ID | Belum mendokumentasikan HMAC/timestamp/nonce; perlu compensating controls |
 | KiriminAja | [Pricing Express](https://developer.kiriminaja.com/docs/pricing/express), [Courier Detail](https://developer.kiriminaja.com/docs/others/courier-detail) | Cost, COD/asuransi, discount, group, cut-off, volumetric, rounding | Metadata disinkronkan; harga authoritative tetap quote |
@@ -60,6 +61,11 @@ Partner Connector API dan menangani API native mereka sendiri.
 | KiriminAja | [Payment](https://developer.kiriminaja.com/docs/payment), [KA Credit](https://developer.kiriminaja.com/docs/payment/ka-credit), [PIN](https://developer.kiriminaja.com/docs/payment/pin-validation) | QRIS inquiry, saldo, PIN, status payment | PIN write-only dan tidak pernah disimpan |
 | KiriminAja | [Status Mapping](https://developer.kiriminaja.com/docs/important-notes/status-mapping) | Attempt, problem, return, lost, damaged, final state | Simpan raw code dan canonical status |
 | KiriminAja | [Syarat dan ketentuan](https://kiriminaja.com/syarat-ketentuan), [kebijakan privasi](https://kiriminaja.com/privacy-policy) | Akun, tanggung jawab pengiriman, penggunaan data, dan retensi | Kontrak komersial/DPA wajib sebelum data merchant production diproses |
+| KiriminAja | [API documentation](https://developer.kiriminaja.com/docs/api) | Indeks kontrak rate, order, pickup, cancel, tracking, callback, pembayaran, saldo, serta service discovery | Onboarding tetap melalui connector canonical milik partner; hanya empat group Emisell yang diekspos |
+| Lincah | [Plugin resmi Lincah Shipping](https://id.wordpress.org/plugins/lincah-shipping/) | Base URL production/sandbox, API Token, Partner ID, rate, COD, wilayah, multi-origin, order, pickup, cancel, tracking, dan webhook | Bukti resmi yang ditulis Lincah, tetapi bukan pengganti OpenAPI dan SLA lengkap |
+| Lincah | [Platform pengiriman](https://lincah.id/platform-kirim-paket-online/), [pembayaran dengan saldo](https://lincah.id/help-center-bayar-ongkir-dengan-saldo/) | Capability produk, saldo, dan alur operasional | Endpoint saldo/mutasi dan rekonsiliasi harus diperoleh sebelum sertifikasi |
+| Mengantar | [Generate API key](https://help.mengantar.com/id/articles/14715369-mengantar-update-verifikasi-akun-pengiriman-full-darat-generate-api-key-dan-update-lainnya) | Bukti akses integrasi melalui API key | OpenAPI, scope key, rotasi, dan rate limit perlu dokumen teknis resmi |
+| Mengantar | [Produk](https://mengantar.id/page/), [help center](https://help.mengantar.com/id) | Bukti produk order, pickup, tracking, COD/non-COD, saldo, label, dan retur | Product evidence saja; belum boleh dianggap endpoint production API Kurir |
 | Karrio | [Repository resmi](https://github.com/karrioapi/karrio) | Orkestrasi carrier, lisensi core | Multi-tenancy tetap tanggung jawab API Kurir |
 
 ## Framework dan infrastruktur

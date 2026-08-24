@@ -64,7 +64,7 @@ func adminProviderCredentialCreateHandler(
 				c,
 				http.StatusConflict,
 				"PROVIDER_KEY_EXISTS",
-				"API key provider ini sudah pernah disimpan.",
+				"API key sudah terikat pada credential lain.",
 				nil,
 			)
 		case err != nil:
