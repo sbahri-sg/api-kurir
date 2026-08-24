@@ -2924,12 +2924,16 @@ components:
           type: array
           items:
             type: object
-            required: [name, code, service, description, cost, etd]
+            required: [name, code, logo, service, description, cost, etd]
             properties:
               name:
                 type: string
               code:
                 type: string
+              logo:
+                type: string
+                format: uri
+                description: URL logo dari master ekspedisi API Kurir
               service:
                 type: string
                 description: Kode layanan mentah dari provider
@@ -3012,12 +3016,16 @@ components:
       properties:
         courier:
           type: object
-          required: [code, name]
+          required: [code, name, logo]
           properties:
             code:
               type: string
             name:
               type: string
+            logo:
+              type: string
+              format: uri
+              description: URL logo dari master ekspedisi API Kurir
         service:
           type: object
           required:

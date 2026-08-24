@@ -110,6 +110,9 @@ Content-Type: application/x-www-form-urlencoded
 origin=442&destination=1354&weight=1200
 ```
 
+Setiap opsi ongkir menyertakan field `logo` yang berasal dari master ekspedisi
+API Kurir, sehingga Main Service tidak perlu menyimpan URL logo sendiri.
+
 Main Service tidak mengirim `courier`. API Kurir membentuk daftar kurir dari
 service yang telah disimpan merchant melalui `PUT
 /api/v1/integrations/shipping-services`. Bila field `courier` masih dikirim oleh

@@ -310,6 +310,45 @@ func (r staticRepository) FindActiveRateCards(context.Context, Request) ([]RateC
 	return r.cards, nil
 }
 
+type logoRepository struct {
+	staticRepository
+	logos map[string]string
+}
+
+func (r logoRepository) FindActiveCourierLogos(
+	context.Context,
+	[]string,
+) (map[string]string, error) {
+	return r.logos, nil
+}
+
+func TestServiceEnrichesRateWithCourierMasterLogo(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(logoRepository{
+		staticRepository: staticRepository{cards: []RateCard{
+			testFlatRateCard("REG", 15_000),
+		}},
+		logos: map[string]string{
+			"jne": "https://api-kurir.emisell.com/courier-logos/jne.webp",
+		},
+	}, time.Second)
+
+	results, err := service.Calculate(context.Background(), Request{
+		Origin:            "loc_origin",
+		Destination:       "loc_destination",
+		ActualWeightGrams: 1_000,
+		Couriers:          []string{"jne"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 ||
+		results[0].Card.CourierLogo != "https://api-kurir.emisell.com/courier-logos/jne.webp" {
+		t.Fatalf("unexpected enriched result: %#v", results)
+	}
+}
+
 type failingProvider struct{}
 
 func (failingProvider) Code() string            { return "rajaongkir" }

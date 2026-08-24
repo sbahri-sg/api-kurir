@@ -394,6 +394,7 @@ func calculateRajaOngkirV2Rate(
 		item := map[string]any{
 			"name":        result.Card.CourierName,
 			"code":        result.Card.CourierCode,
+			"logo":        result.Card.CourierLogo,
 			"service":     result.Card.ServiceCode,
 			"description": result.Card.ServiceName,
 			"cost":        result.Cost.Total,
@@ -659,6 +660,7 @@ func rateResponse(result rates.Result, calculatedAt time.Time) map[string]any {
 		"courier": map[string]any{
 			"code": result.Card.CourierCode,
 			"name": result.Card.CourierName,
+			"logo": result.Card.CourierLogo,
 		},
 		"service": map[string]any{
 			"code":           result.Card.ServiceCode,

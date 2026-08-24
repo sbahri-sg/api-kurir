@@ -15,6 +15,35 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+func (r *PostgresRepository) FindActiveCourierLogos(
+	ctx context.Context,
+	courierCodes []string,
+) (map[string]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT c.code, c.logo_url
+		FROM couriers c
+		WHERE c.active
+		  AND c.code = ANY($1::text[])
+	`, courierCodes)
+	if err != nil {
+		return nil, fmt.Errorf("query active courier logos: %w", err)
+	}
+	defer rows.Close()
+
+	logos := make(map[string]string, len(courierCodes))
+	for rows.Next() {
+		var code, logo string
+		if err := rows.Scan(&code, &logo); err != nil {
+			return nil, fmt.Errorf("scan active courier logo: %w", err)
+		}
+		logos[code] = logo
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active courier logos: %w", err)
+	}
+	return logos, nil
+}
+
 func (r *PostgresRepository) FindActiveServicePolicies(
 	ctx context.Context,
 	courierCodes []string,
@@ -81,6 +110,7 @@ func (r *PostgresRepository) FindActiveRateCards(
 			rc.id::text,
 			c.code,
 			c.name,
+			c.logo_url,
 			cs.code,
 			cs.name,
 			cs.code,
@@ -143,6 +173,7 @@ func (r *PostgresRepository) FindActiveRateCards(
 			&card.ID,
 			&card.CourierCode,
 			&card.CourierName,
+			&card.CourierLogo,
 			&card.ServiceCode,
 			&card.ServiceName,
 			&card.CanonicalServiceCode,

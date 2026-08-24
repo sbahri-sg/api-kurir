@@ -638,7 +638,7 @@
                 "domestic-cost"
               ]
             },
-            "description": "Drop-in request direct shipping-cost untuk SDK RajaOngkir V2. Field price mengurutkan semua layanan (lowest naik, highest turun), bukan memilih satu hasil. include_group=true menambahkan canonical_service, service_group, dan service_type; hapus field tersebut untuk respons 1:1 RajaOngkir V2."
+            "description": "Drop-in request direct shipping-cost untuk SDK RajaOngkir V2. Setiap hasil menyertakan logo dari master ekspedisi. Field price mengurutkan semua layanan (lowest naik, highest turun), bukan memilih satu hasil. include_group=true menambahkan canonical_service, service_group, dan service_type."
           },
           "response": []
         },
@@ -722,7 +722,7 @@
                 "domestic-cost"
               ]
             },
-            "description": "Drop-in request district shipping-cost untuk SDK RajaOngkir V2. Field price mengurutkan semua layanan (lowest naik, highest turun), bukan memilih satu hasil. include_group=true menambahkan canonical_service, service_group, dan service_type; hapus field tersebut untuk respons 1:1 RajaOngkir V2."
+            "description": "Drop-in request district shipping-cost untuk SDK RajaOngkir V2. Setiap hasil menyertakan logo dari master ekspedisi. Field price mengurutkan semua layanan (lowest naik, highest turun), bukan memilih satu hasil. include_group=true menambahkan canonical_service, service_group, dan service_type."
           },
           "response": []
         }

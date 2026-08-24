@@ -188,6 +188,10 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 	if err != nil {
 		return nil, err
 	}
+	courierLogos, err := s.loadCourierLogos(ctx, request.Couriers)
+	if err != nil {
+		return nil, err
+	}
 
 	cards, err := s.repository.FindActiveRateCards(ctx, request)
 	if err != nil {
@@ -197,6 +201,9 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 	results := make([]Result, 0, len(cards))
 	coveredCouriers := make(map[string]struct{}, len(cards))
 	for _, card := range cards {
+		if logo := courierLogos[card.CourierCode]; logo != "" {
+			card.CourierLogo = logo
+		}
 		var evaluation *PolicyEvaluation
 		if policy, ok := policies.match(card); ok {
 			checked := evaluateServicePolicy(request, policy)
@@ -232,6 +239,9 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 		providerResults, providerErr := s.calculateProviderFallback(ctx, fallbackRequest, key)
 		if providerErr == nil {
 			for _, result := range providerResults {
+				if logo := courierLogos[result.Card.CourierCode]; logo != "" {
+					result.Card.CourierLogo = logo
+				}
 				if policy, ok := policies.match(result.Card); ok {
 					evaluation := evaluateServicePolicy(request, policy)
 					if !evaluation.Eligible {
@@ -255,6 +265,17 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 		}
 	}
 	return results, nil
+}
+
+func (s *Service) loadCourierLogos(
+	ctx context.Context,
+	courierCodes []string,
+) (map[string]string, error) {
+	repository, ok := s.repository.(CourierLogoRepository)
+	if !ok {
+		return nil, nil
+	}
+	return repository.FindActiveCourierLogos(ctx, courierCodes)
 }
 
 func (s *Service) loadServicePolicies(

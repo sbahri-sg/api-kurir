@@ -286,11 +286,13 @@ tidak termasuk kontrak RajaOngkir V2 dan memperoleh HTTP `415`. Parameter
 `price=highest` mengurutkan seluruh layanan dari termahal ke termurah. Parameter
 ini tidak memfilter hasil menjadi satu layanan.
 
+Field tambahan `logo` selalu memuat URL logo dari master ekspedisi API Kurir.
 Parameter extension `include_group=true` menambahkan `canonical_service`,
-`service_group`, dan `service_type` pada setiap opsi tarif. Tanpa parameter ini
-respons tetap 1:1 dengan field RajaOngkir V2. Field `service` selalu menyimpan
-kode mentah provider, sedangkan `canonical_service` menormalkan varian seperti
-`JTR>130` menjadi `JTR` agar Emisell mudah melakukan pengelompokan.
+`service_group`, dan `service_type` pada setiap opsi tarif. Tanpa parameter ini,
+struktur utama tetap kompatibel RajaOngkir V2 dengan tambahan metadata `logo`.
+Field `service` selalu menyimpan kode mentah provider, sedangkan
+`canonical_service` menormalkan varian seperti `JTR>130` menjadi `JTR` agar
+Emisell mudah melakukan pengelompokan.
 
 Khusus pemanggilan Main Service yang membawa `X-Emisell-Merchant-ID`, field
 `courier` tidak dikirim. API Kurir mengambil kurir dari konfigurasi service
@@ -306,8 +308,8 @@ POST /api/v1/calculate/district/domestic-cost
 Endpoint district memakai ID dari
 `GET /api/v1/destination/district/{city_id}` dan meneruskan quote miss ke endpoint
 district resmi provider. Mode SDK mengembalikan field flat
-`name`, `code`, `service`, `description`, `cost`, dan `etd`, serta tiga field
-pengelompokan opsional saat `include_group=true`.
+`name`, `code`, `logo`, `service`, `description`, `cost`, dan `etd`, serta tiga
+field pengelompokan opsional saat `include_group=true`.
 
 Request:
 

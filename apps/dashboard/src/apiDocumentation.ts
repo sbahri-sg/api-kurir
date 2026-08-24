@@ -631,7 +631,8 @@ key: {{api_key}}`,
     {
       "courier": {
         "code": "jne",
-        "name": "Jalur Nugraha Ekakurir (JNE)"
+        "name": "Jalur Nugraha Ekakurir (JNE)",
+        "logo": "https://api-kurir.emisell.com/courier-logos/jne.webp"
       },
       "service": {
         "code": "REG23",
@@ -672,14 +673,14 @@ key: {{api_key}}`,
     path: "/api/v1/calculate/domestic-cost",
     title: "Cek ongkir SDK V2 · kelurahan",
     description:
-      "Endpoint form-urlencoded atau multipart RajaOngkir V2 untuk origin dan destination hasil direct search atau endpoint sub-district. JSON tidak diterima pada kontrak ini. Tambahkan include_group=true bila Emisell membutuhkan pengelompokan layanan.",
+      "Endpoint form-urlencoded atau multipart RajaOngkir V2 untuk origin dan destination hasil direct search atau endpoint sub-district. JSON tidak diterima pada kontrak ini. Setiap hasil menyertakan logo dari master ekspedisi. Tambahkan include_group=true bila Emisell membutuhkan pengelompokan layanan.",
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint sub-district atau domestic-destination",
       "weight — berat final/chargeable dari Emisell dalam gram; layanan di luar batas berat otomatis tidak dikembalikan",
       "courier — kode kurir dipisahkan titik dua",
       "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
-      "include_group — true menambahkan canonical_service, service_group, dan service_type; default false agar tetap 1:1 RajaOngkir V2",
+      "include_group — true menambahkan canonical_service, service_group, dan service_type; default false mempertahankan struktur utama RajaOngkir V2 dengan tambahan logo",
     ],
     request: `POST {{base_url}}/api/v1/calculate/domestic-cost
 Content-Type: application/x-www-form-urlencoded
@@ -696,6 +697,7 @@ origin=4911&destination=25976&weight=1000&courier=jne&price=lowest&include_group
     {
       "name": "Jalur Nugraha Ekakurir (JNE)",
       "code": "jne",
+      "logo": "https://api-kurir.emisell.com/courier-logos/jne.webp",
       "service": "REG",
       "canonical_service": "REG",
       "service_group": "regular",
@@ -713,14 +715,14 @@ origin=4911&destination=25976&weight=1000&courier=jne&price=lowest&include_group
     path: "/api/v1/calculate/district/domestic-cost",
     title: "Cek ongkir SDK V2 · kecamatan",
     description:
-      "Drop-in endpoint form-urlencoded atau multipart untuk SDK RajaOngkir V2. Gunakan /api/v1/calculate/domestic-cost dengan bentuk request yang sama untuk ID subdistrict. JSON tidak diterima. Tambahkan include_group=true bila Emisell membutuhkan pengelompokan layanan.",
+      "Drop-in endpoint form-urlencoded atau multipart untuk SDK RajaOngkir V2. Gunakan /api/v1/calculate/domestic-cost dengan bentuk request yang sama untuk ID subdistrict. JSON tidak diterima. Setiap hasil menyertakan logo dari master ekspedisi. Tambahkan include_group=true bila Emisell membutuhkan pengelompokan layanan.",
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint district",
       "weight — berat final/chargeable dari Emisell dalam gram; layanan di luar batas berat otomatis tidak dikembalikan",
       "courier — kode kurir dipisahkan titik dua",
       "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
-      "include_group — true menambahkan canonical_service, service_group, dan service_type; default false agar tetap 1:1 RajaOngkir V2",
+      "include_group — true menambahkan canonical_service, service_group, dan service_type; default false mempertahankan struktur utama RajaOngkir V2 dengan tambahan logo",
     ],
     request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
 Content-Type: application/x-www-form-urlencoded
@@ -737,6 +739,7 @@ origin=442&destination=2165&weight=1000&courier=jne&price=lowest&include_group=t
     {
       "name": "Jalur Nugraha Ekakurir (JNE)",
       "code": "jne",
+      "logo": "https://api-kurir.emisell.com/courier-logos/jne.webp",
       "service": "REG",
       "canonical_service": "REG",
       "service_group": "regular",
@@ -2056,7 +2059,7 @@ Content-Type: application/json
     path: "/api/v1/calculate/district/domestic-cost",
     title: "Cek ongkir dengan key seller",
     description:
-      "Kontrak respons tetap RajaOngkir V2. Main Service tidak mengirim courier atau credential_id; API Kurir mengambil kurir dari service yang dipilih merchant, memakai pool platform untuk provider Emisell atau credential BYOK untuk RajaOngkir, lalu memfilter hasil sesuai pilihan seller. Courier dari client lama diabaikan. Jika seller belum mengaktifkan kurir, respons HTTP 409 menandakan shipping masih nonaktif.",
+      "Struktur utama respons tetap kompatibel RajaOngkir V2 dan setiap hasil menyertakan logo dari master ekspedisi. Main Service tidak mengirim courier atau credential_id; API Kurir mengambil kurir dari service yang dipilih merchant, memakai pool platform untuk provider Emisell atau credential BYOK untuk RajaOngkir, lalu memfilter hasil sesuai pilihan seller. Courier dari client lama diabaikan. Jika seller belum mengaktifkan kurir, respons HTTP 409 menandakan shipping masih nonaktif.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/calculate/district/domestic-cost
 key: {{api_key}}
@@ -2064,7 +2067,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/x-www-form-urlencoded
 
 origin=442&destination=1354&weight=1200`,
-    response: `Respons 1:1 RajaOngkir V2 dan hanya memuat service yang dipilih merchant. Jika belum ada service terpilih, API mengembalikan HTTP 422 RATE_NOT_AVAILABLE. Public API tanpa Merchant ID tetap mewajibkan courier.`,
+    response: `Respons memakai struktur utama RajaOngkir V2 dengan tambahan field logo dan hanya memuat service yang dipilih merchant. Jika belum ada service terpilih, API mengembalikan HTTP 422 RATE_NOT_AVAILABLE. Public API tanpa Merchant ID tetap mewajibkan courier.`,
   },
   {
     contract: "gateway",

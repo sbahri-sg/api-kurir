@@ -127,6 +127,7 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 		cards: []rates.RateCard{{
 			CourierCode:            "jne",
 			CourierName:            "JNE",
+			CourierLogo:            "https://api-kurir.emisell.com/courier-logos/jne.webp",
 			ServiceCode:            "REG",
 			ServiceName:            "Layanan Reguler",
 			PricingModel:           "flat",
@@ -177,6 +178,7 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 		Data []struct {
 			Name             string  `json:"name"`
 			Code             string  `json:"code"`
+			Logo             string  `json:"logo"`
 			Service          string  `json:"service"`
 			Description      string  `json:"description"`
 			Cost             int64   `json:"cost"`
@@ -191,6 +193,7 @@ func TestRajaOngkirV2CalculateAcceptsFormAndReturnsFlatResponse(t *testing.T) {
 	}
 	if len(payload.Data) != 1 ||
 		payload.Data[0].Code != "jne" ||
+		payload.Data[0].Logo != "https://api-kurir.emisell.com/courier-logos/jne.webp" ||
 		payload.Data[0].Service != "REG" ||
 		payload.Data[0].Cost != 15000 {
 		t.Fatalf("unexpected response: %#v", payload)
