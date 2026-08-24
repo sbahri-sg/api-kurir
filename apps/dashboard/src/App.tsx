@@ -1084,8 +1084,8 @@ export function App() {
                       <tr>
                         <td colSpan={7} className="empty-state">
                           Belum ada key database. Tambahkan RajaOngkir untuk
-                          ongkir/tracking utama atau Biteship untuk fallback
-                          tracking.
+                          ongkir/tracking utama atau Biteship sebagai fallback
+                          internal Emisell Kurir.
                         </td>
                       </tr>
                     )}
@@ -1195,7 +1195,7 @@ export function App() {
                       >
                         <option value="rajaongkir">RajaOngkir</option>
                         <option value="biteship">
-                          Biteship · tracking fallback
+                          Biteship · fallback Emisell Kurir
                         </option>
                       </select>
                     </label>
@@ -1218,9 +1218,9 @@ export function App() {
                     </label>
                     <div className="provider-key-note">
                       Key platform diuji langsung ke provider lalu disimpan
-                      terenkripsi. Biteship hanya dipakai untuk fallback
-                      tracking (misalnya SiCepat), bukan cek ongkir atau
-                      sinkronisasi katalog.
+                      terenkripsi. Biteship hanya dipakai di balik Emisell
+                      Kurir untuk fallback cek ongkir dan resi; seller yang
+                      memakai RajaOngkir BYOK tidak memakai saldo ini.
                     </div>
                     <div className="form-actions">
                       <button

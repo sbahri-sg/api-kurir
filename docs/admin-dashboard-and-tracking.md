@@ -162,7 +162,8 @@ termasuk ketika operator menonaktifkan webhook.
 ### 3.2 Keamanan provider credential
 
 - form menerima `provider_code=rajaongkir|biteship` dan `api_key`;
-- credential Biteship hanya dipakai sebagai fallback tracking, bukan tarif;
+- credential Biteship hanya dipakai sebagai fallback tarif/tracking internal
+  Emisell Kurir dan tidak pernah dipinjamkan ke RajaOngkir BYOK seller;
 - key diuji ke endpoint resmi sebelum disimpan; satu request validasi ikut
   dicatat pada quota ledger;
 - secret dienkripsi AES-256-GCM dengan
@@ -335,11 +336,12 @@ membocorkan respons provider.
 ## 7. Adapter dan batas operasional
 
 - `TRACKING_ENABLED=false` merupakan default aman.
-- Kurir AWB default: `jne,sap,ninja,jnt,tiki,wahana,pos,lion`.
+- Kurir AWB utama default: `jne,sap,ninja,jnt,tiki,wahana,pos,lion,anteraja`.
 - SiCepat, IDExpress, dan Sentral Cargo memakai Biteship fallback karena
   matriks resmi RajaOngkir saat ini tidak menandai capability AWB mereka.
-- AnterAja dan RPX tetap memakai RajaOngkir untuk tarif, tetapi tracking-nya
-  memakai Biteship fallback. Paxel tersedia sebagai tracking-only.
+- AnterAja memakai RajaOngkir sebagai tracking utama. RPX dan gap lain memakai
+  Biteship; kurir utama juga dapat jatuh ke Biteship saat jalur RajaOngkir
+  gagal. Paxel tetap tidak dipakai oleh Emisell Kurir.
 - REX, NCS, STAR, dan DSE tetap rate-only sampai ada adapter tracking yang
   terverifikasi.
 - Worker memakai pool credential RajaOngkir database ketika

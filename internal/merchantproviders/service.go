@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+
+	"github.com/emisell/api-kurir/internal/tenancy"
 )
 
 var (
@@ -67,6 +69,18 @@ func (s *Service) AllowsPlatformCredential(
 	}
 	return catalog.ActiveProviderCode != nil &&
 		*catalog.ActiveProviderCode == EmisellProviderCode, nil
+}
+
+// AllowsProviderFallback is shared by the rate and tracking routers. Requests
+// without merchant scope are platform operations and may use the platform
+// fallback. Merchant requests may do so only while Emisell Kurir is active;
+// RajaOngkir BYOK never borrows the Biteship balance.
+func (s *Service) AllowsProviderFallback(ctx context.Context) (bool, error) {
+	identity, tenantScoped := tenancy.FromContext(ctx)
+	if !tenantScoped {
+		return true, nil
+	}
+	return s.AllowsPlatformCredential(ctx, identity.TenantID)
 }
 
 func (s *Service) Activate(

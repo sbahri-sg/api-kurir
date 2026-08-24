@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/emisell/api-kurir/internal/tenancy"
 )
 
 type memoryRepository struct {
@@ -116,6 +118,43 @@ func TestAllowsPlatformCredentialOnlyForEmisell(t *testing.T) {
 				t.Fatalf("allowed=%v want=%v", allowed, test.allowed)
 			}
 		})
+	}
+}
+
+func TestAllowsProviderFallbackUsesTenantActiveProvider(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		active  *string
+		allowed bool
+	}{
+		{name: "built in", active: stringPointer("emisell"), allowed: true},
+		{name: "byok", active: stringPointer("rajaongkir"), allowed: false},
+		{name: "inactive", active: nil, allowed: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewService(&memoryRepository{catalog: Catalog{ActiveProviderCode: test.active}})
+			ctx := tenancy.WithIdentity(
+				context.Background(),
+				tenancy.Identity{TenantID: "merchant_123"},
+			)
+			allowed, err := service.AllowsProviderFallback(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if allowed != test.allowed {
+				t.Fatalf("allowed=%v want=%v", allowed, test.allowed)
+			}
+		})
+	}
+}
+
+func TestAllowsProviderFallbackAllowsPlatformOperation(t *testing.T) {
+	t.Parallel()
+	service := NewService(&memoryRepository{})
+	allowed, err := service.AllowsProviderFallback(context.Background())
+	if err != nil || !allowed {
+		t.Fatalf("allowed=%v err=%v", allowed, err)
 	}
 }
 

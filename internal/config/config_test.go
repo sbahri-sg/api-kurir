@@ -1,18 +1,30 @@
 package config
 
 import (
-	"reflect"
 	"testing"
+	"time"
 )
 
-func TestOverlappingValuesNormalizesAndDeduplicates(t *testing.T) {
-	got := overlappingValues(
-		[]string{"jne", "JNT", " tiki "},
-		[]string{"sicepat", "JNE", "jne", "jnt"},
-	)
-	want := []string{"jne", "jnt"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("overlap = %v, want %v", got, want)
+func TestLoadEnablesBiteshipRateFallbackByDefault(t *testing.T) {
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Biteship.RateFallbackEnabled ||
+		cfg.Biteship.RateSnapshotTTL != 14*24*time.Hour {
+		t.Fatalf("unexpected Biteship fallback config: %#v", cfg.Biteship)
+	}
+}
+
+func TestLoadAllowsTrackingProviderOverlapForOrderedFallback(t *testing.T) {
+	t.Setenv("RAJAONGKIR_TRACKING_COURIERS", "jne,jnt")
+	t.Setenv("BITESHIP_TRACKING_COURIERS", "jne,sicepat")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Biteship.TrackingCouriers) != 2 {
+		t.Fatalf("unexpected Biteship couriers: %v", cfg.Biteship.TrackingCouriers)
 	}
 }
 

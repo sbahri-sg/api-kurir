@@ -8,9 +8,10 @@ terjadwal lalu snapshot yang sama dapat dibaca berkali-kali tanpa menambah hit
 provider.
 
 Kebijakan default shared credential membatasi satu AWB hingga **10 hit provider
-sepanjang siklus tracking**. Biteship hanya menjadi fallback untuk kurir yang
-tidak dicakup RajaOngkir; gangguan sementara RajaOngkir tidak otomatis
-menggandakan request ke Biteship.
+sepanjang siklus tracking**. Pada Emisell Kurir, Biteship menjadi fallback jika
+kurir tidak dicakup atau RajaOngkir tidak dapat menjawab. Satu refresh hanya
+memanggil Biteship setelah RajaOngkir gagal, bukan secara paralel. RajaOngkir
+BYOK seller tidak memakai fallback platform ini.
 
 ## Alur Emisell
 

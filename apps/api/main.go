@@ -145,17 +145,47 @@ func run(logger *slog.Logger) error {
 		rateRepository,
 		cfg.RajaOngkir.SnapshotTTL,
 	)
-	rateOptions := []rates.Option{rates.WithProviderFallback(
-		rajaOngkirProvider,
-		rateRepository,
-		runtimeLocker,
-		cfg.RajaOngkir.Timeout+2*time.Second,
-	), rates.WithCredentialSelector(providerCredentialService), rates.WithShippingProviderGate(merchantProviderService), rates.WithResultPolicy(merchantShippingService), rates.WithServicePolicyCache(
+	rateLockTTL := cfg.RajaOngkir.Timeout + cfg.Biteship.Timeout + 2*time.Second
+	var rateProviderOption rates.Option
+	if cfg.Biteship.RateFallbackEnabled {
+		biteshipRateProvider := biteship.NewDynamicRateProvider(
+			providerResolver,
+			cfg.Biteship.BaseURL,
+			cfg.Biteship.Timeout,
+			locationRepository,
+			rateRepository,
+			rateRepository,
+			cfg.Biteship.RateSnapshotTTL,
+		)
+		rateProviderOption = rates.WithProviderFallbackChain(
+			rajaOngkirProvider,
+			rateRepository,
+			runtimeLocker,
+			rateLockTTL,
+			merchantProviderService,
+			biteshipRateProvider,
+		)
+	} else {
+		rateProviderOption = rates.WithProviderFallback(
+			rajaOngkirProvider,
+			rateRepository,
+			runtimeLocker,
+			cfg.RajaOngkir.Timeout+2*time.Second,
+		)
+	}
+	rateOptions := []rates.Option{rateProviderOption, rates.WithCredentialSelector(providerCredentialService), rates.WithShippingProviderGate(merchantProviderService), rates.WithResultPolicy(merchantShippingService), rates.WithServicePolicyCache(
 		runtimeCache,
 		5*time.Minute,
 	)}
 	operationTimeout := cfg.RajaOngkir.Timeout + 2*time.Second
-	logger.Info("runtime RajaOngkir credential resolver enabled")
+	if cfg.Biteship.RateFallbackEnabled {
+		operationTimeout += 2*cfg.Biteship.Timeout + 2*time.Second
+	}
+	logger.Info(
+		"runtime shipping provider resolver enabled",
+		"primary", "rajaongkir",
+		"rate_fallback", cfg.Biteship.RateFallbackEnabled,
+	)
 	rateService := rates.NewService(rateRepository, operationTimeout, rateOptions...)
 	adminRepository := admin.NewPostgresRepository(pool)
 	customerAPIKeyService := apikeys.NewService(apikeys.NewPostgresRepository(pool))
@@ -189,9 +219,13 @@ func run(logger *slog.Logger) error {
 			cfg.Biteship.Timeout,
 			rateRepository,
 			rateRepository,
-			cfg.Biteship.TrackingCouriers,
+			biteship.EmisellTrackingFallbackCouriers(
+				cfg.RajaOngkir.TrackingCouriers,
+				cfg.Biteship.TrackingCouriers,
+			),
 		)
-		immediateTrackingAdapter = tracking.NewFallbackAdapter(
+		immediateTrackingAdapter = tracking.NewPolicyFallbackAdapter(
+			merchantProviderService,
 			rajaOngkirTrackingAdapter,
 			biteshipTrackingAdapter,
 		)
@@ -203,7 +237,7 @@ func run(logger *slog.Logger) error {
 		logger.Info(
 			"tracking registration enabled; waybills stored as plaintext for Emisell",
 			"rajaongkir_couriers", len(cfg.RajaOngkir.TrackingCouriers),
-			"biteship_fallback_couriers", len(cfg.Biteship.TrackingCouriers),
+			"biteship_fallback_couriers", len(biteshipTrackingAdapter.CourierCodes()),
 			"migrated_legacy_waybills", migratedWaybills,
 		)
 	}

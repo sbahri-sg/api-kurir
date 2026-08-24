@@ -1913,7 +1913,7 @@
           "response": []
         },
         {
-          "name": "Add Biteship Tracking Fallback Token",
+          "name": "Add Biteship Emisell Fallback Token",
           "event": [
             {
               "listen": "test",
@@ -1964,7 +1964,7 @@
                 "provider-credentials"
               ]
             },
-            "description": "Token diuji melalui katalog kurir lalu disimpan terenkripsi. Token ini hanya dipakai untuk fallback tracking seperti SiCepat, bukan cek ongkir."
+            "description": "Token diuji melalui katalog kurir lalu disimpan terenkripsi. Token ini dipakai sebagai fallback cek ongkir dan tracking di balik Emisell Kurir, tetapi tidak pernah dipakai oleh integrasi RajaOngkir BYOK seller."
           },
           "response": []
         },

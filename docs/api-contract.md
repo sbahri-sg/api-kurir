@@ -220,8 +220,9 @@ Query opsional:
 Respons memuat `code`, `name`, URL `logo` permanen, provider utama, `rate_provider_code`,
 `tracking_provider_code`, kemampuan domestik/internasional/tracking, tanggal
 verifikasi katalog, layanan lokal aktif, dan mode kalkulasinya. Nilai provider
-dipisahkan agar Biteship fallback tracking tidak pernah dianggap sebagai
-sumber cek ongkir.
+tetap dipisahkan untuk audit. Pada Emisell Kurir, Biteship dapat menjadi sumber
+aktual quote atau tracking ketika RajaOngkir utama gagal tanpa mengubah kontrak
+response yang dibaca Main Service.
 
 Layanan baru yang dikembalikan provider akan diklasifikasikan dan dimasukkan
 ke master `courier_services` secara otomatis bila grup serta tipe servicenya

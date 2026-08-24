@@ -319,6 +319,150 @@ func (failingProvider) Quote(context.Context, Request) ([]ProviderQuote, error) 
 	return nil, ErrProviderUnavailable
 }
 
+type chainQuoteProvider struct {
+	code     string
+	quotes   []ProviderQuote
+	err      error
+	calls    int
+	requests []Request
+}
+
+func (p *chainQuoteProvider) Code() string { return p.code }
+func (p *chainQuoteProvider) Quote(_ context.Context, request Request) ([]ProviderQuote, error) {
+	p.calls++
+	p.requests = append(p.requests, request)
+	return append([]ProviderQuote(nil), p.quotes...), p.err
+}
+
+type providerAwareSnapshots struct {
+	quotes map[string][]ProviderQuote
+}
+
+func (s *providerAwareSnapshots) FindFreshProviderQuotes(
+	_ context.Context,
+	_ Request,
+	providerCode string,
+) ([]ProviderQuote, error) {
+	return append([]ProviderQuote(nil), s.quotes[providerCode]...), nil
+}
+
+func (s *providerAwareSnapshots) SaveProviderQuotes(
+	_ context.Context,
+	_ Request,
+	quotes []ProviderQuote,
+) error {
+	if s.quotes == nil {
+		s.quotes = make(map[string][]ProviderQuote)
+	}
+	for _, quote := range quotes {
+		s.quotes[quote.ProviderCode] = append(s.quotes[quote.ProviderCode], quote)
+	}
+	return nil
+}
+
+type staticProviderFallbackPolicy struct {
+	allowed bool
+}
+
+func (p staticProviderFallbackPolicy) AllowsProviderFallback(context.Context) (bool, error) {
+	return p.allowed, nil
+}
+
+func TestServiceUsesSecondaryProviderForBuiltInEmisellFailure(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	primary := &chainQuoteProvider{code: "rajaongkir", err: ErrProviderQuotaExhausted}
+	secondary := &chainQuoteProvider{code: "biteship", quotes: []ProviderQuote{{
+		ProviderCode: "biteship", CourierCode: "sicepat", CourierName: "SiCepat",
+		ServiceCode: "reg", CanonicalServiceCode: "REGULER",
+		ServiceGroup: "regular", ServiceType: "parcel",
+		ServiceName: "SiCepat Regular", Cost: 17_000,
+		VerificationStatus: "observed", FetchedAt: now, ExpiresAt: now.Add(time.Hour),
+	}}}
+	service := NewService(
+		emptyRepository{}, time.Second,
+		WithProviderFallbackChain(
+			primary,
+			&providerAwareSnapshots{quotes: make(map[string][]ProviderQuote)},
+			immediateLocker{}, time.Second,
+			staticProviderFallbackPolicy{allowed: true},
+			secondary,
+		),
+	)
+	results, err := service.Calculate(context.Background(), Request{
+		Origin: "origin", Destination: "destination", ActualWeightGrams: 1_000,
+		Couriers: []string{"sicepat"},
+	})
+	if err != nil || len(results) != 1 || results[0].Card.SourceProvider != "biteship" {
+		t.Fatalf("results=%#v err=%v", results, err)
+	}
+	if primary.calls != 1 || secondary.calls != 1 {
+		t.Fatalf("calls primary=%d secondary=%d", primary.calls, secondary.calls)
+	}
+}
+
+func TestServiceDoesNotUsePlatformFallbackForBYOKProvider(t *testing.T) {
+	t.Parallel()
+	primary := &chainQuoteProvider{code: "rajaongkir", err: ErrProviderUnauthorized}
+	secondary := &chainQuoteProvider{code: "biteship"}
+	service := NewService(
+		emptyRepository{}, time.Second,
+		WithProviderFallbackChain(
+			primary,
+			&providerAwareSnapshots{quotes: make(map[string][]ProviderQuote)},
+			immediateLocker{}, time.Second,
+			staticProviderFallbackPolicy{allowed: false},
+			secondary,
+		),
+	)
+	_, err := service.Calculate(context.Background(), Request{
+		Origin: "origin", Destination: "destination", ActualWeightGrams: 1_000,
+		Couriers: []string{"jne"},
+	})
+	if !errors.Is(err, ErrProviderUnauthorized) || secondary.calls != 0 {
+		t.Fatalf("err=%v secondary calls=%d", err, secondary.calls)
+	}
+}
+
+func TestServiceOnlyRequestsMissingCouriersFromSecondaryProvider(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	primary := &chainQuoteProvider{code: "rajaongkir", quotes: []ProviderQuote{{
+		ProviderCode: "rajaongkir", CourierCode: "jne", ServiceCode: "REG",
+		ServiceName: "JNE Regular", Cost: 18_000, VerificationStatus: "observed",
+		FetchedAt: now, ExpiresAt: now.Add(time.Hour),
+	}}}
+	secondary := &chainQuoteProvider{code: "biteship", quotes: []ProviderQuote{{
+		ProviderCode: "biteship", CourierCode: "sicepat", ServiceCode: "reg",
+		CanonicalServiceCode: "REGULER", ServiceGroup: "regular", ServiceType: "parcel",
+		ServiceName: "SiCepat Regular", Cost: 17_000, VerificationStatus: "observed",
+		FetchedAt: now, ExpiresAt: now.Add(time.Hour),
+	}}}
+	service := NewService(
+		emptyRepository{}, time.Second,
+		WithProviderFallbackChain(
+			primary,
+			&providerAwareSnapshots{quotes: make(map[string][]ProviderQuote)},
+			immediateLocker{}, time.Second,
+			staticProviderFallbackPolicy{allowed: true},
+			secondary,
+		),
+	)
+	results, err := service.Calculate(context.Background(), Request{
+		Origin: "origin", Destination: "destination", ActualWeightGrams: 1_000,
+		Couriers: []string{"jne", "sicepat"},
+	})
+	if err != nil || len(results) != 2 {
+		t.Fatalf("results=%#v err=%v", results, err)
+	}
+	if len(secondary.requests) != 1 || len(secondary.requests[0].Couriers) != 1 ||
+		secondary.requests[0].Couriers[0] != "sicepat" ||
+		secondary.requests[0].TenantID != "" ||
+		secondary.requests[0].ProviderCredentialID != "" {
+		t.Fatalf("secondary requests=%#v", secondary.requests)
+	}
+}
+
 func TestServiceDoesNotHideProviderFailureBehindPartialLocalResult(t *testing.T) {
 	t.Parallel()
 

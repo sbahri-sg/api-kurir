@@ -26,16 +26,22 @@ type Service struct {
 	queryTimeout time.Duration
 	group        singleflight.Group
 	provider     QuoteProvider
+	fallbacks    []QuoteProvider
 	snapshots    SnapshotRepository
 	locker       cache.Locker
 	lockTTL      time.Duration
 	resultPolicy ResultPolicy
 	credentials  CredentialSelector
 	providerGate ShippingProviderGate
+	fallbackGate ProviderFallbackPolicy
 }
 
 type ShippingProviderGate interface {
 	HasActiveProvider(ctx context.Context, tenantID string) (bool, error)
+}
+
+type ProviderFallbackPolicy interface {
+	AllowsProviderFallback(ctx context.Context) (bool, error)
 }
 
 type CredentialSelector interface {
@@ -63,8 +69,29 @@ func WithProviderFallback(
 ) Option {
 	return func(service *Service) {
 		service.provider = provider
+		service.fallbacks = nil
 		service.snapshots = snapshots
 		service.locker = locker
+		if lockTTL > 0 {
+			service.lockTTL = lockTTL
+		}
+	}
+}
+
+func WithProviderFallbackChain(
+	primary QuoteProvider,
+	snapshots SnapshotRepository,
+	locker cache.Locker,
+	lockTTL time.Duration,
+	fallbackPolicy ProviderFallbackPolicy,
+	fallbackProviders ...QuoteProvider,
+) Option {
+	return func(service *Service) {
+		service.provider = primary
+		service.fallbacks = append([]QuoteProvider(nil), fallbackProviders...)
+		service.snapshots = snapshots
+		service.locker = locker
+		service.fallbackGate = fallbackPolicy
 		if lockTTL > 0 {
 			service.lockTTL = lockTTL
 		}
@@ -284,18 +311,88 @@ func (s *Service) calculateProviderFallback(
 			request.ProviderCredentialID = credentialID
 		}
 	}
-	key := requestKey(request)
 
-	quotes, err := s.snapshots.FindFreshProviderQuotes(ctx, request, s.provider.Code())
+	primaryQuotes, primaryErr := s.fetchProviderQuotes(ctx, request, s.provider)
+	if primaryErr != nil && !allowsRateProviderFallback(primaryErr) {
+		return nil, primaryErr
+	}
+	allQuotes := append([]ProviderQuote(nil), primaryQuotes...)
+	missingCouriers := missingProviderQuoteCouriers(request.Couriers, allQuotes)
+	if primaryErr == nil && len(missingCouriers) == 0 {
+		return providerQuoteResults(request, allQuotes), nil
+	}
+
+	allowed, err := s.fallbackAllowed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed || len(s.fallbacks) == 0 {
+		if primaryErr != nil {
+			return nil, primaryErr
+		}
+		if len(allQuotes) == 0 {
+			return nil, ErrRateNotAvailable
+		}
+		return providerQuoteResults(request, allQuotes), nil
+	}
+
+	if len(missingCouriers) == 0 {
+		missingCouriers = append([]string(nil), request.Couriers...)
+	}
+	var fallbackErr error
+	for _, fallback := range s.fallbacks {
+		if fallback == nil || len(missingCouriers) == 0 {
+			continue
+		}
+		fallbackRequest := request
+		// Biteship is a shared platform fallback for Emisell Kurir. Its quote
+		// snapshot is reusable across merchants; tenant authorization has already
+		// been enforced above and audit calls still retain the context identity.
+		fallbackRequest.TenantID = ""
+		fallbackRequest.ProviderCredentialID = ""
+		fallbackRequest.Couriers = append([]string(nil), missingCouriers...)
+		quotes, quoteErr := s.fetchProviderQuotes(ctx, fallbackRequest, fallback)
+		if quoteErr != nil {
+			fallbackErr = quoteErr
+			continue
+		}
+		allQuotes = append(allQuotes, quotes...)
+		missingCouriers = missingProviderQuoteCouriers(
+			missingCouriers,
+			quotes,
+		)
+	}
+	if len(allQuotes) > 0 {
+		return providerQuoteResults(request, allQuotes), nil
+	}
+	if primaryErr != nil {
+		return nil, primaryErr
+	}
+	if fallbackErr != nil {
+		return nil, fallbackErr
+	}
+	return nil, ErrRateNotAvailable
+}
+
+func (s *Service) fetchProviderQuotes(
+	ctx context.Context,
+	request Request,
+	provider QuoteProvider,
+) ([]ProviderQuote, error) {
+	if provider == nil {
+		return nil, ErrRateNotAvailable
+	}
+	providerCode := provider.Code()
+	quotes, err := s.snapshots.FindFreshProviderQuotes(ctx, request, providerCode)
 	if err != nil {
 		return nil, err
 	}
 	if len(quotes) > 0 {
-		return providerQuoteResults(request, quotes), nil
+		return quotes, nil
 	}
 
 	fetch := func(lockCtx context.Context) error {
-		fresh, err := s.snapshots.FindFreshProviderQuotes(lockCtx, request, s.provider.Code())
+		fresh, err := s.snapshots.FindFreshProviderQuotes(lockCtx, request, providerCode)
 		if err != nil {
 			return err
 		}
@@ -303,12 +400,17 @@ func (s *Service) calculateProviderFallback(
 			quotes = fresh
 			return nil
 		}
-		fresh, err = s.provider.Quote(lockCtx, request)
+		fresh, err = provider.Quote(lockCtx, request)
 		if err != nil {
 			return err
 		}
 		if len(fresh) == 0 {
 			return ErrRateNotAvailable
+		}
+		for index := range fresh {
+			if fresh[index].ProviderCode == "" {
+				fresh[index].ProviderCode = providerCode
+			}
 		}
 		if err := s.snapshots.SaveProviderQuotes(lockCtx, request, fresh); err != nil {
 			return err
@@ -317,23 +419,56 @@ func (s *Service) calculateProviderFallback(
 		return nil
 	}
 
+	lockKey := "provider-rate:" + providerCode + ":" + requestKey(request)
 	if s.locker == nil {
 		err = fetch(ctx)
 	} else {
-		err = s.locker.WithLock(ctx, "provider-rate:"+key, s.lockTTL, fetch)
+		err = s.locker.WithLock(ctx, lockKey, s.lockTTL, fetch)
 	}
 	if errors.Is(err, cache.ErrLockNotAcquired) {
-		quotes, err = s.waitForProviderSnapshot(ctx, request)
+		quotes, err = s.waitForProviderSnapshot(ctx, request, providerCode)
 	}
-	if err != nil {
-		return nil, err
+	return quotes, err
+}
+
+func (s *Service) fallbackAllowed(ctx context.Context) (bool, error) {
+	if s.fallbackGate == nil {
+		return true, nil
 	}
-	return providerQuoteResults(request, quotes), nil
+	return s.fallbackGate.AllowsProviderFallback(ctx)
+}
+
+func allowsRateProviderFallback(err error) bool {
+	return errors.Is(err, ErrRateNotAvailable) ||
+		errors.Is(err, ErrProviderUnavailable) ||
+		errors.Is(err, ErrProviderQuotaExhausted) ||
+		errors.Is(err, ErrProviderRateLimited) ||
+		errors.Is(err, ErrProviderUnauthorized) ||
+		errors.Is(err, ErrProviderLocationMapping)
+}
+
+func missingProviderQuoteCouriers(
+	requested []string,
+	quotes []ProviderQuote,
+) []string {
+	covered := make(map[string]struct{}, len(quotes))
+	for _, quote := range quotes {
+		covered[strings.ToLower(strings.TrimSpace(quote.CourierCode))] = struct{}{}
+	}
+	missing := make([]string, 0, len(requested))
+	for _, courier := range requested {
+		courier = strings.ToLower(strings.TrimSpace(courier))
+		if _, exists := covered[courier]; !exists && courier != "" {
+			missing = append(missing, courier)
+		}
+	}
+	return missing
 }
 
 func (s *Service) waitForProviderSnapshot(
 	ctx context.Context,
 	request Request,
+	providerCode string,
 ) ([]ProviderQuote, error) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -342,7 +477,7 @@ func (s *Service) waitForProviderSnapshot(
 		case <-ctx.Done():
 			return nil, fmt.Errorf("%w: waiting for provider refresh", ErrProviderUnavailable)
 		case <-ticker.C:
-			quotes, err := s.snapshots.FindFreshProviderQuotes(ctx, request, s.provider.Code())
+			quotes, err := s.snapshots.FindFreshProviderQuotes(ctx, request, providerCode)
 			if err != nil {
 				return nil, err
 			}

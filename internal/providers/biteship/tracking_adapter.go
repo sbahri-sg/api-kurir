@@ -287,6 +287,17 @@ func normalizedTrackingCouriers(input []string) []string {
 	return result
 }
 
+// EmisellTrackingFallbackCouriers enables Biteship both for RajaOngkir
+// coverage gaps and as a secondary source for the primary courier list. The
+// tenant fallback policy still prevents RajaOngkir BYOK requests from using
+// this platform balance.
+func EmisellTrackingFallbackCouriers(primary, configured []string) []string {
+	combined := make([]string, 0, len(primary)+len(configured))
+	combined = append(combined, primary...)
+	combined = append(combined, configured...)
+	return normalizedTrackingCouriers(combined)
+}
+
 func supportsTrackingCourier(couriers []string, target string) bool {
 	for _, courier := range couriers {
 		if strings.EqualFold(courier, target) {

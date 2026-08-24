@@ -3,6 +3,7 @@ package rates
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/emisell/api-kurir/internal/servicecatalog"
@@ -104,6 +105,22 @@ func resultFromProviderQuote(request Request, quote ProviderQuote) Result {
 }
 
 func classifyProviderQuote(quote ProviderQuote) ProviderQuote {
+	// Adapters may provide a reviewed provider-specific alias. Preserve that
+	// canonical classification instead of re-inferring it from the raw code.
+	if quote.CanonicalServiceCode != "" &&
+		quote.ServiceGroup != "" &&
+		quote.ServiceGroup != servicecatalog.GroupUnknown &&
+		quote.ServiceType != "" &&
+		quote.ServiceType != servicecatalog.TypeUnknown {
+		if quote.ServiceVariantCode == "" &&
+			!strings.EqualFold(quote.CanonicalServiceCode, quote.ServiceCode) {
+			quote.ServiceVariantCode = quote.ServiceCode
+		}
+		if quote.ClassificationSource == "" {
+			quote.ClassificationSource = "provider_alias"
+		}
+		return quote
+	}
 	classification := servicecatalog.Classify(
 		quote.CourierCode,
 		quote.ServiceCode,

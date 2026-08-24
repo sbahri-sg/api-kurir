@@ -13,7 +13,8 @@ Emisell dan API Kurir.
   provider aktif diperbolehkan.
 - Satu merchant mempunyai maksimal satu credential aktif per provider.
 - Credential ID sepenuhnya internal API Kurir.
-- Biteship hanya fallback tracking internal dan tidak dapat diaktifkan seller.
+- Biteship hanya fallback internal cek ongkir/resi Emisell Kurir dan tidak dapat
+  dipilih atau diaktifkan langsung oleh seller.
 
 | Status | Arti |
 |---|---|

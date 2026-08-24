@@ -367,9 +367,9 @@ paths:
       description: >
         Path /api/v1 selalu memakai kontrak sinkron RajaOngkir V2 untuk header
         key maupun Bearer. Hasil sinkron memakai snapshot PostgreSQL yang masih
-        fresh agar tidak selalu memakai hit provider. Provider aktual dapat
-        berupa Biteship fallback untuk kurir seperti SiCepat tanpa mengubah
-        bentuk respons kompatibilitas.
+        fresh agar tidak selalu memakai hit provider. Untuk Emisell Kurir,
+        provider aktual dapat berupa Biteship ketika RajaOngkir tidak mencakup
+        kurir atau gagal, tanpa mengubah bentuk respons kompatibilitas.
       parameters:
         - $ref: "#/components/parameters/MerchantIDHeader"
         - name: awb
@@ -3916,7 +3916,7 @@ components:
         provider_code:
           type: string
           enum: [rajaongkir, biteship]
-          description: Biteship hanya digunakan untuk fallback tracking.
+          description: Biteship hanya digunakan sebagai fallback internal tarif dan tracking Emisell Kurir.
         credential_alias:
           type: string
         display_key:
@@ -4029,7 +4029,7 @@ components:
         provider_code:
           type: string
           enum: [rajaongkir, biteship]
-          description: Biteship hanya digunakan untuk fallback tracking.
+          description: Biteship hanya digunakan sebagai fallback internal tarif dan tracking Emisell Kurir.
         api_key:
           type: string
           minLength: 8

@@ -1,110 +1,121 @@
-# Biteship sebagai fallback tracking
+# Biteship sebagai fallback Emisell Kurir
 
-Biteship di API Kurir hanya dipakai untuk melacak resi kurir yang belum
-tersedia pada adapter tracking RajaOngkir. Integrasi ini **tidak** dipakai
-untuk cek ongkir, sinkronisasi katalog kurir, rate card, atau pengiriman
-instan.
+Biteship adalah provider internal kedua di balik extension **Emisell Kurir**.
+Seller tetap melihat satu provider bernama Emisell Kurir; pemilihan provider
+upstream dilakukan API Kurir.
 
-## Alur pemilihan provider
+```text
+Emisell Kurir -> RajaOngkir (utama) -> Biteship (fallback)
+RajaOngkir BYOK seller -------------> RajaOngkir seller saja
+```
 
-1. API Kurir mencari snapshot tracking yang masih dapat digunakan.
-2. Jika perlu mengambil data provider, router memilih adapter berdasarkan kode
-   kurir.
-3. Kurir bawaan RajaOngkir tetap memakai RajaOngkir.
-4. `sicepat`, `ide`, `rpx`, dan `sentral`
-   memakai Biteship.
-5. Jika suatu kurir sengaja didaftarkan pada kedua adapter, Biteship hanya
-   dicoba saat provider pertama tidak memiliki data, sedang tidak tersedia,
-   atau timeout. Error credential, rate limit, dan kuota tidak dibypass.
+Biteship tidak ditampilkan sebagai extension seller, tidak menangani booking,
+dan tidak mencakup Grab, GoSend, Borzo, atau kurir instan lain.
 
-Daftar fallback dapat diubah melalui:
+## Kebijakan fallback
+
+| Kondisi | RajaOngkir utama | Biteship fallback |
+|---|---:|---:|
+| Quote/tracking berhasil | Dipakai | Tidak dipanggil |
+| Kurir atau rute tidak tersedia | Dicoba | Dicoba setelah gagal |
+| Timeout/provider unavailable | Dicoba | Dicoba setelah gagal |
+| Kuota/rate limit/key platform bermasalah | Dicoba | Dicoba setelah gagal |
+| Seller mengaktifkan RajaOngkir BYOK | Dipakai | Dilarang |
+| Emisell Kurir tidak aktif | Tidak dipanggil | Tidak dipanggil |
+
+Fallback dilakukan berurutan, bukan paralel. Untuk cek ongkir multi-kurir,
+Biteship hanya menerima kode kurir yang belum mempunyai hasil dari RajaOngkir.
+Ini mencegah dua hit untuk kurir yang sudah berhasil dijawab provider utama.
+
+## Fallback cek ongkir
+
+API Kurir memakai endpoint Biteship `POST /v1/rates/couriers`. Lokasi lokal
+tidak diinput manual:
+
+1. API Kurir mencari mapping `location_public_id -> Biteship area_id` lokal.
+2. Saat mapping belum ada, API Kurir mencari area lewat Maps API.
+3. Hasil hanya diterima bila provinsi, kota/kabupaten, kecamatan, dan kode pos
+   cocok dengan master wilayah lokal.
+4. Mapping disimpan sehingga request berikutnya tidak mengulang Maps API.
+5. Quote disimpan sebagai snapshot platform `provider_code=biteship`, terpisah
+   dari snapshot RajaOngkir dan dapat dipakai ulang lintas merchant Emisell.
+
+Kurir fallback tarif yang telah dipetakan adalah AnterAja, IDExpress, JNE,
+J&T, Lion Parcel, Ninja, POS Indonesia, RPX, SAPX, Sentral Cargo, SiCepat,
+TIKI, dan Wahana. Hanya service alias yang telah ditinjau yang dikirim ke
+Emisell, dan hasilnya dibatasi ke empat group:
+
+- `regular`
+- `next_day`
+- `economy`
+- `cargo`
+
+Same day, express non-next-day, international, special, dan instant diabaikan.
+Respons Main Service tidak berubah; `source_provider=biteship` hanya menjadi
+metadata audit internal pada snapshot/rate result API Kurir.
+
+## Fallback tracking
+
+Router tracking menyatukan coverage RajaOngkir dengan daftar Biteship. Karena
+kurir yang sama boleh ada di kedua adapter, RajaOngkir selalu dicoba lebih
+dahulu dan Biteship baru dipanggil jika hasil utama tidak tersedia. Daftar
+tambahan default:
 
 ```dotenv
 BITESHIP_TRACKING_COURIERS=ide,rpx,sentral,sicepat
 ```
 
-Startup akan ditolak bila daftar ini tumpang tindih dengan
-`RAJAONGKIR_TRACKING_COURIERS`. Guard tersebut memastikan Biteship hanya
-menangani celah tracking dan tidak menggantikan kurir yang sudah dicakup
-RajaOngkir.
+API dan worker menggunakan aturan yang sama. Status Biteship dinormalisasi
+menjadi `pending_pickup`, `picked_up`, `in_transit`, `out_for_delivery`,
+`delivered`, `returned`, atau `cancelled` sebelum snapshot/webhook dikirim ke
+Emisell.
 
-Grab dan GoSend sengaja ditolak dari daftar ini karena belum termasuk lingkup
-fallback tracking reguler.
+## Konfigurasi
 
-Halaman Cek Resi membaca `supports_tracking` dan `tracking_provider_code` dari
-katalog API Kurir. Paxel dicatat sebagai kurir **tracking-only** Biteship.
-AnterAja, IDExpress, RPX, Sentral Cargo, dan SiCepat tetap memakai RajaOngkir
-untuk cek ongkir, sedangkan cek resinya memakai Biteship fallback.
+Masuk ke **Kuota provider -> Tambah key platform**, pilih
+**Biteship - fallback Emisell Kurir**, lalu tempel token `biteship_live.*` atau
+`biteship_test.*`. Token diverifikasi melalui katalog resmi, dienkripsi, tidak
+ditampilkan kembali, dan dapat diganti tanpa restart.
 
-J&T Cargo tidak dimasukkan karena kode tersebut belum dapat diverifikasi pada
-katalog resmi Biteship yang ditinjau. Master tidak boleh menampilkan kurir
-berdasarkan asumsi.
-
-## Matriks provider
-
-| Fungsi | Provider | Kurir |
-|---|---|---|
-| Cek ongkir | RajaOngkir | 17 kode resmi RajaOngkir |
-| Cek resi utama | RajaOngkir | JNE, SAP, Ninja, J&T, TIKI, Wahana, POS, Lion |
-| Cek resi fallback | Biteship | AnterAja, IDExpress, Paxel, RPX, Sentral Cargo, SiCepat |
-
-Field katalog membedakan `rate_provider_code` dan
-`tracking_provider_code`. Karena itu Biteship tidak akan pernah dipilih oleh
-rate engine walaupun kurir tersebut memakai Biteship untuk tracking.
-
-## Menambahkan token
-
-Masuk ke **Kuota provider → Tambah key platform**, pilih
-**Biteship · tracking fallback**, lalu tempel token `biteship_live.*` atau
-`biteship_test.*`. Token akan:
-
-- diverifikasi melalui katalog kurir Biteship, bukan endpoint tracking
-  berbayar;
-- dienkripsi dengan `PROVIDER_CREDENTIAL_ENCRYPTION_KEY`;
-- tidak pernah ditampilkan kembali;
-- dapat dinonaktifkan tanpa restart service.
-
-Token tidak disimpan di `.env` dan tidak boleh dikirim ke frontend seller.
-
-## Endpoint API Kurir
-
-Kontrak publik tidak berubah. Emisell tetap memanggil endpoint kompatibel
-RajaOngkir V2:
-
-```http
-POST /api/v1/track/waybill
-Content-Type: application/x-www-form-urlencoded
-key: <api-key-api-kurir>
-
-awb=nomor_resi&courier=sicepat
+```dotenv
+BITESHIP_BASE_URL=https://api.biteship.com/
+BITESHIP_TIMEOUT=5s
+BITESHIP_RATE_FALLBACK_ENABLED=true
+BITESHIP_RATE_SNAPSHOT_TTL=336h
+BITESHIP_TRACKING_COURIERS=ide,rpx,sentral,sicepat
 ```
 
-Respons endpoint kompatibilitas tetap 1:1 dengan envelope RajaOngkir V2 dan
-tidak menambahkan field provider baru. Sumber aktual dapat diaudit pada ledger
-provider dan pada respons tracking internal (`provider=biteship`). Status
-provider dinormalisasi menjadi `pending_pickup`, `picked_up`, `in_transit`,
-`out_for_delivery`, `delivered`, `returned`, atau `cancelled`.
+Menonaktifkan `BITESHIP_RATE_FALLBACK_ENABLED` hanya mematikan fallback tarif;
+tracking tetap mengikuti konfigurasi daftar kurir dan keberadaan credential.
+Token tidak boleh disimpan di frontend atau dikirim oleh Main Service.
 
 ## Efisiensi biaya
 
-Endpoint public tracking Biteship dikenakan biaya per hit. API Kurir mencatat
-hit pada ledger lokal dan menyimpan snapshot hasil:
+Tarif dan tracking memakai snapshot PostgreSQL. Request yang cocok dan masih
+fresh dibaca dari database tanpa memanggil provider. Mapping area Biteship juga
+disimpan permanen sampai operator melakukan remapping.
 
-| Kondisi | Refresh paling cepat |
-|---|---:|
-| Sedang diantar | 2 jam |
-| Dalam perjalanan / sudah dipickup | 12 jam |
-| Status awal pertama | 12 jam |
-| Status awal berikutnya | 24 jam |
-| Final (terkirim, retur, batal) | Tidak di-refresh otomatis |
+| Data | Kebijakan default |
+|---|---|
+| Tarif Biteship | Snapshot 14 hari |
+| Tracking sedang diantar | Refresh paling cepat 2 jam |
+| Tracking dalam perjalanan | Refresh paling cepat 12 jam |
+| Status final | Tidak di-refresh otomatis |
+| Batas siklus tracking | Maksimal 10 hit provider per AWB |
 
-Permintaan berulang sebelum `next_refresh_at` dilayani dari database dan tidak
-memanggil Biteship lagi. Polling berhenti ketika batas default 10 hit per AWB
-tercapai.
+Semua hit Maps, Rates, dan Tracking dicatat pada ledger Biteship agar biaya dan
+fallback dapat diaudit.
+
+## Kontrak API Emisell
+
+Tidak ada endpoint baru untuk Main Service. Endpoint cek ongkir dan tracking
+tetap memakai kontrak kompatibel RajaOngkir V2. Pemilihan upstream bersifat
+internal dan tidak menambah field wajib pada request Emisell.
 
 ## Referensi resmi
 
+- [Biteship Retrieve Rates](https://biteship.com/id/docs/api/rates/retrieve)
+- [Biteship Maps API](https://biteship.com/id/docs/api/maps/overview)
+- [Biteship Courier Catalog](https://biteship.com/id/docs/api/couriers/overview)
 - [Biteship Public Tracking](https://biteship.com/id/docs/api/trackings/status)
-- [Biteship Tracking Overview](https://biteship.com/id/docs/api/trackings/overview)
 - [Biteship Authentication](https://biteship.com/id/docs/api/authentication)
-- [Biaya mode testing Biteship](https://help.biteship.com/hc/id/articles/58286997471513-Kebijakan-Biaya-Mode-Testing)

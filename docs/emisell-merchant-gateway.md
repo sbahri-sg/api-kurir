@@ -72,7 +72,9 @@ tidak dapat mengakses `/api/v1/integrations/*` atau membawa konteks merchant.
 Merchant dapat memasang beberapa provider, tetapi maksimal satu provider
 shipping efektif aktif. Tenant baru berstatus nonaktif sampai seller memilih
 Emisell Kurir atau provider eksternal. Biteship tidak menjadi extension seller
-dan tetap digunakan sebagai fallback tracking internal.
+dan hanya bekerja di balik Emisell Kurir. RajaOngkir tetap provider utama,
+sedangkan Biteship menangani fallback cek ongkir dan tracking. Integrasi
+RajaOngkir BYOK tidak pernah memakai credential atau saldo Biteship platform.
 
 ## Endpoint utama
 

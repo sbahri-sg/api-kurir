@@ -70,7 +70,7 @@ dipublikasikan.
 - [Dashboard admin, tracking, dan manajemen webhook](admin-dashboard-and-tracking.md)
 - [Operasional adapter tracking RajaOngkir](rajaongkir-tracking.md)
 - [Checkpoint tracking hemat dan webhook Emisell](tracking-checkpoint-and-webhooks.md)
-- [Biteship sebagai fallback tracking](biteship-tracking-fallback.md)
+- [Biteship sebagai fallback Emisell Kurir](biteship-tracking-fallback.md)
 - [Operasional, kuota, dan compliance](operations-and-compliance.md)
 - [Stack teknologi dan concurrency](technology-stack.md)
 - [Register sumber resmi](source-register.md)

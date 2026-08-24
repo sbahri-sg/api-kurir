@@ -116,7 +116,7 @@ func (r *PostgresRepository) FindByPublicID(
 	err := r.pool.QueryRow(ctx, `
 		SELECT
 			location.public_id,
-			location.compatibility_id,
+			coalesce(location.compatibility_id, 0),
 			coalesce(parent.public_id, ''),
 			location.level,
 			coalesce(location.province, ''),

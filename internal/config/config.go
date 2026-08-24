@@ -49,9 +49,11 @@ type RajaOngkirConfig struct {
 }
 
 type BiteshipConfig struct {
-	BaseURL          string
-	Timeout          time.Duration
-	TrackingCouriers []string
+	BaseURL             string
+	Timeout             time.Duration
+	TrackingCouriers    []string
+	RateFallbackEnabled bool
+	RateSnapshotTTL     time.Duration
 }
 
 type TrackingConfig struct {
@@ -125,6 +127,20 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	biteshipRateFallbackEnabled, err := boolEnv(
+		"BITESHIP_RATE_FALLBACK_ENABLED",
+		true,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	biteshipRateSnapshotTTL, err := durationEnv(
+		"BITESHIP_RATE_SNAPSHOT_TTL",
+		14*24*time.Hour,
+	)
+	if err != nil {
+		return Config{}, err
+	}
 	trackingEnabled, err := boolEnv("TRACKING_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -192,8 +208,10 @@ func Load() (Config, error) {
 			MinRequestInterval: rajaOngkirMinRequestInterval,
 		},
 		Biteship: BiteshipConfig{
-			BaseURL: envOr("BITESHIP_BASE_URL", "https://api.biteship.com/"),
-			Timeout: biteshipTimeout,
+			BaseURL:             envOr("BITESHIP_BASE_URL", "https://api.biteship.com/"),
+			Timeout:             biteshipTimeout,
+			RateFallbackEnabled: biteshipRateFallbackEnabled,
+			RateSnapshotTTL:     biteshipRateSnapshotTTL,
 			TrackingCouriers: splitCSV(envOr(
 				"BITESHIP_TRACKING_COURIERS",
 				"ide,rpx,sentral,sicepat",
@@ -255,8 +273,8 @@ func Load() (Config, error) {
 			"RajaOngkir timeout/snapshot TTL must be positive and request interval at least 10ms",
 		)
 	}
-	if cfg.Biteship.Timeout <= 0 {
-		return Config{}, errors.New("BITESHIP_TIMEOUT must be positive")
+	if cfg.Biteship.Timeout <= 0 || cfg.Biteship.RateSnapshotTTL <= 0 {
+		return Config{}, errors.New("Biteship timeout and rate snapshot TTL must be positive")
 	}
 	if cfg.MerchantShipping.MaxSelectedCouriers < 1 ||
 		cfg.MerchantShipping.MaxSelectedCouriers > 50 {
@@ -265,15 +283,6 @@ func Load() (Config, error) {
 	if cfg.MerchantShipping.MaxSelectedServices < 1 ||
 		cfg.MerchantShipping.MaxSelectedServices > 200 {
 		return Config{}, errors.New("MERCHANT_SHIPPING_MAX_SERVICES must be between 1 and 200")
-	}
-	if overlap := overlappingValues(
-		cfg.RajaOngkir.TrackingCouriers,
-		cfg.Biteship.TrackingCouriers,
-	); len(overlap) > 0 {
-		return Config{}, fmt.Errorf(
-			"BITESHIP_TRACKING_COURIERS must only contain RajaOngkir tracking gaps; overlap: %s",
-			strings.Join(overlap, ","),
-		)
 	}
 	if cfg.Tracking.Enabled && cfg.Tracking.EncryptionKey == "" {
 		return Config{}, errors.New("TRACKING_ENCRYPTION_KEY is required when TRACKING_ENABLED=true")
@@ -309,30 +318,6 @@ func Load() (Config, error) {
 		return Config{}, errors.New("TRACKING_WEBHOOK_CONCURRENCY must be between 1 and 32")
 	}
 	return cfg, nil
-}
-
-func overlappingValues(left, right []string) []string {
-	leftValues := make(map[string]struct{}, len(left))
-	for _, value := range left {
-		value = strings.ToLower(strings.TrimSpace(value))
-		if value != "" {
-			leftValues[value] = struct{}{}
-		}
-	}
-	seen := make(map[string]struct{})
-	result := make([]string, 0)
-	for _, value := range right {
-		value = strings.ToLower(strings.TrimSpace(value))
-		if _, exists := leftValues[value]; !exists || value == "" {
-			continue
-		}
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
 }
 
 func envOr(key, fallback string) string {

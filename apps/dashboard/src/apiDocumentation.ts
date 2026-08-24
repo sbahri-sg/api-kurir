@@ -1073,7 +1073,7 @@ key: {{api_key}}`,
     path: "/v1/admin/provider-credentials",
     title: "Tambah key provider",
     description:
-      "Memvalidasi key ke RajaOngkir atau Biteship, mengenkripsinya, dan langsung mengaktifkannya tanpa restart. Biteship hanya digunakan untuk fallback tracking.",
+      "Memvalidasi key ke RajaOngkir atau Biteship, mengenkripsinya, dan langsung mengaktifkannya tanpa restart. Biteship menjadi fallback internal cek ongkir dan resi khusus Emisell Kurir.",
     authentication: "Bearer admin API key",
     parameters: [
       "provider_code — rajaongkir atau biteship",
@@ -1102,9 +1102,9 @@ key: {{api_key}}`,
     scope: "admin",
     method: "POST",
     path: "/v1/admin/provider-credentials",
-    title: "Tambah token fallback Biteship",
+    title: "Tambah token fallback Emisell Kurir",
     description:
-      "Menyimpan token Biteship terenkripsi untuk tracking kurir fallback seperti SiCepat. Token tidak digunakan untuk cek ongkir atau sinkronisasi katalog.",
+      "Menyimpan token Biteship terenkripsi untuk fallback cek ongkir dan resi di balik Emisell Kurir. Token platform tidak dipakai oleh integrasi RajaOngkir BYOK seller.",
     authentication: "Bearer admin API key",
     parameters: [
       "provider_code — biteship",

@@ -1,6 +1,7 @@
 package biteship
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -41,16 +42,45 @@ func NewClient(baseURL, token string, timeout time.Duration) *Client {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, result any) error {
+	return c.doJSONBody(ctx, method, path, nil, result)
+}
+
+func (c *Client) doJSONBody(
+	ctx context.Context,
+	method, path string,
+	payload any,
+	result any,
+) error {
 	endpoint, err := url.JoinPath(c.baseURL, path)
 	if err != nil {
 		return fmt.Errorf("build Biteship URL: %w", err)
 	}
-	request, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
+	return c.doJSONEndpoint(ctx, method, endpoint, payload, result)
+}
+
+func (c *Client) doJSONEndpoint(
+	ctx context.Context,
+	method, endpoint string,
+	payload any,
+	result any,
+) error {
+	var body io.Reader
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("encode Biteship request: %w", err)
+		}
+		body = bytes.NewReader(encoded)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
 		return fmt.Errorf("create Biteship request: %w", err)
 	}
 	request.Header.Set("Authorization", c.token)
 	request.Header.Set("Accept", "application/json")
+	if payload != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
 
 	response, err := c.http.Do(request)
 	if err != nil {

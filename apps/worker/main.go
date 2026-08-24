@@ -63,12 +63,13 @@ func main() {
 				DailyLimit:      cfg.RajaOngkir.DailyLimit,
 			}
 		}
+		merchantProviderService := merchantproviders.NewService(
+			merchantproviders.NewPostgresRepository(pool),
+		)
 		providerResolver := providercredentials.NewStaticFallbackResolver(
 			providerCredentialService,
 			fallbacks,
-			merchantproviders.NewService(
-				merchantproviders.NewPostgresRepository(pool),
-			),
+			merchantProviderService,
 		)
 		providerRepository := rates.NewPostgresRepository(pool)
 		rajaOngkirTrackingAdapter := rajaongkir.NewDynamicTrackingAdapter(
@@ -86,9 +87,13 @@ func main() {
 			cfg.Biteship.Timeout,
 			providerRepository,
 			providerRepository,
-			cfg.Biteship.TrackingCouriers,
+			biteship.EmisellTrackingFallbackCouriers(
+				cfg.RajaOngkir.TrackingCouriers,
+				cfg.Biteship.TrackingCouriers,
+			),
 		)
-		fallbackTrackingAdapter := tracking.NewFallbackAdapter(
+		fallbackTrackingAdapter := tracking.NewPolicyFallbackAdapter(
+			merchantProviderService,
 			rajaOngkirTrackingAdapter,
 			biteshipTrackingAdapter,
 		)
@@ -96,7 +101,7 @@ func main() {
 		logger.Info(
 			"dynamic tracking credential resolver enabled",
 			"rajaongkir_couriers", len(cfg.RajaOngkir.TrackingCouriers),
-			"biteship_fallback_couriers", len(cfg.Biteship.TrackingCouriers),
+			"biteship_fallback_couriers", len(biteshipTrackingAdapter.CourierCodes()),
 		)
 		trackingRepository := tracking.NewPostgresRepository(pool)
 		migratedWaybills, err := trackingRepository.MigrateLegacyWaybills(

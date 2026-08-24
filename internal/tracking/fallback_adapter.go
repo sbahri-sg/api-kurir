@@ -7,14 +7,33 @@ import (
 )
 
 // FallbackAdapter routes a courier to the first supporting adapter. A second
-// provider is contacted only when the primary cannot answer the tracking
-// request, never when its credential or quota is invalid.
+// provider is contacted only when the primary cannot answer the request. Paid
+// platform failover for credential/quota errors requires an explicit policy.
 type FallbackAdapter struct {
 	adapters     []Adapter
 	courierCodes []string
+	policy       ProviderFallbackPolicy
+}
+
+type ProviderFallbackPolicy interface {
+	AllowsProviderFallback(ctx context.Context) (bool, error)
 }
 
 func NewFallbackAdapter(adapters ...Adapter) *FallbackAdapter {
+	return newFallbackAdapter(nil, adapters...)
+}
+
+func NewPolicyFallbackAdapter(
+	policy ProviderFallbackPolicy,
+	adapters ...Adapter,
+) *FallbackAdapter {
+	return newFallbackAdapter(policy, adapters...)
+}
+
+func newFallbackAdapter(
+	policy ProviderFallbackPolicy,
+	adapters ...Adapter,
+) *FallbackAdapter {
 	filtered := make([]Adapter, 0, len(adapters))
 	seen := make(map[string]struct{})
 	courierCodes := make([]string, 0)
@@ -35,7 +54,9 @@ func NewFallbackAdapter(adapters ...Adapter) *FallbackAdapter {
 			courierCodes = append(courierCodes, code)
 		}
 	}
-	return &FallbackAdapter{adapters: filtered, courierCodes: courierCodes}
+	return &FallbackAdapter{
+		adapters: filtered, courierCodes: courierCodes, policy: policy,
+	}
 }
 
 func (a *FallbackAdapter) Code() string { return "fallback" }
@@ -48,9 +69,21 @@ func (a *FallbackAdapter) Track(ctx context.Context, request Request) (Result, e
 	courierCode := strings.ToLower(strings.TrimSpace(request.CourierCode))
 	matched := false
 	var lastErr error
-	for _, adapter := range a.adapters {
+	for index, adapter := range a.adapters {
 		if !adapterSupportsCourier(adapter, courierCode) {
 			continue
+		}
+		if index > 0 {
+			allowed, err := a.fallbackAllowed(ctx)
+			if err != nil {
+				return Result{}, err
+			}
+			if !allowed {
+				if lastErr != nil {
+					return Result{}, lastErr
+				}
+				return Result{}, ErrUnsupportedCourier
+			}
 		}
 		matched = true
 		result, err := adapter.Track(ctx, request)
@@ -61,6 +94,9 @@ func (a *FallbackAdapter) Track(ctx context.Context, request Request) (Result, e
 		if !allowsProviderFallback(err) {
 			return Result{}, err
 		}
+		if a.policy == nil && requiresPlatformFallbackAuthorization(err) {
+			return Result{}, err
+		}
 	}
 	if !matched {
 		return Result{}, ErrUnsupportedCourier
@@ -69,6 +105,20 @@ func (a *FallbackAdapter) Track(ctx context.Context, request Request) (Result, e
 		lastErr = ErrProviderUnavailable
 	}
 	return Result{}, lastErr
+}
+
+func requiresPlatformFallbackAuthorization(err error) bool {
+	return errors.Is(err, ErrProviderQuota) ||
+		errors.Is(err, ErrProviderRateLimited) ||
+		errors.Is(err, ErrProviderUnauthorized) ||
+		errors.Is(err, ErrPhoneSuffixRequired)
+}
+
+func (a *FallbackAdapter) fallbackAllowed(ctx context.Context) (bool, error) {
+	if a.policy == nil {
+		return true, nil
+	}
+	return a.policy.AllowsProviderFallback(ctx)
 }
 
 func adapterSupportsCourier(adapter Adapter, courierCode string) bool {
@@ -84,5 +134,9 @@ func allowsProviderFallback(err error) bool {
 	return errors.Is(err, ErrWaybillNotFound) ||
 		errors.Is(err, ErrProviderUnavailable) ||
 		errors.Is(err, ErrProviderTimeout) ||
-		errors.Is(err, ErrAdapterUnavailable)
+		errors.Is(err, ErrAdapterUnavailable) ||
+		errors.Is(err, ErrProviderQuota) ||
+		errors.Is(err, ErrProviderRateLimited) ||
+		errors.Is(err, ErrProviderUnauthorized) ||
+		errors.Is(err, ErrPhoneSuffixRequired)
 }
