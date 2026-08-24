@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="96" viewBox="0 0 320 96" role="img" aria-labelledby="title description">
+  <title id="title">KiriminAja</title>
+  <desc id="description">Logo KiriminAja</desc>
+  <rect width="320" height="96" rx="20" fill="#ffffff"/>
+  <rect x="1" y="1" width="318" height="94" rx="19" fill="none" stroke="#e7dced" stroke-width="2"/>
+  <path d="M22 49 70 22 55 47l18 4-51 25 17-23z" fill="#782b90"/>
+  <text x="91" y="58" fill="#782b90" font-family="Arial, sans-serif" font-size="28" font-weight="700">kiriminaja</text>
+</svg>

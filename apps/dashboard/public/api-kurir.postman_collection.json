@@ -1088,6 +1088,14 @@
                   "  pm.response.to.have.status(200);",
                   "});",
                   "const payload = pm.response.json();",
+                  "pm.test('Metadata tampilan provider lengkap', function () {",
+                  "  pm.expect(payload.data.providers).to.be.an('array').that.is.not.empty;",
+                  "  payload.data.providers.forEach(function (provider) {",
+                  "    pm.expect(provider.available).to.eql(true);",
+                  "    pm.expect(provider.logo).to.match(/^https:\\/\\//);",
+                  "    pm.expect(provider.description).to.be.a('string').and.not.empty;",
+                  "  });",
+                  "});",
                   "if (payload.data) {",
                   "  pm.environment.set('shipping_provider_version', payload.data.version);",
                   "}"
@@ -1116,7 +1124,7 @@
                 "providers"
               ]
             },
-            "description": "Mengembalikan katalog dan maksimal satu provider efektif aktif. Merchant baru mengembalikan active_provider_code null."
+            "description": "Mengembalikan hanya provider berstatus tersedia, lengkap dengan logo/deskripsi dan maksimal satu provider efektif aktif. Provider yang dimatikan admin otomatis tidak muncul di dashboard Emisell."
           },
           "response": []
         },
@@ -1637,6 +1645,103 @@
                 }
               ]
             }
+          },
+          "response": []
+        },
+        {
+          "name": "List Shipping Providers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/admin/shipping-providers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "shipping-providers"
+              ]
+            },
+            "description": "Daftar provider gateway beserta status ketersediaan, jumlah merchant aktif, dan jumlah credential."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Shipping Provider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"vendor_baru\",\n  \"name\": \"Vendor Baru\",\n  \"logo\": \"https://cdn.example.com/vendor-baru.svg\",\n  \"description\": \"Provider eksternal yang sedang menjalani proses integrasi.\",\n  \"display_order\": 90\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/shipping-providers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "shipping-providers"
+              ]
+            },
+            "description": "Mendaftarkan provider eksternal dalam kondisi belum tersedia. Adapter dan credential harus selesai diuji sebelum provider diaktifkan."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Shipping Provider",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Admin-Actor",
+                "value": "postman"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Vendor Baru\",\n  \"logo\": \"https://cdn.example.com/vendor-baru.svg\",\n  \"description\": \"Provider eksternal yang adapter dan credential-nya telah lulus pengujian.\",\n  \"available\": true,\n  \"display_order\": 90\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/admin/shipping-providers/vendor_baru",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "shipping-providers",
+                "vendor_baru"
+              ]
+            },
+            "description": "Memperbarui identitas, urutan, dan status ketersediaan provider. Provider yang masih dipakai merchant aktif tidak dapat dinonaktifkan."
           },
           "response": []
         },

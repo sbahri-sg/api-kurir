@@ -468,6 +468,10 @@ rate bertenant mengembalikan `SHIPPING_DISABLED`. Detail state, optimistic
 concurrency, dan lifecycle credential dijelaskan pada
 [`merchant-shipping-providers.md`](merchant-shipping-providers.md).
 
+Setiap item katalog provider membawa `logo` berupa URL HTTPS permanen dan
+`description` berupa teks biasa. Metadata presentasi tersebut dikelola satu kali
+di master API Kurir dan tidak diduplikasiasikan per merchant.
+
 Request bertenant dapat mengatur layanan yang boleh muncul melalui
 `GET/PUT /api/v1/integrations/shipping-services`. Rate engine menormalisasi kode
 mentah provider ke canonical service terlebih dahulu, lalu menerapkan pilihan

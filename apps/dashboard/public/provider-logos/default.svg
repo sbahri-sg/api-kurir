@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="96" viewBox="0 0 320 96" role="img" aria-labelledby="title description">
+  <title id="title">Provider pengiriman</title>
+  <desc id="description">Logo standar provider pengiriman API Kurir</desc>
+  <rect width="320" height="96" rx="20" fill="#eef4f0"/>
+  <rect x="22" y="27" width="62" height="43" rx="8" fill="#174b3c"/>
+  <path d="M84 38h27l17 17v15H84z" fill="#2f735f"/>
+  <circle cx="45" cy="72" r="8" fill="#bce9d5" stroke="#174b3c" stroke-width="4"/>
+  <circle cx="105" cy="72" r="8" fill="#bce9d5" stroke="#174b3c" stroke-width="4"/>
+  <text x="147" y="57" fill="#174b3c" font-family="Arial, sans-serif" font-size="23" font-weight="700">API Kurir</text>
+</svg>

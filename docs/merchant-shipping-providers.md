@@ -19,7 +19,13 @@ Emisell dan API Kurir.
 |---|---|
 | `installed=true` | Provider siap dipilih; provider eksternal mempunyai key aktif dan valid. |
 | `active=true` | Provider menjadi jalur shipping efektif merchant. Maksimal satu yang aktif. |
-| `available=false` | Provider ada di katalog, tetapi adapter production belum siap. |
+| `available=true` | Provider siap dan dikirim pada katalog yang dibaca dashboard seller. |
+
+Provider berstatus `available=false` hanya terlihat pada dashboard admin API
+Kurir. Provider tersebut tidak dikirim oleh `GET /api/v1/integrations/providers`,
+sehingga otomatis hilang dari daftar extension di dashboard Emisell.
+Response katalog memakai `Cache-Control: no-store`, sehingga Main Service harus
+mengambil ulang daftar ketika halaman pengaturan shipping dibuka atau dimuat ulang.
 
 ## Autentikasi
 
@@ -73,12 +79,16 @@ GET /api/v1/integrations/providers
       {
         "code": "emisell",
         "name": "Emisell Kurir",
+        "logo": "https://api-kurir.emisell.com/provider-logos/emisell.svg",
+        "description": "Layanan pengiriman bawaan Emisell dengan tarif dan pelacakan terpusat tanpa API key provider dari seller.",
         "installed": true,
         "active": false
       },
       {
         "code": "rajaongkir",
         "name": "RajaOngkir",
+        "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
+        "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
         "installed": true,
         "active": false
       }
@@ -86,6 +96,30 @@ GET /api/v1/integrations/providers
   }
 }
 ```
+
+`logo` selalu berupa URL HTTPS permanen yang dapat langsung dipakai sebagai
+`src` gambar oleh dashboard Emisell. `description` adalah teks biasa tanpa HTML.
+Metadata ini berasal dari master provider API Kurir, bukan disimpan ulang per
+merchant. Seluruh item pada response ini selalu mempunyai `available=true`.
+
+## Pengelolaan master provider
+
+Operator mengelola provider dari menu **Integrasi Provider → Provider** atau
+melalui endpoint admin berikut:
+
+| Method | Endpoint | Fungsi |
+|---|---|---|
+| `GET` | `/v1/admin/shipping-providers` | Membaca metadata dan penggunaan provider. |
+| `POST` | `/v1/admin/shipping-providers` | Mendaftarkan provider eksternal baru. |
+| `PUT` | `/v1/admin/shipping-providers/{provider_code}` | Mengubah presentasi, urutan, dan status kesiapan. |
+
+Provider baru selalu dibuat `built_in=false`, `requires_credential=true`, dan
+`available=false`. Operator baru mengaktifkan `available` setelah adapter serta
+alur validasi credential selesai diuji. Kode provider dan model credential
+tidak dapat diedit setelah provider dibuat. Provider yang masih dipakai merchant
+aktif tidak dapat dinonaktifkan langsung. Setelah provider tanpa merchant aktif
+dibuat `available=false`, provider langsung hilang dari katalog Emisell tetapi
+tetap tersedia pada menu admin agar dapat diaktifkan kembali.
 
 ## Mengaktifkan provider
 

@@ -200,6 +200,8 @@ func catalogWithQuerier(
 		SELECT
 			provider.code,
 			provider.name,
+			provider.logo_url,
+			provider.description,
 			provider.built_in,
 			provider.requires_credential,
 			provider.available,
@@ -217,6 +219,7 @@ func catalogWithQuerier(
 		FROM shipping_integration_providers provider
 		LEFT JOIN tenant_active_shipping_providers selection
 		  ON selection.tenant_id = $1
+		WHERE provider.available
 		ORDER BY provider.display_order, provider.name
 	`, tenantID)
 	if err != nil {
@@ -230,6 +233,8 @@ func catalogWithQuerier(
 		if err := rows.Scan(
 			&item.Code,
 			&item.Name,
+			&item.Logo,
+			&item.Description,
 			&item.BuiltIn,
 			&item.RequiresCredential,
 			&item.Available,

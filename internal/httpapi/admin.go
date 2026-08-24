@@ -438,6 +438,14 @@ func writeAdminRepositoryError(c *echo.Context, err error) error {
 			"Referensi data admin tidak ditemukan atau tidak aktif.",
 			nil,
 		)
+	case errors.Is(err, admin.ErrResourceInUse):
+		return writeError(
+			c,
+			http.StatusConflict,
+			"ADMIN_RESOURCE_IN_USE",
+			"Provider masih digunakan merchant aktif dan belum dapat dinonaktifkan.",
+			nil,
+		)
 	case errors.Is(err, admin.ErrConflict):
 		return writeError(
 			c,

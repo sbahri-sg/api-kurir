@@ -62,7 +62,10 @@ tidak dapat mengakses `/api/v1/integrations/*` atau membawa konteks merchant.
    dikembalikan.
 4. Satu merchant hanya mempunyai satu credential aktif per provider. Key baru
    menggantikan key lama secara atomik.
-5. Main Service membaca `GET /api/v1/integrations/providers`.
+5. Main Service membaca `GET /api/v1/integrations/providers`; `logo` dan
+   `description` pada setiap item dapat langsung dipakai untuk listing extension.
+   Endpoint hanya mengirim provider berstatus tersedia; provider yang dimatikan
+   operator otomatis hilang dari daftar dashboard seller.
 6. Aktivasi dilakukan dengan provider code dan `expected_version`; API Kurir
    memilih credential aktif secara otomatis.
 

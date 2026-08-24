@@ -1272,6 +1272,88 @@ key: {{api_key}}`,
 }`,
   },
   {
+    contract: "admin",
+    scope: "admin",
+    method: "GET",
+    path: "/v1/admin/shipping-providers",
+    title: "Master provider integrasi",
+    description:
+      "Membaca provider yang dapat ditampilkan pada extension Emisell beserta logo, deskripsi, status kesiapan, jumlah credential, instalasi, dan merchant aktif.",
+    authentication: "Bearer admin API key",
+    request: `GET {{base_url}}/v1/admin/shipping-providers
+Authorization: Bearer {{admin_api_key}}`,
+    response: `{
+  "data": [
+    {
+      "code": "rajaongkir",
+      "name": "RajaOngkir",
+      "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
+      "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
+      "built_in": false,
+      "requires_credential": true,
+      "available": true,
+      "display_order": 20,
+      "installed_merchant_count": 12,
+      "active_merchant_count": 8,
+      "credential_count": 14
+    }
+  ],
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "POST",
+    path: "/v1/admin/shipping-providers",
+    title: "Tambah provider integrasi",
+    description:
+      "Menambahkan provider eksternal baru. Provider otomatis membutuhkan credential seller dan berstatus belum tersedia sampai adapter selesai diuji.",
+    authentication: "Bearer admin API key + X-Admin-Actor",
+    parameters: [
+      "code — kode permanen provider, huruf kecil tanpa spasi",
+      "logo — URL HTTPS publik permanen",
+      "display_order — urutan 1–9999",
+    ],
+    request: `POST {{base_url}}/v1/admin/shipping-providers
+Authorization: Bearer {{admin_api_key}}
+X-Admin-Actor: emisell
+Content-Type: application/json
+
+{
+  "code": "mengantar",
+  "name": "Mengantar",
+  "logo": "https://api-kurir.emisell.com/provider-logos/default.svg",
+  "description": "Integrasi provider Mengantar untuk merchant Emisell.",
+  "display_order": 40
+}`,
+    response: `HTTP 201 · provider dibuat dengan available=false, built_in=false, dan requires_credential=true.`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "PUT",
+    path: "/v1/admin/shipping-providers/{provider_code}",
+    title: "Perbarui provider integrasi",
+    description:
+      "Mengubah nama, logo, deskripsi, urutan, dan kesiapan provider. Kode serta model credential dikunci; provider yang masih dipakai merchant tidak dapat dibuat unavailable.",
+    authentication: "Bearer admin API key + X-Admin-Actor",
+    parameters: ["provider_code — kode permanen dari master provider"],
+    request: `PUT {{base_url}}/v1/admin/shipping-providers/mengantar
+Authorization: Bearer {{admin_api_key}}
+X-Admin-Actor: emisell
+Content-Type: application/json
+
+{
+  "name": "Mengantar",
+  "logo": "https://api-kurir.emisell.com/provider-logos/default.svg",
+  "description": "Integrasi provider Mengantar yang telah lolos pengujian adapter.",
+  "available": true,
+  "display_order": 40
+}`,
+    response: `HTTP 200 · object provider terbaru beserta jumlah merchant dan credential.`,
+  },
+  {
     scope: "admin",
     method: "GET",
     path: "/v1/admin/tracking-webhook",
@@ -1705,7 +1787,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers",
     title: "Katalog provider dan extension aktif",
     description:
-      "Menampilkan Emisell Kurir sebagai provider bawaan, provider eksternal yang telah memiliki credential valid, dan provider efektif merchant. Merchant baru berstatus nonaktif sampai seller memilih provider.",
+      "Menampilkan hanya provider yang tersedia, metadata logo/deskripsi untuk listing extension, dan provider efektif merchant. Provider yang dimatikan admin otomatis tidak muncul di dashboard Emisell. Merchant baru berstatus nonaktif sampai seller memilih provider.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/providers
 key: {{api_key}}
@@ -1718,6 +1800,8 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
       {
         "code": "emisell",
         "name": "Emisell Kurir",
+        "logo": "https://api-kurir.emisell.com/provider-logos/emisell.svg",
+        "description": "Layanan pengiriman bawaan Emisell dengan tarif dan pelacakan terpusat tanpa API key provider dari seller.",
         "built_in": true,
         "requires_credential": false,
         "available": true,
@@ -1727,19 +1811,12 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
       {
         "code": "rajaongkir",
         "name": "RajaOngkir",
+        "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
+        "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
         "built_in": false,
         "requires_credential": true,
         "available": true,
         "installed": true,
-        "active": false
-      },
-      {
-        "code": "kiriminaja",
-        "name": "KiriminAja",
-        "built_in": false,
-        "requires_credential": true,
-        "available": false,
-        "installed": false,
         "active": false
       }
     ]
@@ -1773,9 +1850,19 @@ Content-Type: application/json
     "active_provider_code": "rajaongkir",
     "version": 1,
     "providers": [
-      { "code": "emisell", "active": false, "installed": true },
+      {
+        "code": "emisell",
+        "name": "Emisell Kurir",
+        "logo": "https://api-kurir.emisell.com/provider-logos/emisell.svg",
+        "description": "Layanan pengiriman bawaan Emisell dengan tarif dan pelacakan terpusat tanpa API key provider dari seller.",
+        "active": false,
+        "installed": true
+      },
       {
         "code": "rajaongkir",
+        "name": "RajaOngkir",
+        "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
+        "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
         "active": true,
         "installed": true
       }
@@ -1808,8 +1895,22 @@ Content-Type: application/json
     "active_provider_code": null,
     "version": 2,
     "providers": [
-      { "code": "emisell", "active": false, "installed": true },
-      { "code": "rajaongkir", "active": false, "installed": true }
+      {
+        "code": "emisell",
+        "name": "Emisell Kurir",
+        "logo": "https://api-kurir.emisell.com/provider-logos/emisell.svg",
+        "description": "Layanan pengiriman bawaan Emisell dengan tarif dan pelacakan terpusat tanpa API key provider dari seller.",
+        "active": false,
+        "installed": true
+      },
+      {
+        "code": "rajaongkir",
+        "name": "RajaOngkir",
+        "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
+        "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
+        "active": false,
+        "installed": true
+      }
     ]
   },
   "meta": { "request_id": "req_example" }

@@ -928,7 +928,9 @@ paths:
         Emisell Kurir selalu terpasang sebagai provider bawaan. Provider
         eksternal dianggap terpasang bila merchant mempunyai credential aktif
         dan valid. Maksimal satu provider efektif aktif; tenant tanpa konfigurasi
-        eksplisit tidak mempunyai provider aktif dan memakai version 0.
+        eksplisit tidak mempunyai provider aktif dan memakai version 0. Hanya
+        provider available yang dikirim; provider yang dinonaktifkan operator
+        otomatis hilang dari katalog dashboard seller.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1598,6 +1600,101 @@ paths:
                 $ref: "#/components/schemas/AdminObjectResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/shipping-providers:
+    get:
+      tags: [Admin]
+      operationId: adminListShippingProviders
+      summary: Membaca master provider integrasi
+      description: Mengembalikan metadata provider beserta jumlah credential, instalasi, dan merchant aktif.
+      security:
+        - adminBearerAuth: []
+      responses:
+        "200":
+          description: Master provider integrasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminShippingProviderListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Admin]
+      operationId: adminCreateShippingProvider
+      summary: Menambahkan provider integrasi baru
+      description: >
+        Provider eksternal baru selalu dibuat requires_credential=true dan
+        available=false sampai adapter selesai diuji oleh operator.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/AdminActor"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdminShippingProviderRequest"
+      responses:
+        "201":
+          description: Provider berhasil ditambahkan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminShippingProviderResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Kode provider sudah digunakan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/shipping-providers/{provider_code}:
+    put:
+      tags: [Admin]
+      operationId: adminUpdateShippingProvider
+      summary: Memperbarui metadata dan status provider
+      description: >
+        Kode, built_in, dan requires_credential tidak dapat diubah. Provider
+        yang masih dipakai merchant tidak dapat dibuat unavailable.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+        - $ref: "#/components/parameters/AdminActor"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdminShippingProviderRequest"
+      responses:
+        "200":
+          description: Provider berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminShippingProviderResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Provider tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Provider masih digunakan merchant aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /v1/admin/provider-credentials:
     get:
@@ -2389,6 +2486,8 @@ components:
       required:
         - code
         - name
+        - logo
+        - description
         - built_in
         - requires_credential
         - available
@@ -2400,13 +2499,25 @@ components:
           pattern: "^[a-z0-9_-]{2,48}$"
         name:
           type: string
+        logo:
+          type: string
+          format: uri
+          pattern: "^https://"
+          description: URL HTTPS permanen untuk logo provider yang dapat langsung dirender oleh Emisell.
+          examples: ["https://api-kurir.emisell.com/provider-logos/emisell.svg"]
+        description:
+          type: string
+          minLength: 10
+          maxLength: 500
+          description: Ringkasan provider untuk listing extension pengiriman.
         built_in:
           type: boolean
         requires_credential:
           type: boolean
         available:
           type: boolean
-          description: False berarti provider masih tercatat tetapi adapter belum siap dipakai.
+          const: true
+          description: Katalog merchant hanya berisi provider yang tersedia. Status false hanya terlihat melalui API admin.
         installed:
           type: boolean
           description: Provider bawaan selalu true; eksternal true jika mempunyai credential valid.
@@ -3578,6 +3689,133 @@ components:
           items:
             type: object
             additionalProperties: true
+
+    AdminShippingProvider:
+      type: object
+      required:
+        - code
+        - name
+        - logo
+        - description
+        - built_in
+        - requires_credential
+        - available
+        - display_order
+        - installed_merchant_count
+        - active_merchant_count
+        - credential_count
+        - created_at
+        - updated_at
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9_-]{2,48}$"
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        logo:
+          type: string
+          format: uri
+          pattern: "^https://"
+        description:
+          type: string
+          minLength: 10
+          maxLength: 500
+        built_in:
+          type: boolean
+        requires_credential:
+          type: boolean
+        available:
+          type: boolean
+        display_order:
+          type: integer
+          minimum: 1
+          maximum: 9999
+        installed_merchant_count:
+          type: integer
+          minimum: 0
+        active_merchant_count:
+          type: integer
+          minimum: 0
+        credential_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateAdminShippingProviderRequest:
+      type: object
+      additionalProperties: false
+      required: [code, name, logo, description, display_order]
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9_-]{2,48}$"
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        logo:
+          type: string
+          format: uri
+          pattern: "^https://"
+        description:
+          type: string
+          minLength: 10
+          maxLength: 500
+        display_order:
+          type: integer
+          minimum: 1
+          maximum: 9999
+
+    UpdateAdminShippingProviderRequest:
+      type: object
+      additionalProperties: false
+      required: [name, logo, description, available, display_order]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        logo:
+          type: string
+          format: uri
+          pattern: "^https://"
+        description:
+          type: string
+          minLength: 10
+          maxLength: 500
+        available:
+          type: boolean
+        display_order:
+          type: integer
+          minimum: 1
+          maximum: 9999
+
+    AdminShippingProviderResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/AdminShippingProvider"
+
+    AdminShippingProviderListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminShippingProvider"
 
     CustomerAPIKey:
       type: object

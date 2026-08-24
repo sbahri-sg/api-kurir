@@ -23,6 +23,7 @@ func tenantShippingProviderCatalogHandler(
 		if err != nil {
 			return err
 		}
+		c.Response().Header().Set("Cache-Control", "no-store")
 		return c.JSON(http.StatusOK, adminResponse(c, result))
 	}
 }

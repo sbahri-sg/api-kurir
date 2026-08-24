@@ -15,6 +15,9 @@ import {
   type Overview,
   type ProviderCredential,
   type ProviderQuota,
+  type ShippingProvider,
+  type ShippingProviderCreateInput,
+  type ShippingProviderUpdateInput,
   type RateResult,
   type RateSnapshot,
   type TrackingShipment,
@@ -39,6 +42,7 @@ type Tab =
   | "couriers"
   | "rates"
   | "mappings"
+  | "providers"
   | "quota"
   | "api-keys"
   | "webhook"
@@ -82,6 +86,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Integrasi Provider",
     description: "Koneksi dan legacy",
     items: [
+      { value: "providers", label: "Provider" },
       { value: "quota", label: "Credential & Kuota" },
       {
         value: "rates",
@@ -302,6 +307,7 @@ export function App() {
   const [snapshots, setSnapshots] = useState<RateSnapshot[]>([]);
   const [mappings, setMappings] = useState<LocationMapping[]>([]);
   const [quotas, setQuotas] = useState<ProviderQuota[]>([]);
+  const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([]);
   const [providerCredentials, setProviderCredentials] = useState<
     ProviderCredential[]
   >([]);
@@ -344,6 +350,7 @@ export function App() {
           snapshotData,
           mappingsData,
           quotaData,
+          shippingProviderData,
           apiKeyData,
           providerCredentialData,
           webhookSettingsData,
@@ -354,6 +361,7 @@ export function App() {
             api.rateSnapshots("", signal),
             api.mappings("", "", signal),
             api.quotas(signal),
+            api.shippingProviders(signal),
             api.apiKeys(signal),
             api.providerCredentials(signal),
             api.webhookSettings(signal),
@@ -363,6 +371,7 @@ export function App() {
         setSnapshots(snapshotData);
         setMappings(mappingsData);
         setQuotas(quotaData);
+        setShippingProviders(shippingProviderData);
         setAPIKeys(apiKeyData);
         setProviderCredentials(providerCredentialData);
         setWebhookSettings(webhookSettingsData);
@@ -427,6 +436,7 @@ export function App() {
     setSnapshots([]);
     setMappings([]);
     setQuotas([]);
+    setShippingProviders([]);
     setAPIKeys([]);
     setProviderCredentials([]);
     setGeneratedAPIKey(null);
@@ -630,6 +640,7 @@ export function App() {
     couriers: "Ekspedisi & Service",
     rates: "Snapshot Tarif",
     mappings: "Mapping Lokasi Provider",
+    providers: "Provider",
     quota: "Credential & Kuota",
     "api-keys": "API Key",
     webhook: "Webhook",
@@ -955,6 +966,15 @@ export function App() {
           </>
         )}
 
+        {tab === "providers" && (
+          <ProviderManagement
+            api={api}
+            items={shippingProviders}
+            onChange={setShippingProviders}
+            onError={setError}
+          />
+        )}
+
         {tab === "quota" && (
           <>
             <section className="provider-key-hero">
@@ -1264,6 +1284,390 @@ export function App() {
         )}
       </section>
     </main>
+  );
+}
+
+type ProviderDraft = {
+  code: string;
+  name: string;
+  logo: string;
+  description: string;
+  available: boolean;
+  display_order: number;
+};
+
+const EMPTY_PROVIDER_DRAFT: ProviderDraft = {
+  code: "",
+  name: "",
+  logo: "https://api-kurir.emisell.com/provider-logos/default.svg",
+  description: "",
+  available: false,
+  display_order: 100,
+};
+
+function ProviderLogo({
+  source,
+  code,
+  alt,
+}: {
+  source: string;
+  code: string;
+  alt: string;
+}) {
+  const fallbackSources = [
+    source,
+    `/provider-logos/${code}.svg`,
+    "/provider-logos/default.svg",
+  ].filter((item, index, items) => item && items.indexOf(item) === index);
+  const [sourceIndex, setSourceIndex] = useState(0);
+
+  useEffect(() => setSourceIndex(0), [source, code]);
+
+  return (
+    <img
+      src={fallbackSources[sourceIndex]}
+      alt={alt}
+      onError={() =>
+        setSourceIndex((current) =>
+          Math.min(current + 1, fallbackSources.length - 1),
+        )
+      }
+    />
+  );
+}
+
+function ProviderManagement({
+  api,
+  items,
+  onChange,
+  onError,
+}: {
+  api: AdminApi;
+  items: ShippingProvider[];
+  onChange: (items: ShippingProvider[]) => void;
+  onError: (message: string) => void;
+}) {
+  const [draft, setDraft] = useState<ProviderDraft | null>(null);
+  const [editingCode, setEditingCode] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function openCreate() {
+    setEditingCode(null);
+    setDraft({ ...EMPTY_PROVIDER_DRAFT });
+  }
+
+  function openEdit(provider: ShippingProvider) {
+    setEditingCode(provider.code);
+    setDraft({
+      code: provider.code,
+      name: provider.name,
+      logo: provider.logo,
+      description: provider.description,
+      available: provider.available,
+      display_order: provider.display_order,
+    });
+  }
+
+  function closeEditor() {
+    if (saving) return;
+    setDraft(null);
+    setEditingCode(null);
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!draft) return;
+    setSaving(true);
+    onError("");
+    try {
+      if (editingCode) {
+        const input: ShippingProviderUpdateInput = {
+          name: draft.name.trim(),
+          logo: draft.logo.trim(),
+          description: draft.description.trim(),
+          available: draft.available,
+          display_order: draft.display_order,
+        };
+        await api.updateShippingProvider(editingCode, input);
+      } else {
+        const input: ShippingProviderCreateInput = {
+          code: draft.code.trim().toLowerCase(),
+          name: draft.name.trim(),
+          logo: draft.logo.trim(),
+          description: draft.description.trim(),
+          display_order: draft.display_order,
+        };
+        await api.createShippingProvider(input);
+      }
+      onChange(await api.shippingProviders());
+      setDraft(null);
+      setEditingCode(null);
+    } catch (saveError) {
+      onError(getErrorMessage(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const availableCount = items.filter((provider) => provider.available).length;
+  const activeMerchantCount = items.reduce(
+    (total, provider) => total + provider.active_merchant_count,
+    0,
+  );
+
+  return (
+    <>
+      <section className="provider-key-hero provider-management-hero">
+        <div>
+          <p className="eyebrow">MASTER INTEGRASI</p>
+          <h2>Provider terintegrasi</h2>
+          <p>
+            Kelola identitas provider yang tampil di extension Emisell. Provider
+            baru selalu dibuat belum tersedia sampai adapter dan credential-nya
+            siap diuji.
+          </p>
+        </div>
+        <button className="button button-primary" onClick={openCreate}>
+          Tambah provider
+        </button>
+      </section>
+
+      <section className="provider-management-summary">
+        <article>
+          <span>Total provider</span>
+          <strong>{formatNumber(items.length)}</strong>
+        </article>
+        <article>
+          <span>Siap digunakan</span>
+          <strong>{formatNumber(availableCount)}</strong>
+        </article>
+        <article>
+          <span>Merchant aktif</span>
+          <strong>{formatNumber(activeMerchantCount)}</strong>
+        </article>
+      </section>
+
+      <section className="panel panel-table provider-management-table">
+        <div className="panel-heading panel-padding">
+          <div>
+            <p className="eyebrow">KATALOG PROVIDER</p>
+            <h2>Provider yang masuk ke API Kurir</h2>
+          </div>
+          <span className="subtle">Kode dan model credential tidak dapat diubah</span>
+        </div>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Deskripsi</th>
+                <th>Status</th>
+                <th>Penggunaan</th>
+                <th>Urutan</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((provider) => (
+                <tr key={provider.code}>
+                  <td>
+                    <div className="provider-identity">
+                      <ProviderLogo
+                        source={provider.logo}
+                        code={provider.code}
+                        alt={`Logo ${provider.name}`}
+                      />
+                      <div>
+                        <strong>{provider.name}</strong>
+                        <small>{provider.code}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="provider-description-cell">
+                    {provider.description}
+                  </td>
+                  <td>
+                    <span
+                      className={`badge ${
+                        provider.available ? "badge-success" : "badge-warning"
+                      }`}
+                    >
+                      {provider.available ? "tersedia" : "belum tersedia"}
+                    </span>
+                    <small>
+                      {provider.built_in
+                        ? "Bawaan Emisell"
+                        : provider.requires_credential
+                          ? "Credential seller"
+                          : "Tanpa credential"}
+                    </small>
+                  </td>
+                  <td>
+                    <strong>
+                      {formatNumber(provider.active_merchant_count)} merchant aktif
+                    </strong>
+                    <small>
+                      {formatNumber(provider.installed_merchant_count)} terpasang ·{" "}
+                      {formatNumber(provider.credential_count)} credential
+                    </small>
+                  </td>
+                  <td>
+                    <strong>{provider.display_order}</strong>
+                    <small>Diperbarui {formatDate(provider.updated_at)}</small>
+                  </td>
+                  <td>
+                    <button
+                      className="table-action provider-edit-action"
+                      onClick={() => openEdit(provider)}
+                    >
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!items.length && (
+                <tr>
+                  <td colSpan={6} className="empty-state">
+                    Belum ada provider pada master integrasi.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {draft && (
+        <div className="modal-backdrop">
+          <section className="modal modal-wide provider-management-modal">
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">
+                  {editingCode ? "EDIT PROVIDER" : "TAMBAH PROVIDER"}
+                </p>
+                <h2>{editingCode ? draft.name : "Provider baru"}</h2>
+              </div>
+              <button onClick={closeEditor}>Tutup</button>
+            </div>
+            <form className="form-grid" onSubmit={submit}>
+              <label>
+                Kode provider
+                <input
+                  value={draft.code}
+                  disabled={Boolean(editingCode)}
+                  required
+                  minLength={2}
+                  maxLength={48}
+                  pattern="[a-z0-9_-]+"
+                  placeholder="mengantar"
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      code: event.target.value.toLowerCase().replace(/\s+/g, "-"),
+                    })
+                  }
+                />
+                <small>Huruf kecil, angka, tanda hubung, atau garis bawah.</small>
+              </label>
+              <label>
+                Urutan tampil
+                <input
+                  type="number"
+                  min={1}
+                  max={9999}
+                  required
+                  value={draft.display_order}
+                  onChange={(event) =>
+                    setDraft({ ...draft, display_order: Number(event.target.value) })
+                  }
+                />
+              </label>
+              <label className="span-two">
+                Nama provider
+                <input
+                  value={draft.name}
+                  required
+                  minLength={2}
+                  maxLength={100}
+                  placeholder="Mengantar"
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                />
+              </label>
+              <label className="span-two">
+                URL logo HTTPS
+                <input
+                  type="url"
+                  value={draft.logo}
+                  required
+                  placeholder="https://api-kurir.emisell.com/provider-logos/provider.svg"
+                  onChange={(event) => setDraft({ ...draft, logo: event.target.value })}
+                />
+              </label>
+              <label className="span-two">
+                Deskripsi
+                <textarea
+                  value={draft.description}
+                  required
+                  minLength={10}
+                  maxLength={500}
+                  rows={4}
+                  placeholder="Jelaskan fungsi provider untuk seller Emisell."
+                  onChange={(event) =>
+                    setDraft({ ...draft, description: event.target.value })
+                  }
+                />
+                <small>{draft.description.length}/500 karakter · teks tanpa HTML</small>
+              </label>
+              <div className="span-two provider-logo-preview">
+                <span>Preview logo</span>
+                <ProviderLogo
+                  source={draft.logo}
+                  code={draft.code || "default"}
+                  alt="Preview logo provider"
+                />
+              </div>
+              {editingCode ? (
+                <label className="span-two provider-availability-control">
+                  <input
+                    type="checkbox"
+                    checked={draft.available}
+                    onChange={(event) =>
+                      setDraft({ ...draft, available: event.target.checked })
+                    }
+                  />
+                  <span>
+                    <strong>Provider tersedia untuk aktivasi merchant</strong>
+                    <small>
+                      Aktifkan hanya setelah adapter dan validasi credential siap.
+                      Provider dengan merchant aktif tidak dapat dinonaktifkan langsung.
+                    </small>
+                  </span>
+                </label>
+              ) : (
+                <div className="span-two provider-key-note">
+                  Provider baru otomatis menggunakan credential seller dan dibuat
+                  berstatus belum tersedia. Setelah adapter siap, edit provider lalu
+                  aktifkan status tersedia.
+                </div>
+              )}
+              <div className="form-actions span-two">
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={closeEditor}
+                  disabled={saving}
+                >
+                  Batal
+                </button>
+                <button className="button button-primary" disabled={saving}>
+                  {saving ? "Menyimpan…" : editingCode ? "Simpan perubahan" : "Tambah provider"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+    </>
   );
 }
 

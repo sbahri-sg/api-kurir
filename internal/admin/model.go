@@ -193,6 +193,38 @@ type ProviderQuota struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+type ShippingProvider struct {
+	Code                   string    `json:"code"`
+	Name                   string    `json:"name"`
+	Logo                   string    `json:"logo"`
+	Description            string    `json:"description"`
+	BuiltIn                bool      `json:"built_in"`
+	RequiresCredential     bool      `json:"requires_credential"`
+	Available              bool      `json:"available"`
+	DisplayOrder           int       `json:"display_order"`
+	InstalledMerchantCount int64     `json:"installed_merchant_count"`
+	ActiveMerchantCount    int64     `json:"active_merchant_count"`
+	CredentialCount        int64     `json:"credential_count"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+}
+
+type ShippingProviderCreateInput struct {
+	Code         string
+	Name         string
+	Logo         string
+	Description  string
+	DisplayOrder int
+}
+
+type ShippingProviderUpdateInput struct {
+	Name         string
+	Logo         string
+	Description  string
+	Available    bool
+	DisplayOrder int
+}
+
 type Catalog struct {
 	Couriers         []CatalogCourier         `json:"couriers"`
 	RoundingProfiles []CatalogRoundingProfile `json:"rounding_profiles"`

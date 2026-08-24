@@ -6,8 +6,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("admin resource not found")
-	ErrConflict = errors.New("admin resource conflict")
+	ErrNotFound      = errors.New("admin resource not found")
+	ErrConflict      = errors.New("admin resource conflict")
+	ErrResourceInUse = errors.New("admin resource is still in use")
 )
 
 type Repository interface {
@@ -26,5 +27,19 @@ type Repository interface {
 		requestID string,
 	) (LocationMapping, error)
 	ListProviderQuotas(ctx context.Context, limit int) ([]ProviderQuota, error)
+	ListShippingProviders(ctx context.Context) ([]ShippingProvider, error)
+	CreateShippingProvider(
+		ctx context.Context,
+		input ShippingProviderCreateInput,
+		actorAlias string,
+		requestID string,
+	) (ShippingProvider, error)
+	UpdateShippingProvider(
+		ctx context.Context,
+		code string,
+		input ShippingProviderUpdateInput,
+		actorAlias string,
+		requestID string,
+	) (ShippingProvider, error)
 	Catalog(ctx context.Context) (Catalog, error)
 }

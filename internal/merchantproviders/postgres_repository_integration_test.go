@@ -71,6 +71,9 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 		if provider.Active {
 			t.Fatalf("new merchant has an active provider: %#v", provider)
 		}
+		if provider.Logo == "" || provider.Description == "" {
+			t.Fatalf("provider presentation metadata is incomplete: %#v", provider)
+		}
 	}
 
 	version := initial.Version
@@ -130,4 +133,72 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 	if fallback.ActiveProviderCode != nil || fallback.Version != 4 {
 		t.Fatalf("credential disable did not deactivate shipping safely: %#v", fallback)
 	}
+}
+
+func TestCatalogExcludesUnavailableProvidersIntegration(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	suffix := time.Now().UTC().UnixNano()
+	providerCode := fmt.Sprintf("hidden_%d", suffix)
+	tenantID := fmt.Sprintf("catalog_merchant_%d", suffix)
+	defer func() {
+		_, _ = pool.Exec(
+			context.Background(),
+			"DELETE FROM shipping_integration_providers WHERE code = $1",
+			providerCode,
+		)
+	}()
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO shipping_integration_providers (
+			code, name, logo_url, description, built_in,
+			requires_credential, available, display_order
+		)
+		VALUES ($1, 'Hidden Provider', 'https://example.com/provider.svg',
+			'Provider integration test yang belum tersedia.', false, true, false, 9999)
+	`, providerCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repository := NewPostgresRepository(pool)
+	hiddenCatalog, err := repository.Catalog(ctx, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range hiddenCatalog.Providers {
+		if provider.Code == providerCode {
+			t.Fatalf("unavailable provider leaked into merchant catalog: %#v", provider)
+		}
+	}
+
+	if _, err := pool.Exec(ctx, `
+		UPDATE shipping_integration_providers
+		SET available = true
+		WHERE code = $1
+	`, providerCode); err != nil {
+		t.Fatal(err)
+	}
+	visibleCatalog, err := repository.Catalog(ctx, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, provider := range visibleCatalog.Providers {
+		if provider.Code == providerCode {
+			if !provider.Available {
+				t.Fatalf("visible provider is not marked available: %#v", provider)
+			}
+			return
+		}
+	}
+	t.Fatalf("available provider was not returned in merchant catalog")
 }

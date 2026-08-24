@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="96" viewBox="0 0 320 96" role="img" aria-labelledby="title description">
+  <title id="title">RajaOngkir</title>
+  <desc id="description">Logo RajaOngkir</desc>
+  <rect width="320" height="96" rx="20" fill="#11120f"/>
+  <path d="M24 29h10l7 34h38l7-24H42" fill="none" stroke="#ffc400" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="51" cy="73" r="5" fill="#ffc400"/>
+  <circle cx="76" cy="73" r="5" fill="#ffc400"/>
+  <text x="103" y="59" fill="#ffffff" font-family="Arial, sans-serif" font-size="27" font-weight="700">rajaongkir</text>
+</svg>

@@ -5,6 +5,8 @@ const EmisellProviderCode = "emisell"
 type Provider struct {
 	Code               string `json:"code"`
 	Name               string `json:"name"`
+	Logo               string `json:"logo"`
+	Description        string `json:"description"`
 	BuiltIn            bool   `json:"built_in"`
 	RequiresCredential bool   `json:"requires_credential"`
 	Available          bool   `json:"available"`

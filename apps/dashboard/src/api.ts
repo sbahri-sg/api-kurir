@@ -257,6 +257,37 @@ export type ProviderQuota = {
   updated_at: string;
 };
 
+export type ShippingProvider = {
+  code: string;
+  name: string;
+  logo: string;
+  description: string;
+  built_in: boolean;
+  requires_credential: boolean;
+  available: boolean;
+  display_order: number;
+  installed_merchant_count: number;
+  active_merchant_count: number;
+  credential_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ShippingProviderCreateInput = {
+  code: string;
+  name: string;
+  logo: string;
+  description: string;
+  display_order: number;
+};
+
+export type ShippingProviderUpdateInput = Omit<
+  ShippingProviderCreateInput,
+  "code"
+> & {
+  available: boolean;
+};
+
 export type ProviderCredential = {
   id: string;
   tenant_id?: string;
@@ -420,6 +451,26 @@ export class AdminApi {
     return this.request<ProviderQuota[]>(
       "/v1/admin/provider-quotas?limit=90",
       { signal },
+    );
+  }
+
+  shippingProviders(signal?: AbortSignal) {
+    return this.request<ShippingProvider[]>("/v1/admin/shipping-providers", {
+      signal,
+    });
+  }
+
+  createShippingProvider(input: ShippingProviderCreateInput) {
+    return this.request<ShippingProvider>("/v1/admin/shipping-providers", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  updateShippingProvider(code: string, input: ShippingProviderUpdateInput) {
+    return this.request<ShippingProvider>(
+      `/v1/admin/shipping-providers/${encodeURIComponent(code)}`,
+      { method: "PUT", body: JSON.stringify(input) },
     );
   }
 
