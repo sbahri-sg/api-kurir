@@ -3,15 +3,20 @@ package merchantproviders
 const EmisellProviderCode = "emisell"
 
 type Provider struct {
-	Code               string `json:"code"`
-	Name               string `json:"name"`
-	Logo               string `json:"logo"`
-	Description        string `json:"description"`
-	BuiltIn            bool   `json:"built_in"`
-	RequiresCredential bool   `json:"requires_credential"`
-	Available          bool   `json:"available"`
-	Installed          bool   `json:"installed"`
-	Active             bool   `json:"active"`
+	Code                 string   `json:"code"`
+	Name                 string   `json:"name"`
+	Logo                 string   `json:"logo"`
+	Description          string   `json:"description"`
+	BuiltIn              bool     `json:"built_in"`
+	IntegrationType      string   `json:"integration_type"`
+	DistributionType     string   `json:"distribution_type"`
+	RequiresCredential   bool     `json:"requires_credential"`
+	Available            bool     `json:"available"`
+	Installed            bool     `json:"installed"`
+	Active               bool     `json:"active"`
+	ActiveReleaseVersion string   `json:"active_release_version,omitempty"`
+	RequiredScopes       []string `json:"required_scopes"`
+	GrantedScopes        []string `json:"granted_scopes"`
 }
 
 type Catalog struct {

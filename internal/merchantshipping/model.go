@@ -25,12 +25,18 @@ type Selection struct {
 }
 
 type Preference struct {
+	ProviderCode  string      `json:"provider_code"`
 	Configured    bool        `json:"configured"`
 	Mode          string      `json:"mode"`
 	EnabledGroups []string    `json:"enabled_groups"`
 	Services      []Selection `json:"services"`
 	Version       int64       `json:"version"`
 	UpdatedAt     *time.Time  `json:"updated_at"`
+}
+
+type ProviderCatalog struct {
+	ProviderCode string
+	Services     []Selection
 }
 
 type UpdateInput struct {
@@ -86,10 +92,11 @@ type SelectionLimits struct {
 }
 
 type Catalog struct {
-	Preference Preference       `json:"preference"`
-	Limits     SelectionLimits  `json:"limits"`
-	Groups     []GroupOption    `json:"groups"`
-	Couriers   []CatalogCourier `json:"couriers"`
+	ProviderCode string           `json:"provider_code"`
+	Preference   Preference       `json:"preference"`
+	Limits       SelectionLimits  `json:"limits"`
+	Groups       []GroupOption    `json:"groups"`
+	Couriers     []CatalogCourier `json:"couriers"`
 }
 
 type SelectionLimitError struct {

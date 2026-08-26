@@ -14,19 +14,23 @@ import (
 var validShippingProviderCode = regexp.MustCompile(`^[a-z0-9_-]{2,48}$`)
 
 type createShippingProviderRequest struct {
-	Code         string `json:"code"`
-	Name         string `json:"name"`
-	Logo         string `json:"logo"`
-	Description  string `json:"description"`
-	DisplayOrder int    `json:"display_order"`
+	Code             string `json:"code"`
+	Name             string `json:"name"`
+	Logo             string `json:"logo"`
+	Description      string `json:"description"`
+	IntegrationType  string `json:"integration_type"`
+	DistributionType string `json:"distribution_type"`
+	DisplayOrder     int    `json:"display_order"`
 }
 
 type updateShippingProviderRequest struct {
-	Name         string `json:"name"`
-	Logo         string `json:"logo"`
-	Description  string `json:"description"`
-	Available    bool   `json:"available"`
-	DisplayOrder int    `json:"display_order"`
+	Name             string `json:"name"`
+	Logo             string `json:"logo"`
+	Description      string `json:"description"`
+	IntegrationType  string `json:"integration_type"`
+	DistributionType string `json:"distribution_type"`
+	Available        bool   `json:"available"`
+	DisplayOrder     int    `json:"display_order"`
 }
 
 func adminShippingProviderListHandler(repository admin.Repository) echo.HandlerFunc {
@@ -96,12 +100,20 @@ func normalizeShippingProviderCreateInput(
 	if err != nil {
 		return admin.ShippingProviderCreateInput{}, err
 	}
+	integrationType, distributionType, err := normalizeProviderClassification(
+		request.IntegrationType, request.DistributionType, false,
+	)
+	if err != nil {
+		return admin.ShippingProviderCreateInput{}, err
+	}
 	return admin.ShippingProviderCreateInput{
-		Code:         request.Code,
-		Name:         metadata.Name,
-		Logo:         metadata.Logo,
-		Description:  metadata.Description,
-		DisplayOrder: metadata.DisplayOrder,
+		Code:             request.Code,
+		Name:             metadata.Name,
+		Logo:             metadata.Logo,
+		Description:      metadata.Description,
+		IntegrationType:  integrationType,
+		DistributionType: distributionType,
+		DisplayOrder:     metadata.DisplayOrder,
 	}, nil
 }
 
@@ -114,13 +126,58 @@ func normalizeShippingProviderUpdateInput(
 	if err != nil {
 		return admin.ShippingProviderUpdateInput{}, err
 	}
+	integrationType, distributionType, err := normalizeProviderClassification(
+		request.IntegrationType, request.DistributionType, true,
+	)
+	if err != nil {
+		return admin.ShippingProviderUpdateInput{}, err
+	}
 	return admin.ShippingProviderUpdateInput{
-		Name:         metadata.Name,
-		Logo:         metadata.Logo,
-		Description:  metadata.Description,
-		Available:    request.Available,
-		DisplayOrder: metadata.DisplayOrder,
+		Name:             metadata.Name,
+		Logo:             metadata.Logo,
+		Description:      metadata.Description,
+		IntegrationType:  integrationType,
+		DistributionType: distributionType,
+		Available:        request.Available,
+		DisplayOrder:     metadata.DisplayOrder,
 	}, nil
+}
+
+func normalizeProviderClassification(
+	integrationType string,
+	distributionType string,
+	allowEmpty bool,
+) (string, string, error) {
+	integrationType = strings.ToLower(strings.TrimSpace(integrationType))
+	distributionType = strings.ToLower(strings.TrimSpace(distributionType))
+	if !allowEmpty {
+		if integrationType == "" {
+			integrationType = "partner_hosted"
+		}
+		if distributionType == "" {
+			distributionType = "public"
+		}
+	}
+	validIntegrationTypes := map[string]bool{
+		"": allowEmpty, "managed_upstream": true, "partner_hosted": true,
+	}
+	validDistributionTypes := map[string]bool{
+		"": allowEmpty, "public": true, "limited": true, "private": true,
+	}
+	if allowEmpty {
+		validIntegrationTypes["built_in"] = true
+		validDistributionTypes["built_in"] = true
+	}
+	if !validIntegrationTypes[integrationType] {
+		return "", "", errors.New("jenis integrasi wajib managed_upstream atau partner_hosted")
+	}
+	if !validDistributionTypes[distributionType] {
+		return "", "", errors.New("distribusi wajib public, limited, atau private")
+	}
+	if (integrationType == "built_in") != (distributionType == "built_in") {
+		return "", "", errors.New("jenis dan distribusi built-in harus digunakan bersamaan")
+	}
+	return integrationType, distributionType, nil
 }
 
 func normalizeShippingProviderMetadata(

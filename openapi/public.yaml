@@ -42,6 +42,8 @@ tags:
     description: Credential BYOK dan pilihan layanan checkout yang terisolasi per merchant Emisell
   - name: Admin
     description: Operasional dashboard dengan admin API key terpisah
+  - name: Partner Portal
+    description: Upload package yang terisolasi oleh access key milik satu provider
 
 paths:
   /health/live:
@@ -1058,6 +1060,9 @@ paths:
         Mengembalikan katalog canonical beserta selected dan selection_state
         untuk membangun checkbox kurir bertingkat. Response juga memuat limit,
         pemakaian, sisa pilihan, dan selectable pada setiap kurir/layanan.
+        Katalog selalu mengikuti provider yang sedang aktif dan pilihan layanan
+        disimpan terpisah untuk setiap provider, sehingga pergantian provider
+        tidak menimpa konfigurasi provider sebelumnya.
         Hanya grup regular, next_day, economy, dan cargo yang dikirim ke
         Emisell. Tenant tanpa preference mulai dari nol pilihan dan tidak
         memperoleh opsi checkout sebelum menyimpan layanan custom.
@@ -1634,7 +1639,7 @@ paths:
       summary: Menambahkan provider integrasi baru
       description: >
         Provider eksternal baru selalu dibuat requires_credential=true dan
-        available=false sampai adapter selesai diuji oleh operator.
+        available=false sampai Partner Connector selesai disertifikasi.
       security:
         - adminBearerAuth: []
       parameters:
@@ -1705,6 +1710,354 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/admin/shipping-providers/{provider_code}/partner-access-keys:
+    get:
+      tags: [Admin]
+      operationId: adminListPartnerAccessKeys
+      summary: Membaca access key Partner Portal milik provider
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+      responses:
+        "200":
+          description: Metadata key termasking tanpa plaintext secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerAccessKeyListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [Admin]
+      operationId: adminCreatePartnerAccessKey
+      summary: Membuat access key Partner Portal
+      description: Plaintext secret hanya dikembalikan satu kali pada respons ini.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+        - $ref: "#/components/parameters/AdminActor"
+      responses:
+        "201":
+          description: Access key berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedPartnerAccessKeyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/admin/shipping-providers/{provider_code}/partner-access-keys/{id}/revoke:
+    post:
+      tags: [Admin]
+      operationId: adminRevokePartnerAccessKey
+      summary: Mencabut access key Partner Portal
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/AdminActor"
+      responses:
+        "200":
+          description: Access key telah dicabut
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerAccessKeyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/admin/partner-submissions:
+    get:
+      tags: [Admin]
+      operationId: adminListPartnerSubmissions
+      summary: Membaca versi package integrasi partner
+      description: >
+        Console internal untuk submission, hasil validasi ZIP, dan lifecycle
+        review connector. Artifact tidak pernah dieksekusi oleh API Kurir.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: provider_code
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/PartnerSubmissionStatus"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Daftar submission terbaru
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerSubmissionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/admin/partner-submissions/{id}:
+    get:
+      tags: [Admin]
+      operationId: adminGetPartnerSubmission
+      summary: Membaca detail satu submission partner
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Detail submission dan scan report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerSubmissionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/admin/partner-submissions/{id}/artifact:
+    get:
+      tags: [Admin]
+      operationId: adminDownloadPartnerSubmissionArtifact
+      summary: Mengunduh artefak ZIP karantina
+      description: Hanya untuk staff dengan admin API key; response selalu no-store.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: File ZIP asli
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/admin/partner-submissions/{id}/status:
+    put:
+      tags: [Admin]
+      operationId: adminUpdatePartnerSubmissionStatus
+      summary: Memindahkan lifecycle review package partner
+      description: >
+        Transisi divalidasi server-side. approved dan published hanya tersedia
+        untuk scan yang lulus. Saat versi baru dipublikasikan, versi published
+        sebelumnya otomatis menjadi superseded.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - $ref: "#/components/parameters/AdminActor"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartnerSubmissionStatusRequest"
+      responses:
+        "200":
+          description: Status dan catatan review tersimpan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerSubmissionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Transisi lifecycle tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /partner/v1/me:
+    get:
+      tags: [Partner Portal]
+      operationId: partnerPortalMe
+      summary: Membaca identitas provider dari partner access key
+      description: Provider ditentukan oleh backend dan tidak diterima dari query atau body.
+      security:
+        - partnerBearerAuth: []
+      responses:
+        "200":
+          description: Identitas provider terautentikasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerIdentityResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /partner/v1/starter-package:
+    get:
+      tags: [Partner Portal]
+      operationId: partnerDownloadStarterPackage
+      summary: Mengunduh starter ZIP untuk provider terautentikasi
+      description: >
+        Membuat starter package secara dinamis. provider.code dan provider.name
+        berasal dari partner access key sehingga template tidak dapat dibuat
+        untuk provider lain.
+      security:
+        - partnerBearerAuth: []
+      responses:
+        "200":
+          description: Starter package siap diedit developer
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /partner/v1/submissions:
+    get:
+      tags: [Partner Portal]
+      operationId: partnerListOwnSubmissions
+      summary: Membaca submission milik provider terautentikasi
+      security:
+        - partnerBearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/PartnerSubmissionStatus"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Daftar submission hanya untuk provider pemilik key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerSubmissionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Partner Portal]
+      operationId: partnerUploadOwnSubmission
+      summary: Mengunggah package untuk provider terautentikasi
+      description: >
+        Body sengaja tidak mempunyai provider_code. Backend selalu mengambil
+        provider dari partner access key untuk mencegah cross-provider upload.
+        Setiap access key dibatasi 10 percobaan per jam dan satu upload aktif.
+        Setiap provider dibatasi 25 versi atau total artifact 500 MB.
+      security:
+        - partnerBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, package]
+              properties:
+                version:
+                  type: string
+                  pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                package:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Package tersimpan dan selesai static scan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerSubmissionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Versi sudah ada, upload masih berjalan, atau kuota provider tercapai
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Batas percobaan upload per access key tercapai
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                example: 3600
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /partner/v1/submissions/{id}:
+    get:
+      tags: [Partner Portal]
+      operationId: partnerGetOwnSubmission
+      summary: Membaca detail submission milik provider terautentikasi
+      security:
+        - partnerBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Detail submission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerSubmissionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /partner/v1/submissions/{id}/artifact:
+    get:
+      tags: [Partner Portal]
+      operationId: partnerDownloadOwnArtifact
+      summary: Mengunduh package milik provider terautentikasi
+      security:
+        - partnerBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: File ZIP asli dengan Cache-Control private, no-store
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /v1/admin/provider-credentials:
     get:
@@ -1998,6 +2351,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: Admin API key
+    partnerBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Emisell partner access key
+      description: Access key berformat epk_live_* yang terikat ke satu provider.
 
   parameters:
     ShippingProviderCode:
@@ -2507,6 +2865,8 @@ components:
         - logo
         - description
         - built_in
+        - integration_type
+        - distribution_type
         - requires_credential
         - available
         - installed
@@ -2530,6 +2890,14 @@ components:
           description: Ringkasan provider untuk listing extension pengiriman.
         built_in:
           type: boolean
+        integration_type:
+          type: string
+          enum: [built_in, managed_upstream, partner_hosted]
+          description: Menentukan apakah provider bawaan, memakai adapter API Kurir, atau memakai release partner.
+        distribution_type:
+          type: string
+          enum: [built_in, public, limited, private]
+          description: Mengontrol cakupan merchant yang dapat menemukan provider.
         requires_credential:
           type: boolean
         available:
@@ -2541,6 +2909,18 @@ components:
           description: Provider bawaan selalu true; eksternal true jika mempunyai credential valid.
         active:
           type: boolean
+        active_release_version:
+          type: string
+          description: Versi package production untuk provider partner-hosted; kosong untuk provider lain.
+        required_scopes:
+          type: array
+          items:
+            type: string
+        granted_scopes:
+          type: array
+          items:
+            type: string
+          description: Scope yang dipin saat merchant mengaktifkan release ini.
 
     TenantShippingProviderCatalog:
       type: object
@@ -2580,6 +2960,7 @@ components:
     TenantShippingPreference:
       type: object
       required:
+        - provider_code
         - configured
         - mode
         - enabled_groups
@@ -2587,6 +2968,9 @@ components:
         - version
         - updated_at
       properties:
+        provider_code:
+          type: string
+          description: Provider aktif yang memiliki preference ini; kosong hanya ketika shipping nonaktif.
         configured:
           type: boolean
           description: False hanya bila merchant belum pernah menyimpan preference.
@@ -2765,8 +3149,11 @@ components:
           $ref: "#/components/schemas/RequestMeta"
         data:
           type: object
-          required: [preference, limits, groups, couriers]
+          required: [provider_code, preference, limits, groups, couriers]
           properties:
+            provider_code:
+              type: string
+              description: Provider aktif yang menjadi sumber katalog layanan; kosong ketika shipping nonaktif.
             preference:
               $ref: "#/components/schemas/TenantShippingPreference"
             limits:
@@ -3734,6 +4121,8 @@ components:
         - logo
         - description
         - built_in
+        - integration_type
+        - distribution_type
         - requires_credential
         - available
         - display_order
@@ -3760,6 +4149,12 @@ components:
           maxLength: 500
         built_in:
           type: boolean
+        integration_type:
+          type: string
+          enum: [built_in, managed_upstream, partner_hosted]
+        distribution_type:
+          type: string
+          enum: [built_in, public, limited, private]
         requires_credential:
           type: boolean
         available:
@@ -3768,6 +4163,16 @@ components:
           type: integer
           minimum: 1
           maximum: 9999
+        active_release_id:
+          type: [string, "null"]
+          format: uuid
+        active_release_version:
+          type: string
+        active_release_status:
+          type: string
+        release_count:
+          type: integer
+          minimum: 0
         installed_merchant_count:
           type: integer
           minimum: 0
@@ -3804,6 +4209,14 @@ components:
           type: string
           minLength: 10
           maxLength: 500
+        integration_type:
+          type: string
+          enum: [managed_upstream, partner_hosted]
+          default: partner_hosted
+        distribution_type:
+          type: string
+          enum: [public, limited, private]
+          default: public
         display_order:
           type: integer
           minimum: 1
@@ -3826,6 +4239,14 @@ components:
           type: string
           minLength: 10
           maxLength: 500
+        integration_type:
+          type: string
+          enum: [built_in, managed_upstream, partner_hosted]
+          description: Opsional untuk kompatibilitas; jika kosong klasifikasi lama dipertahankan.
+        distribution_type:
+          type: string
+          enum: [built_in, public, limited, private]
+          description: Opsional untuk kompatibilitas; jika kosong klasifikasi lama dipertahankan.
         available:
           type: boolean
         display_order:
@@ -3852,6 +4273,302 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AdminShippingProvider"
+
+    PartnerSubmissionStatus:
+      type: string
+      enum:
+        - technical_review
+        - sandbox_testing
+        - security_review
+        - uat
+        - approved
+        - published
+        - changes_requested
+        - rejected
+        - suspended
+        - superseded
+
+    PartnerPackageScanCheck:
+      type: object
+      required: [code, status, message]
+      properties:
+        code:
+          type: string
+        status:
+          type: string
+          enum: [passed, failed]
+        message:
+          type: string
+
+    PartnerPackageManifest:
+      type: object
+      required:
+        - schema_version
+        - provider_code
+        - provider_name
+        - contract_version
+        - sandbox_url
+        - production_url
+        - declared_capabilities
+        - declared_services
+      properties:
+        schema_version:
+          type: string
+        provider_code:
+          type: string
+        provider_name:
+          type: string
+        contract_version:
+          type: string
+        sandbox_url:
+          type: string
+        production_url:
+          type: string
+        declared_capabilities:
+          type: array
+          items:
+            type: string
+        declared_services:
+          type: array
+          items:
+            type: string
+
+    PartnerPackageScanReport:
+      type: object
+      required:
+        - passed
+        - file_count
+        - expanded_size
+        - checks
+        - warnings
+        - manifest
+        - required_openapi_paths
+      properties:
+        passed:
+          type: boolean
+        file_count:
+          type: integer
+        expanded_size:
+          type: integer
+          format: int64
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerPackageScanCheck"
+        warnings:
+          type: array
+          items:
+            type: string
+        manifest:
+          $ref: "#/components/schemas/PartnerPackageManifest"
+        required_openapi_paths:
+          type: array
+          items:
+            type: string
+
+    PartnerSubmission:
+      type: object
+      required:
+        - id
+        - provider_code
+        - provider_name
+        - version
+        - status
+        - is_active_release
+        - file_name
+        - content_type
+        - artifact_size
+        - artifact_sha256
+        - scan_report
+        - required_scopes
+        - review_note
+        - submitted_by
+        - reviewed_by
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider_code:
+          type: string
+        provider_name:
+          type: string
+        version:
+          type: string
+        status:
+          $ref: "#/components/schemas/PartnerSubmissionStatus"
+        is_active_release:
+          type: boolean
+          description: True hanya untuk versi yang sedang menjadi release production provider.
+        file_name:
+          type: string
+        content_type:
+          type: string
+          const: application/zip
+        artifact_size:
+          type: integer
+          format: int64
+          maximum: 26214400
+        artifact_sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        scan_report:
+          $ref: "#/components/schemas/PartnerPackageScanReport"
+        required_scopes:
+          type: array
+          items:
+            type: string
+          description: Scope minimum yang diturunkan dari capability manifest.
+        review_note:
+          type: string
+          maxLength: 4000
+        submitted_by:
+          type: string
+        reviewed_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PartnerSubmissionStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/PartnerSubmissionStatus"
+        review_note:
+          type: string
+          maxLength: 4000
+
+    PartnerSubmissionResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/PartnerSubmission"
+
+    PartnerSubmissionListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/RequestMeta"
+            - type: object
+              properties:
+                limit:
+                  type: integer
+                offset:
+                  type: integer
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerSubmission"
+
+    PartnerAccessKey:
+      type: object
+      required:
+        - id
+        - provider_code
+        - provider_name
+        - display_key
+        - active
+        - created_by
+        - created_at
+        - revoked_by
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider_code:
+          type: string
+        provider_name:
+          type: string
+        display_key:
+          type: string
+          description: Nilai termasking; plaintext secret tidak disimpan.
+          example: epk_live_********aB12
+        active:
+          type: boolean
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+        revoked_by:
+          type: string
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+
+    PartnerAccessKeyResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/PartnerAccessKey"
+
+    PartnerAccessKeyListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerAccessKey"
+
+    GeneratedPartnerAccessKey:
+      type: object
+      required: [access_key, secret]
+      properties:
+        access_key:
+          $ref: "#/components/schemas/PartnerAccessKey"
+        secret:
+          type: string
+          writeOnly: true
+          pattern: "^epk_live_[A-Za-z0-9_-]+$"
+          description: Ditampilkan sekali saat pembuatan.
+
+    GeneratedPartnerAccessKeyResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/GeneratedPartnerAccessKey"
+
+    PartnerIdentity:
+      type: object
+      required: [provider_code, provider_name]
+      properties:
+        provider_code:
+          type: string
+        provider_name:
+          type: string
+
+    PartnerIdentityResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/PartnerIdentity"
 
     CustomerAPIKey:
       type: object

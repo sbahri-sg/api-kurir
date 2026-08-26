@@ -1,16 +1,17 @@
-export type ApiDocumentationScope = "customer" | "admin";
+export type ApiDocumentationScope = "customer" | "admin" | "partner";
 export type ApiDocumentationMethod = "GET" | "POST" | "PUT" | "DELETE";
 export type ApiDocumentationContract =
   | "rajaongkir-v2"
   | "emisell-legacy"
   | "canonical"
   | "gateway"
+  | "partner-portal"
   | "admin";
 
 export type ApiDocumentationContractDefinition = {
   id: ApiDocumentationContract;
   label: string;
-  classification: "Public" | "Legacy" | "Internal" | "Admin";
+  classification: "Public" | "Legacy" | "Internal" | "Partner" | "Admin";
   status: "Stable" | "Compatibility" | "Restricted";
   audience: string;
   basePath: string;
@@ -83,6 +84,18 @@ export const API_DOCUMENTATION_CONTRACTS: ApiDocumentationContractDefinition[] =
       "Kontrak backend-to-backend untuk menyimpan key provider milik seller dan memastikan tarif, tracking, snapshot, serta kuota tidak bercampur antar-merchant. API Kurir memilih credential internal secara otomatis.",
   },
   {
+    id: "partner-portal",
+    label: "Partner Portal",
+    classification: "Partner",
+    status: "Restricted",
+    audience: "Vendor kurir yang sedang mengajukan connector ke Emisell",
+    basePath: "/partner/v1",
+    idFormat: "Provider dari partner access key dan UUID submission",
+    authentication: "Bearer partner access key (epk_live_*)",
+    description:
+      "Kontrak self-service untuk upload package dan membaca hasil review. Provider dikunci oleh access key server-side; request tidak pernah memilih provider.",
+  },
+  {
     id: "admin",
     label: "Admin & Security",
     classification: "Admin",
@@ -101,6 +114,7 @@ export function getApiDocumentationContract(
 ): ApiDocumentationContract {
   if (endpoint.contract) return endpoint.contract;
   if (endpoint.scope === "admin") return "admin";
+  if (endpoint.scope === "partner") return "partner-portal";
   if (endpoint.path.startsWith("/api/v1")) return "rajaongkir-v2";
   if (
     endpoint.path.startsWith("/regions") ||
@@ -1279,6 +1293,20 @@ key: {{api_key}}`,
     contract: "admin",
     scope: "admin",
     method: "GET",
+    path: "/v1/admin/shipping-providers/{provider_code}/partner-access-keys",
+    title: "List akses Partner Portal",
+    description:
+      "Membaca key termasking, status aktif, waktu pemakaian terakhir, dan riwayat pencabutan untuk satu provider.",
+    authentication: "Bearer admin API key",
+    parameters: ["provider_code — provider partner yang sudah dibuat pada master"],
+    request: `GET {{base_url}}/v1/admin/shipping-providers/mengantar/partner-access-keys
+Authorization: Bearer {{admin_api_key}}`,
+    response: `HTTP 200 · daftar metadata key tanpa plaintext secret.`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "GET",
     path: "/v1/admin/shipping-providers",
     title: "Master provider integrasi",
     description:
@@ -1294,9 +1322,14 @@ Authorization: Bearer {{admin_api_key}}`,
       "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
       "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
       "built_in": false,
+      "integration_type": "managed_upstream",
+      "distribution_type": "public",
       "requires_credential": true,
       "available": true,
       "display_order": 20,
+      "active_release_id": null,
+      "active_release_version": "",
+      "release_count": 0,
       "installed_merchant_count": 12,
       "active_merchant_count": 8,
       "credential_count": 14
@@ -1312,11 +1345,13 @@ Authorization: Bearer {{admin_api_key}}`,
     path: "/v1/admin/shipping-providers",
     title: "Tambah provider integrasi",
     description:
-      "Menambahkan provider eksternal baru. Provider otomatis membutuhkan credential seller dan berstatus belum tersedia sampai adapter selesai diuji.",
+      "Menambahkan provider eksternal sebagai managed-upstream atau partner-hosted. Provider selalu berstatus belum tersedia sampai adapter atau active release siap.",
     authentication: "Bearer admin API key + X-Admin-Actor",
     parameters: [
       "code — kode permanen provider, huruf kecil tanpa spasi",
       "logo — URL HTTPS publik permanen",
+      "integration_type — managed_upstream atau partner_hosted",
+      "distribution_type — public, limited, atau private",
       "display_order — urutan 1–9999",
     ],
     request: `POST {{base_url}}/v1/admin/shipping-providers
@@ -1329,9 +1364,11 @@ Content-Type: application/json
   "name": "Mengantar",
   "logo": "https://api-kurir.emisell.com/provider-logos/default.svg",
   "description": "Integrasi provider Mengantar untuk merchant Emisell.",
+  "integration_type": "partner_hosted",
+  "distribution_type": "public",
   "display_order": 40
 }`,
-    response: `HTTP 201 · provider dibuat dengan available=false, built_in=false, dan requires_credential=true.`,
+    response: `HTTP 201 · provider dibuat available=false; partner-hosted menunggu release published.`,
   },
   {
     contract: "admin",
@@ -1340,7 +1377,7 @@ Content-Type: application/json
     path: "/v1/admin/shipping-providers/{provider_code}",
     title: "Perbarui provider integrasi",
     description:
-      "Mengubah nama, logo, deskripsi, urutan, dan kesiapan provider. Kode serta model credential dikunci; provider yang masih dipakai merchant tidak dapat dibuat unavailable.",
+      "Mengubah metadata, klasifikasi, distribusi, urutan, dan kesiapan provider. Jenis integrasi dikunci setelah memiliki release atau merchant aktif.",
     authentication: "Bearer admin API key + X-Admin-Actor",
     parameters: ["provider_code — kode permanen dari master provider"],
     request: `PUT {{base_url}}/v1/admin/shipping-providers/mengantar
@@ -1352,10 +1389,220 @@ Content-Type: application/json
   "name": "Mengantar",
   "logo": "https://api-kurir.emisell.com/provider-logos/default.svg",
   "description": "Integrasi provider Mengantar yang telah lolos pengujian adapter.",
+  "integration_type": "partner_hosted",
+  "distribution_type": "public",
   "available": true,
   "display_order": 40
 }`,
     response: `HTTP 200 · object provider terbaru beserta jumlah merchant dan credential.`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "GET",
+    path: "/v1/admin/partner-submissions",
+    title: "List package integrasi partner",
+    description:
+      "Membaca seluruh versi package, hasil static scan, status sertifikasi, dan actor review. ZIP tidak pernah dieksekusi oleh API Kurir.",
+    authentication: "Bearer admin API key",
+    parameters: [
+      "provider_code — opsional; filter satu provider",
+      "status — opsional; filter lifecycle review",
+      "limit dan offset — opsional",
+    ],
+    request: `GET {{base_url}}/v1/admin/partner-submissions?provider_code=mengantar&limit=100
+Authorization: Bearer {{admin_api_key}}`,
+    response: `{
+  "data": [
+    {
+      "id": "4a5a0d4c-4ce0-4c83-8b64-f35743a4a91b",
+      "provider_code": "mengantar",
+      "provider_name": "Mengantar",
+      "version": "1.0.0",
+      "status": "technical_review",
+      "is_active_release": false,
+      "file_name": "mengantar-1.0.0.zip",
+      "artifact_size": 24861,
+      "artifact_sha256": "<sha256-64-hex>",
+      "scan_report": {
+        "passed": true,
+        "checks": [],
+        "warnings": []
+      },
+      "required_scopes": ["rates:read", "tracking:read"]
+    }
+  ],
+  "meta": { "limit": 100, "offset": 0, "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "POST",
+    path: "/v1/admin/shipping-providers/{provider_code}/partner-access-keys",
+    title: "Generate akses Partner Portal",
+    description:
+      "Membuat access key yang terikat permanen ke satu provider. Secret hanya dikembalikan sekali dan database hanya menyimpan SHA-256 hash.",
+    authentication: "Bearer admin API key + X-Admin-Actor",
+    parameters: ["provider_code — provider partner yang sudah dibuat pada master"],
+    request: `POST {{base_url}}/v1/admin/shipping-providers/mengantar/partner-access-keys
+Authorization: Bearer {{admin_api_key}}
+X-Admin-Actor: emisell`,
+    response: `HTTP 201
+{
+  "data": {
+    "access_key": {
+      "provider_code": "mengantar",
+      "display_key": "epk_live_********aB12",
+      "active": true
+    },
+    "secret": "epk_live_<ditampilkan-sekali>"
+  }
+}`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "POST",
+    path: "/v1/admin/shipping-providers/{provider_code}/partner-access-keys/{id}/revoke",
+    title: "Cabut akses Partner Portal",
+    description:
+      "Mencabut satu access key tanpa menghapus submission provider. Key tidak dapat digunakan kembali setelah dicabut.",
+    authentication: "Bearer admin API key + X-Admin-Actor",
+    parameters: ["provider_code — provider pemilik key", "id — UUID access key"],
+    request: `POST {{base_url}}/v1/admin/shipping-providers/mengantar/partner-access-keys/{{access_key_id}}/revoke
+Authorization: Bearer {{admin_api_key}}
+X-Admin-Actor: emisell`,
+    response: `HTTP 200 · metadata access key dengan active=false dan revoked_at terisi.`,
+  },
+  {
+    contract: "partner-portal",
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/me",
+    title: "Identitas provider partner",
+    description:
+      "Mengembalikan provider yang terikat pada access key. Nilai ini menjadi satu-satunya sumber scope; provider tidak diterima dari browser.",
+    authentication: "Bearer partner access key",
+    request: `GET {{base_url}}/partner/v1/me
+Authorization: Bearer {{partner_access_key}}`,
+    response: `{
+  "data": {
+    "provider_code": "mengantar",
+    "provider_name": "Mengantar"
+  }
+}`,
+  },
+  {
+    contract: "partner-portal",
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/starter-package",
+    title: "Download starter package",
+    description:
+      "Menghasilkan ZIP awal dengan manifest yang sudah terkunci ke provider dari partner access key, OpenAPI minimum, contoh payload, dan contract test dasar.",
+    authentication: "Bearer partner access key",
+    request: `GET {{base_url}}/partner/v1/starter-package
+Authorization: Bearer {{partner_access_key}}`,
+    response: `HTTP 200 · application/zip · {{provider_code}}-partner-starter.zip`,
+  },
+  {
+    contract: "partner-portal",
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/submissions",
+    title: "List package milik partner",
+    description:
+      "Hanya mengembalikan submission milik provider pada access key. Filter provider tidak tersedia.",
+    authentication: "Bearer partner access key",
+    parameters: ["status — opsional", "limit dan offset — opsional"],
+    request: `GET {{base_url}}/partner/v1/submissions?limit=100
+Authorization: Bearer {{partner_access_key}}`,
+    response: `HTTP 200 · daftar submission milik provider terautentikasi.`,
+  },
+  {
+    contract: "partner-portal",
+    scope: "partner",
+    method: "POST",
+    path: "/partner/v1/submissions",
+    title: "Upload package partner",
+    description:
+      "Upload ZIP maksimal 25 MB. Body hanya menerima version dan package; provider_code sengaja tidak didukung. Limit 10 percobaan/jam, satu upload aktif/key, dan kuota 25 versi atau 500 MB/provider.",
+    authentication: "Bearer partner access key",
+    parameters: [
+      "version — versi immutable, contoh 1.0.0",
+      "package — file ZIP dengan manifest dan OpenAPI pada root",
+    ],
+    request: `POST {{base_url}}/partner/v1/submissions
+Authorization: Bearer {{partner_access_key}}
+Content-Type: multipart/form-data
+
+version=1.0.0
+package=@mengantar-1.0.0.zip`,
+    response: `HTTP 201 · submission beserta scan_report. Provider berasal dari access key, bukan body.`,
+  },
+  {
+    contract: "partner-portal",
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/submissions/{id}",
+    title: "Detail hasil review partner",
+    description:
+      "Membaca hasil scan, status lifecycle, dan catatan reviewer. ID milik provider lain dikembalikan sebagai 404.",
+    authentication: "Bearer partner access key",
+    parameters: ["id — UUID submission milik provider terautentikasi"],
+    request: `GET {{base_url}}/partner/v1/submissions/{{submission_id}}
+Authorization: Bearer {{partner_access_key}}`,
+    response: `HTTP 200 · detail submission, scan_report, status, dan review_note.`,
+  },
+  {
+    contract: "partner-portal",
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/submissions/{id}/artifact",
+    title: "Download package sendiri",
+    description:
+      "Mengunduh ZIP hanya bila submission dimiliki provider pada access key. Response private dan no-store.",
+    authentication: "Bearer partner access key",
+    parameters: ["id — UUID submission milik provider terautentikasi"],
+    request: `GET {{base_url}}/partner/v1/submissions/{{submission_id}}/artifact
+Authorization: Bearer {{partner_access_key}}`,
+    response: `HTTP 200 · application/zip`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "GET",
+    path: "/v1/admin/partner-submissions/{id}/artifact",
+    title: "Download ZIP karantina",
+    description:
+      "Mengunduh file asli untuk review staff. Response memakai attachment dan Cache-Control private, no-store.",
+    authentication: "Bearer admin API key",
+    parameters: ["id — UUID submission"],
+    request: `GET {{base_url}}/v1/admin/partner-submissions/{{submission_id}}/artifact
+Authorization: Bearer {{admin_api_key}}`,
+    response: `HTTP 200 · application/zip`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "PUT",
+    path: "/v1/admin/partner-submissions/{id}/status",
+    title: "Review lifecycle package partner",
+    description:
+      "Memindahkan tahap review. Publish memindahkan active release secara atomik; versi superseded dapat dipublish kembali untuk rollback.",
+    authentication: "Bearer admin API key + X-Admin-Actor",
+    parameters: ["id — UUID submission"],
+    request: `PUT {{base_url}}/v1/admin/partner-submissions/{{submission_id}}/status
+Authorization: Bearer {{admin_api_key}}
+X-Admin-Actor: emisell
+Content-Type: application/json
+
+{
+  "status": "sandbox_testing",
+  "review_note": "Schema dan signature awal sesuai; lanjut contract test sandbox."
+}`,
+    response: `HTTP 200 · object submission dengan status dan reviewer terbaru.`,
   },
   {
     scope: "admin",
@@ -1791,7 +2038,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers",
     title: "Katalog provider dan extension aktif",
     description:
-      "Menampilkan hanya provider yang tersedia, metadata logo/deskripsi untuk listing extension, dan provider efektif merchant. Provider yang dimatikan admin otomatis tidak muncul di dashboard Emisell. Merchant baru berstatus nonaktif sampai seller memilih provider.",
+      "Menampilkan provider yang eligible bagi merchant, klasifikasi integrasi/distribusi, active release partner, scope, dan provider efektif merchant. Partner-hosted tanpa release published tidak dikirim.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/providers
 key: {{api_key}}
@@ -1807,10 +2054,15 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "logo": "https://api-kurir.emisell.com/provider-logos/emisell.svg",
         "description": "Layanan pengiriman bawaan Emisell dengan tarif dan pelacakan terpusat tanpa API key provider dari seller.",
         "built_in": true,
+        "integration_type": "built_in",
+        "distribution_type": "built_in",
         "requires_credential": false,
         "available": true,
         "installed": true,
-        "active": false
+        "active": false,
+        "active_release_version": "",
+        "required_scopes": ["rates:read", "tracking:read"],
+        "granted_scopes": []
       },
       {
         "code": "rajaongkir",
@@ -1818,10 +2070,15 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
         "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
         "built_in": false,
+        "integration_type": "managed_upstream",
+        "distribution_type": "public",
         "requires_credential": true,
         "available": true,
         "installed": true,
-        "active": false
+        "active": false,
+        "active_release_version": "",
+        "required_scopes": ["rates:read", "tracking:read"],
+        "granted_scopes": []
       }
     ]
   },
@@ -1835,7 +2092,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers/{provider_code}/activate",
     title: "Aktifkan satu provider merchant",
     description:
-      "Mengganti provider aktif secara atomik. API Kurir otomatis memilih key aktif milik merchant untuk provider eksternal. expected_version mencegah perubahan paralel saling menimpa.",
+      "Mengganti provider aktif secara atomik. Managed-upstream memilih key seller; partner-hosted memin release dan scope production yang aktif. expected_version mencegah perubahan paralel saling menimpa.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     parameters: [
       "provider_code — emisell atau provider eksternal yang available",
@@ -1927,14 +2184,16 @@ Content-Type: application/json
     path: "/api/v1/integrations/shipping-services",
     title: "Katalog dan pilihan layanan checkout",
     description:
-      "Mengembalikan kurir canonical beserta logo permanen dan layanan dari grup regular, next_day, economy, atau cargo, termasuk capability, status pilihan, limit, dan selectable. Grup lain tidak dikirim ke Emisell dan tidak dapat dipilih.",
+      "Mengembalikan kurir canonical milik provider yang sedang aktif beserta logo permanen dan layanan dari grup regular, next_day, economy, atau cargo, termasuk capability, status pilihan, limit, dan selectable. Pilihan seller disimpan terpisah per provider agar pergantian provider tidak saling menimpa. Grup lain tidak dikirim ke Emisell dan tidak dapat dipilih.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/shipping-services
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}`,
     response: `{
   "data": {
+    "provider_code": "rajaongkir",
     "preference": {
+      "provider_code": "rajaongkir",
       "configured": true,
       "mode": "custom",
       "enabled_groups": [],
@@ -2038,6 +2297,7 @@ Content-Type: application/json
 }`,
     response: `{
   "data": {
+    "provider_code": "rajaongkir",
     "configured": true,
     "mode": "custom",
     "enabled_groups": [],

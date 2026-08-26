@@ -57,6 +57,85 @@ func (repository courierRepository) List(context.Context) ([]couriers.Courier, e
 	return repository.items, nil
 }
 
+type providerScopedMemoryRepository struct {
+	*memoryRepository
+	catalog ProviderCatalog
+	err     error
+}
+
+func (repository *providerScopedMemoryRepository) ActiveCatalog(
+	context.Context,
+	string,
+) (ProviderCatalog, error) {
+	return repository.catalog, repository.err
+}
+
+func TestCatalogAndUpdateAreScopedToActiveProvider(t *testing.T) {
+	t.Parallel()
+	repository := &providerScopedMemoryRepository{
+		memoryRepository: &memoryRepository{preference: Preference{
+			ProviderCode: "mengantar",
+			Configured:   true,
+			Mode:         ModeCustom,
+			Services: []Selection{
+				{CourierCode: "jne", ServiceCode: "REG"},
+			},
+		}},
+		catalog: ProviderCatalog{
+			ProviderCode: "mengantar",
+			Services: []Selection{
+				{CourierCode: "jne", ServiceCode: "REG"},
+			},
+		},
+	}
+	service := NewService(repository, courierRepository{items: testCouriers()})
+
+	catalog, err := service.Catalog(context.Background(), "merchant_123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.ProviderCode != "mengantar" || len(catalog.Couriers) != 1 ||
+		catalog.Couriers[0].ProviderCode != "mengantar" ||
+		len(catalog.Couriers[0].Services) != 1 ||
+		catalog.Couriers[0].Services[0].Code != "REG" {
+		t.Fatalf("unexpected provider-scoped catalog: %#v", catalog)
+	}
+
+	_, err = service.Update(context.Background(), "merchant_123", UpdateInput{
+		Mode:     ModeCustom,
+		Services: []Selection{{CourierCode: "jne", ServiceCode: "JTR"}},
+	})
+	if !errors.Is(err, ErrUnknownService) {
+		t.Fatalf("cross-provider service error=%v want ErrUnknownService", err)
+	}
+}
+
+func TestDisabledProviderReturnsEmptyCatalogAndRejectsUpdate(t *testing.T) {
+	t.Parallel()
+	repository := &providerScopedMemoryRepository{
+		memoryRepository: &memoryRepository{},
+		err:              ErrShippingDisabled,
+	}
+	service := NewService(repository, courierRepository{items: testCouriers()})
+
+	catalog, err := service.Catalog(context.Background(), "merchant_123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.ProviderCode != "" || len(catalog.Couriers) != 0 ||
+		catalog.Limits.Couriers.Available != 0 {
+		t.Fatalf("unexpected disabled catalog: %#v", catalog)
+	}
+
+	_, err = service.Update(context.Background(), "merchant_123", UpdateInput{
+		Mode:     ModeCustom,
+		Services: []Selection{{CourierCode: "jne", ServiceCode: "REG"}},
+	})
+	if !errors.Is(err, ErrShippingDisabled) {
+		t.Fatalf("disabled update error=%v want ErrShippingDisabled", err)
+	}
+}
+
 func TestUpdateCustomNormalizesAndValidatesCanonicalServices(t *testing.T) {
 	t.Parallel()
 	repository := &memoryRepository{}
@@ -320,6 +399,40 @@ func TestFilterUsesCanonicalServiceAndGroup(t *testing.T) {
 	}
 	if len(filtered) != 1 || filtered[0].Card.ServiceCode != "CTCJTR" {
 		t.Fatalf("unexpected group filter result: %#v", filtered)
+	}
+}
+
+func TestFilterNeverLeaksServiceOutsideActiveProviderCatalog(t *testing.T) {
+	t.Parallel()
+	repository := &providerScopedMemoryRepository{
+		memoryRepository: &memoryRepository{preference: Preference{
+			ProviderCode: "mengantar",
+			Configured:   true,
+			Mode:         ModeCustom,
+			Services: []Selection{
+				{CourierCode: "jne", ServiceCode: "REG"},
+				{CourierCode: "jne", ServiceCode: "JTR"},
+			},
+		}},
+		catalog: ProviderCatalog{
+			ProviderCode: "mengantar",
+			Services:     []Selection{{CourierCode: "jne", ServiceCode: "REG"}},
+		},
+	}
+	service := NewService(repository, courierRepository{})
+	filtered, err := service.Filter(context.Background(), "merchant_123", []rates.Result{
+		{Card: rates.RateCard{
+			CourierCode: "jne", ServiceCode: "REG_RAW", CanonicalServiceCode: "REG", ServiceGroup: "regular",
+		}},
+		{Card: rates.RateCard{
+			CourierCode: "jne", ServiceCode: "JTR_RAW", CanonicalServiceCode: "JTR", ServiceGroup: "cargo",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) != 1 || filtered[0].Card.CanonicalServiceCode != "REG" {
+		t.Fatalf("cross-provider service leaked: %#v", filtered)
 	}
 }
 

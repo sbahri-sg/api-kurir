@@ -17,6 +17,17 @@ type shippingPreferenceRepository struct {
 	preference merchantshipping.Preference
 }
 
+type disabledShippingPreferenceRepository struct {
+	*shippingPreferenceRepository
+}
+
+func (*disabledShippingPreferenceRepository) ActiveCatalog(
+	context.Context,
+	string,
+) (merchantshipping.ProviderCatalog, error) {
+	return merchantshipping.ProviderCatalog{}, merchantshipping.ErrShippingDisabled
+}
+
 func (repository *shippingPreferenceRepository) SelectedCourierCodes(
 	context.Context,
 	string,
@@ -164,6 +175,32 @@ func TestTenantShippingServicesOnlyAcceptsCustomMode(t *testing.T) {
 	e.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest ||
 		!bytes.Contains(response.Body.Bytes(), []byte("INVALID_SHIPPING_SERVICE_PREFERENCE")) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTenantShippingServicesRejectsUpdateWhenProviderDisabled(t *testing.T) {
+	t.Parallel()
+	service := merchantshipping.NewService(
+		&disabledShippingPreferenceRepository{&shippingPreferenceRepository{}},
+		shippingCourierRepository{},
+	)
+	e := echo.New()
+	e.PUT("/api/v1/integrations/shipping-services", withTenantIdentity(
+		tenantShippingServiceUpdateHandler(service),
+	))
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/integrations/shipping-services",
+		bytes.NewBufferString(`{
+			"services":[{"courier_code":"jne","service_code":"REG"}]
+		}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"code":"SHIPPING_DISABLED"`)) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

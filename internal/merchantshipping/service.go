@@ -16,6 +16,7 @@ var (
 	ErrUnknownService         = errors.New("shipping service is not in the active catalog")
 	ErrSelectionLimitExceeded = errors.New("shipping service selection limit exceeded")
 	ErrNoSelectedServices     = errors.New("merchant has no selected shipping services")
+	ErrShippingDisabled       = errors.New("merchant shipping provider is disabled")
 )
 
 const (
@@ -66,19 +67,63 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 	if !validTenantID(tenantID) {
 		return Catalog{}, ErrInvalidTenant
 	}
+	providerCatalog, providerScoped, err := s.activeProviderCatalog(ctx, tenantID)
+	if errors.Is(err, ErrShippingDisabled) {
+		return Catalog{
+			Preference: Preference{
+				Mode:          ModeCustom,
+				EnabledGroups: []string{},
+				Services:      []Selection{},
+			},
+			Groups:   groupOptions(),
+			Couriers: []CatalogCourier{},
+			Limits: SelectionLimits{
+				Enforced: true,
+				Couriers: limitUsage(s.maxCouriers, 0, 0),
+				Services: limitUsage(s.maxServices, 0, 0),
+			},
+		}, nil
+	}
+	if err != nil {
+		return Catalog{}, err
+	}
 	preference, err := s.repository.Get(ctx, tenantID)
 	if err != nil {
 		return Catalog{}, err
+	}
+	if preference.ProviderCode == "" {
+		preference.ProviderCode = providerCatalog.ProviderCode
 	}
 	courierCatalog, err := s.couriers.List(ctx)
 	if err != nil {
 		return Catalog{}, err
 	}
+	if !providerScoped {
+		providerCatalog.ProviderCode = preference.ProviderCode
+		for _, courier := range courierCatalog {
+			for _, service := range courier.Services {
+				if supportedGroup(service.Group) {
+					providerCatalog.Services = append(providerCatalog.Services, Selection{
+						CourierCode: courier.Code,
+						ServiceCode: service.Code,
+					})
+				}
+			}
+		}
+	}
 	preference = filterPreference(preference, courierCatalog)
+	if providerScoped {
+		preference = filterPreferenceToProvider(preference, providerCatalog.Services)
+	}
 	result := Catalog{
-		Preference: preference,
-		Groups:     groupOptions(),
-		Couriers:   make([]CatalogCourier, 0, len(courierCatalog)),
+		ProviderCode: providerCatalog.ProviderCode,
+		Preference:   preference,
+		Groups:       groupOptions(),
+		Couriers:     make([]CatalogCourier, 0, len(courierCatalog)),
+	}
+	availableServiceKeys := make(map[string]struct{}, len(providerCatalog.Services))
+	for _, selection := range providerCatalog.Services {
+		availableServiceKeys[selectionKey(selection.CourierCode, selection.ServiceCode)] = struct{}{}
 	}
 	selectedCouriers := 0
 	selectedServices := 0
@@ -86,8 +131,14 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 	availableServices := 0
 	for _, courier := range courierCatalog {
 		item := catalogCourier(courier)
+		if providerCatalog.ProviderCode != "" {
+			item.ProviderCode = providerCatalog.ProviderCode
+		}
 		for _, service := range courier.Services {
 			if !supportedGroup(service.Group) {
+				continue
+			}
+			if _, available := availableServiceKeys[selectionKey(courier.Code, service.Code)]; !available {
 				continue
 			}
 			selected := preferenceAllows(
@@ -137,6 +188,18 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 	return result, nil
 }
 
+func (s *Service) activeProviderCatalog(
+	ctx context.Context,
+	tenantID string,
+) (ProviderCatalog, bool, error) {
+	repository, providerScoped := s.repository.(ProviderCatalogRepository)
+	if !providerScoped {
+		return ProviderCatalog{Services: []Selection{}}, false, nil
+	}
+	catalog, err := repository.ActiveCatalog(ctx, tenantID)
+	return catalog, true, err
+}
+
 // SelectedCourierCodes returns the couriers implied by the merchant's saved
 // service selections. Gateway rate requests use this as their source of truth
 // instead of accepting a caller-supplied courier filter.
@@ -168,7 +231,7 @@ func (s *Service) Update(
 	if !validTenantID(tenantID) {
 		return Preference{}, ErrInvalidTenant
 	}
-	normalized, err := s.normalizeUpdate(ctx, input)
+	normalized, err := s.normalizeUpdate(ctx, tenantID, input)
 	if err != nil {
 		return Preference{}, err
 	}
@@ -182,12 +245,23 @@ func (s *Service) Filter(
 	tenantID string,
 	results []rates.Result,
 ) ([]rates.Result, error) {
+	providerCatalog, providerScoped, err := s.activeProviderCatalog(ctx, tenantID)
+	if errors.Is(err, ErrShippingDisabled) {
+		return []rates.Result{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	preference, err := s.repository.Get(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	if !preference.Configured {
 		return []rates.Result{}, nil
+	}
+	providerAvailable := make(map[string]struct{}, len(providerCatalog.Services))
+	for _, service := range providerCatalog.Services {
+		providerAvailable[selectionKey(service.CourierCode, service.ServiceCode)] = struct{}{}
 	}
 	filtered := make([]rates.Result, 0, len(results))
 	for _, result := range results {
@@ -197,6 +271,12 @@ func (s *Service) Filter(
 		canonicalCode := result.Card.CanonicalServiceCode
 		if canonicalCode == "" {
 			canonicalCode = result.Card.ServiceCode
+		}
+		if _, available := providerAvailable[selectionKey(
+			result.Card.CourierCode,
+			canonicalCode,
+		)]; providerScoped && !available {
+			continue
 		}
 		if preferenceAllows(
 			preference,
@@ -212,6 +292,7 @@ func (s *Service) Filter(
 
 func (s *Service) normalizeUpdate(
 	ctx context.Context,
+	tenantID string,
 	input UpdateInput,
 ) (UpdateInput, error) {
 	input.Mode = strings.ToLower(strings.TrimSpace(input.Mode))
@@ -236,9 +317,17 @@ func (s *Service) normalizeUpdate(
 	}
 
 	if len(selections) > 0 {
+		providerCatalog, providerScoped, err := s.activeProviderCatalog(ctx, tenantID)
+		if err != nil {
+			return UpdateInput{}, err
+		}
 		catalog, err := s.couriers.List(ctx)
 		if err != nil {
 			return UpdateInput{}, err
+		}
+		providerAvailable := make(map[string]struct{}, len(providerCatalog.Services))
+		for _, service := range providerCatalog.Services {
+			providerAvailable[selectionKey(service.CourierCode, service.ServiceCode)] = struct{}{}
 		}
 		available := make(map[string]struct{})
 		for _, courier := range catalog {
@@ -246,7 +335,10 @@ func (s *Service) normalizeUpdate(
 				if !supportedGroup(service.Group) {
 					continue
 				}
-				available[selectionKey(courier.Code, service.Code)] = struct{}{}
+				key := selectionKey(courier.Code, service.Code)
+				if _, allowed := providerAvailable[key]; allowed || !providerScoped {
+					available[key] = struct{}{}
+				}
 			}
 		}
 		selectedCouriers := make(map[string]struct{}, len(selections))
@@ -422,6 +514,27 @@ func filterPreference(preference Preference, catalog []couriers.Courier) Prefere
 	}
 	preference.Services = services
 	preference.EnabledGroups = groups
+	return preference
+}
+
+func filterPreferenceToProvider(
+	preference Preference,
+	providerServices []Selection,
+) Preference {
+	available := make(map[string]struct{}, len(providerServices))
+	for _, selection := range providerServices {
+		available[selectionKey(selection.CourierCode, selection.ServiceCode)] = struct{}{}
+	}
+	services := make([]Selection, 0, len(preference.Services))
+	for _, selection := range preference.Services {
+		if _, exists := available[selectionKey(
+			selection.CourierCode,
+			selection.ServiceCode,
+		)]; exists {
+			services = append(services, selection)
+		}
+	}
+	preference.Services = services
 	return preference
 }
 

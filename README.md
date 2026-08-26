@@ -297,10 +297,17 @@ Dokumentasi utama:
 6. [Keamanan dan request signing](docs/security-and-signing.md)
 7. [Sertifikasi partner](docs/partner-certification.md)
 8. [Partner Portal dan publikasi extension](docs/partner-portal.md)
+9. [Partner Integration Package dan Review Console](docs/partner-integration-packages.md)
 
 OpenAPI partner contract-first tersedia di
 [`openapi/partner-v1.yaml`](openapi/partner-v1.yaml). Kontrak partner belum
 berarti endpoint booking/vendor telah aktif di production.
+
+Vendor mengunggah ZIP melalui `/partner` menggunakan access key yang terikat ke
+satu provider; provider tidak dipilih dari form. Console internal pada menu
+**Partner Packages** hanya dipakai staff untuk review status. Package tetap
+hanya artefak review dan source code partner tidak pernah dijalankan oleh API
+Kurir.
 
 OpenAPI untuk aktivasi dan lifecycle akun provider seller tersedia di
 [`openapi/provider-account-v1.yaml`](openapi/provider-account-v1.yaml).

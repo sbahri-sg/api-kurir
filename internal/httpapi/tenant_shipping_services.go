@@ -45,6 +45,14 @@ func tenantShippingServiceUpdateHandler(
 		})
 		var limitError *merchantshipping.SelectionLimitError
 		switch {
+		case errors.Is(err, merchantshipping.ErrShippingDisabled):
+			return writeError(
+				c,
+				http.StatusConflict,
+				"SHIPPING_DISABLED",
+				"Merchant belum mengaktifkan provider pengiriman.",
+				nil,
+			)
 		case errors.As(err, &limitError):
 			return writeError(
 				c,

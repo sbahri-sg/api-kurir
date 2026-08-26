@@ -14,6 +14,7 @@ var (
 	ErrInvalidCredential     = errors.New("provider credential ID is invalid")
 	ErrProviderNotFound      = errors.New("shipping provider is not found")
 	ErrProviderUnavailable   = errors.New("shipping provider is unavailable")
+	ErrReleaseUnavailable    = errors.New("shipping provider has no published release")
 	ErrCredentialRequired    = errors.New("provider credential is required")
 	ErrCredentialUnavailable = errors.New("provider credential is unavailable")
 	ErrVersionConflict       = errors.New("shipping provider selection version conflict")

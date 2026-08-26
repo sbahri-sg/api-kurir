@@ -161,10 +161,12 @@ func TestCatalogExcludesUnavailableProvidersIntegration(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		INSERT INTO shipping_integration_providers (
 			code, name, logo_url, description, built_in,
+			integration_type, distribution_type,
 			requires_credential, available, display_order
 		)
 		VALUES ($1, 'Hidden Provider', 'https://example.com/provider.svg',
-			'Provider integration test yang belum tersedia.', false, true, false, 9999)
+			'Provider integration test yang belum tersedia.', false,
+			'managed_upstream', 'public', true, false, 9999)
 	`, providerCode)
 	if err != nil {
 		t.Fatal(err)
@@ -201,4 +203,123 @@ func TestCatalogExcludesUnavailableProvidersIntegration(t *testing.T) {
 		}
 	}
 	t.Fatalf("available provider was not returned in merchant catalog")
+}
+
+func TestPartnerHostedActivationPinsReleaseAndScopesIntegration(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	suffix := time.Now().UTC().UnixNano()
+	providerCode := fmt.Sprintf("partner_%d", suffix)
+	if len(providerCode) > 48 {
+		providerCode = providerCode[:48]
+	}
+	tenantID := fmt.Sprintf("partner_merchant_%d", suffix)
+	defer func() {
+		_, _ = pool.Exec(context.Background(), `
+			DELETE FROM tenant_active_shipping_providers WHERE tenant_id = $1
+		`, tenantID)
+		_, _ = pool.Exec(context.Background(), `
+			UPDATE shipping_integration_providers SET active_release_id = NULL WHERE code = $1
+		`, providerCode)
+		_, _ = pool.Exec(context.Background(), `
+			DELETE FROM partner_integration_submissions WHERE provider_code = $1
+		`, providerCode)
+		_, _ = pool.Exec(context.Background(), `
+			DELETE FROM shipping_integration_providers WHERE code = $1
+		`, providerCode)
+	}()
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO shipping_integration_providers (
+			code, name, logo_url, description, built_in,
+			integration_type, distribution_type, requires_credential,
+			available, display_order
+		)
+		VALUES ($1, 'Hosted Partner', 'https://example.com/provider.svg',
+			'Provider partner-hosted untuk pengujian instalasi release.', false,
+			'partner_hosted', 'public', false, true, 9997)
+	`, providerCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var releaseID string
+	err = pool.QueryRow(ctx, `
+		INSERT INTO partner_integration_submissions (
+			provider_code, version, status, file_name, content_type,
+			artifact_size, artifact_sha256, artifact, scan_report,
+			required_scopes, submitted_by, reviewed_by
+		)
+		VALUES ($1, '2.1.0', 'published', 'release.zip', 'application/zip',
+			1, repeat('b', 64), decode('00', 'hex'),
+			'{"passed":true}'::jsonb,
+			ARRAY['rates:read', 'shipments:write', 'tracking:read']::text[],
+			'integration-test', 'integration-test')
+		RETURNING id::text
+	`, providerCode).Scan(&releaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `
+		UPDATE shipping_integration_providers
+		SET active_release_id = $2::uuid
+		WHERE code = $1
+	`, providerCode, releaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(NewPostgresRepository(pool))
+	catalog, err := service.Catalog(ctx, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := findProvider(t, catalog, providerCode)
+	if provider.ActiveReleaseVersion != "2.1.0" || len(provider.RequiredScopes) != 3 {
+		t.Fatalf("partner release metadata missing from catalog: %#v", provider)
+	}
+
+	active, err := service.Activate(ctx, tenantID, providerCode, ChangeInput{
+		ExpectedVersion: &catalog.Version,
+		UpdatedBy:       "integration-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider = findProvider(t, active, providerCode)
+	if !provider.Active || len(provider.GrantedScopes) != 3 {
+		t.Fatalf("partner release was not pinned on activation: %#v", provider)
+	}
+	var pinnedReleaseID string
+	var pinnedScopes []string
+	err = pool.QueryRow(ctx, `
+		SELECT release_id::text, granted_scopes
+		FROM tenant_active_shipping_providers
+		WHERE tenant_id = $1
+	`, tenantID).Scan(&pinnedReleaseID, &pinnedScopes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pinnedReleaseID != releaseID || len(pinnedScopes) != 3 {
+		t.Fatalf("pinned release/scopes=%q %#v want=%q", pinnedReleaseID, pinnedScopes, releaseID)
+	}
+}
+
+func findProvider(t *testing.T, catalog Catalog, code string) Provider {
+	t.Helper()
+	for _, provider := range catalog.Providers {
+		if provider.Code == code {
+			return provider
+		}
+	}
+	t.Fatalf("provider %q is missing from catalog", code)
+	return Provider{}
 }

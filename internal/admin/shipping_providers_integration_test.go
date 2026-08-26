@@ -39,9 +39,11 @@ func TestShippingProviderManagementIntegration(t *testing.T) {
 	repository := NewPostgresRepository(pool)
 	created, err := repository.CreateShippingProvider(ctx, ShippingProviderCreateInput{
 		Code: code, Name: "Provider Test",
-		Logo:         "https://api-kurir.emisell.com/provider-logos/default.svg",
-		Description:  "Provider sementara untuk pengujian integrasi API Kurir.",
-		DisplayOrder: 900,
+		Logo:             "https://api-kurir.emisell.com/provider-logos/default.svg",
+		Description:      "Provider sementara untuk pengujian integrasi API Kurir.",
+		IntegrationType:  "managed_upstream",
+		DistributionType: "public",
+		DisplayOrder:     900,
 	}, "integration-test", "req-provider-create")
 	if err != nil {
 		t.Fatal(err)

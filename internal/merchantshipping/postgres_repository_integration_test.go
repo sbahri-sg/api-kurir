@@ -34,23 +34,40 @@ func TestSelectedCourierCodesIntegration(t *testing.T) {
 			"DELETE FROM tenant_shipping_preferences WHERE tenant_id = $1",
 			tenantID,
 		)
+		_, _ = pool.Exec(
+			context.Background(),
+			"DELETE FROM tenant_active_shipping_providers WHERE tenant_id = $1",
+			tenantID,
+		)
 	}()
 
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO tenant_shipping_preferences (
-			tenant_id, selection_mode, enabled_groups, updated_by
+		INSERT INTO tenant_active_shipping_providers (
+			tenant_id, provider_code, credential_id, updated_by
 		)
-		VALUES ($1, 'custom', '{}', 'integration-test')
+		VALUES ($1, 'emisell', NULL, 'integration-test')
+	`, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO tenant_shipping_preferences (
+			tenant_id, provider_code, selection_mode, enabled_groups, updated_by
+		)
+		VALUES ($1, 'emisell', 'custom', '{}', 'integration-test')
 	`, tenantID); err != nil {
 		t.Fatal(err)
 	}
 	tag, err := pool.Exec(ctx, `
 		INSERT INTO tenant_shipping_service_selections (
-			tenant_id, courier_service_id
+			tenant_id, provider_code, courier_service_id
 		)
-		SELECT $1, service.id
+		SELECT $1, 'emisell', service.id
 		FROM courier_services service
 		JOIN couriers courier ON courier.id = service.courier_id
+		JOIN provider_courier_services provider_service
+		  ON provider_service.provider_code = 'emisell'
+		 AND provider_service.courier_service_id = service.id
+		 AND provider_service.active
 		WHERE (courier.code = 'jne' AND service.code IN ('REG', 'JTR'))
 		   OR (courier.code = 'jnt' AND service.code = 'EZ')
 	`, tenantID)

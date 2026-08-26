@@ -7,12 +7,17 @@ import {
 } from "react";
 import {
   AdminApi,
+	PartnerPortalApi,
   type Courier,
   type CustomerAPIKey,
   type GeneratedCustomerAPIKey,
   type LocationOption,
   type LocationMapping,
   type Overview,
+	type PartnerSubmission,
+	type PartnerSubmissionStatus,
+	type PartnerAccessKey,
+	type PartnerIdentity,
   type ProviderCredential,
   type ProviderQuota,
   type ShippingProvider,
@@ -43,6 +48,7 @@ type Tab =
   | "rates"
   | "mappings"
   | "providers"
+	| "partner-submissions"
   | "quota"
   | "api-keys"
   | "webhook"
@@ -87,6 +93,7 @@ const NAV_GROUPS: NavGroup[] = [
     description: "Koneksi dan legacy",
     items: [
       { value: "providers", label: "Provider" },
+	  { value: "partner-submissions", label: "Partner Packages" },
       { value: "quota", label: "Credential & Kuota" },
       {
         value: "rates",
@@ -285,6 +292,12 @@ function formatETD(minimum: number | null, maximum: number | null) {
 }
 
 export function App() {
+  return window.location.pathname.startsWith("/partner")
+    ? <PartnerPortal />
+    : <AdminDashboard />;
+}
+
+function AdminDashboard() {
   const [adminKey, setAdminKey] = useState(
     () => sessionStorage.getItem("api-kurir-admin-key") ?? "",
   );
@@ -641,6 +654,7 @@ export function App() {
     rates: "Snapshot Tarif",
     mappings: "Mapping Lokasi Provider",
     providers: "Provider",
+	"partner-submissions": "Partner Packages",
     quota: "Credential & Kuota",
     "api-keys": "API Key",
     webhook: "Webhook",
@@ -975,6 +989,13 @@ export function App() {
           />
         )}
 
+		{tab === "partner-submissions" && (
+		  <PartnerSubmissionManagement
+			api={api}
+			onError={setError}
+		  />
+		)}
+
         {tab === "quota" && (
           <>
             <section className="provider-key-hero">
@@ -1292,6 +1313,8 @@ type ProviderDraft = {
   name: string;
   logo: string;
   description: string;
+  integration_type: "built_in" | "managed_upstream" | "partner_hosted";
+  distribution_type: "built_in" | "public" | "limited" | "private";
   available: boolean;
   display_order: number;
 };
@@ -1301,6 +1324,8 @@ const EMPTY_PROVIDER_DRAFT: ProviderDraft = {
   name: "",
   logo: "https://api-kurir.emisell.com/provider-logos/default.svg",
   description: "",
+  integration_type: "partner_hosted",
+  distribution_type: "public",
   available: false,
   display_order: 100,
 };
@@ -1383,6 +1408,10 @@ function ProviderManagement({
   const [draft, setDraft] = useState<ProviderDraft | null>(null);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [accessProvider, setAccessProvider] = useState<ShippingProvider | null>(null);
+  const [accessKeys, setAccessKeys] = useState<PartnerAccessKey[]>([]);
+  const [generatedAccessSecret, setGeneratedAccessSecret] = useState("");
+  const [accessLoading, setAccessLoading] = useState(false);
 
   function openCreate() {
     setEditingCode(null);
@@ -1396,6 +1425,8 @@ function ProviderManagement({
       name: provider.name,
       logo: provider.logo,
       description: provider.description,
+      integration_type: provider.integration_type,
+      distribution_type: provider.distribution_type,
       available: provider.available,
       display_order: provider.display_order,
     });
@@ -1405,6 +1436,50 @@ function ProviderManagement({
     if (saving) return;
     setDraft(null);
     setEditingCode(null);
+  }
+
+  async function openPartnerAccess(provider: ShippingProvider) {
+    setAccessProvider(provider);
+    setGeneratedAccessSecret("");
+    setAccessLoading(true);
+    onError("");
+    try {
+      setAccessKeys(await api.partnerAccessKeys(provider.code));
+    } catch (accessError) {
+      onError(getErrorMessage(accessError));
+      setAccessProvider(null);
+    } finally {
+      setAccessLoading(false);
+    }
+  }
+
+  async function generatePartnerAccess() {
+    if (!accessProvider) return;
+    setAccessLoading(true);
+    onError("");
+    try {
+      const generated = await api.generatePartnerAccessKey(accessProvider.code);
+      setGeneratedAccessSecret(generated.secret);
+      setAccessKeys(await api.partnerAccessKeys(accessProvider.code));
+    } catch (accessError) {
+      onError(getErrorMessage(accessError));
+    } finally {
+      setAccessLoading(false);
+    }
+  }
+
+  async function revokePartnerAccess(id: string) {
+    if (!accessProvider) return;
+    setAccessLoading(true);
+    onError("");
+    try {
+      await api.revokePartnerAccessKey(accessProvider.code, id);
+      setAccessKeys(await api.partnerAccessKeys(accessProvider.code));
+    } catch (accessError) {
+      onError(getErrorMessage(accessError));
+    } finally {
+      setAccessLoading(false);
+    }
   }
 
   async function submit(event: FormEvent) {
@@ -1418,6 +1493,8 @@ function ProviderManagement({
           name: draft.name.trim(),
           logo: draft.logo.trim(),
           description: draft.description.trim(),
+          integration_type: draft.integration_type,
+          distribution_type: draft.distribution_type,
           available: draft.available,
           display_order: draft.display_order,
         };
@@ -1428,6 +1505,8 @@ function ProviderManagement({
           name: draft.name.trim(),
           logo: draft.logo.trim(),
           description: draft.description.trim(),
+          integration_type: draft.integration_type === "built_in" ? "partner_hosted" : draft.integration_type,
+          distribution_type: draft.distribution_type === "built_in" ? "public" : draft.distribution_type,
           display_order: draft.display_order,
         };
         await api.createShippingProvider(input);
@@ -1528,11 +1607,16 @@ function ProviderManagement({
                       {provider.available ? "tersedia" : "belum tersedia"}
                     </span>
                     <small>
-                      {provider.built_in
-                        ? "Bawaan Emisell"
-                        : provider.requires_credential
-                          ? "Credential seller"
-                          : "Tanpa credential"}
+                      {provider.integration_type.replaceAll("_", " ")} · {provider.distribution_type}
+                    </small>
+                    <small>
+                      {provider.active_release_version
+                        ? `Release aktif v${provider.active_release_version}`
+                        : provider.integration_type === "partner_hosted"
+                          ? "Belum ada release aktif"
+                          : provider.requires_credential
+                            ? "Credential seller"
+                            : "Dikelola platform"}
                     </small>
                   </td>
                   <td>
@@ -1549,12 +1633,22 @@ function ProviderManagement({
                     <small>Diperbarui {formatDate(provider.updated_at)}</small>
                   </td>
                   <td>
-                    <button
-                      className="table-action provider-edit-action"
-                      onClick={() => openEdit(provider)}
-                    >
-                      Edit
-                    </button>
+                    <div className="provider-row-actions">
+                      {provider.integration_type === "partner_hosted" && (
+                        <button
+                          className="table-action"
+                          onClick={() => void openPartnerAccess(provider)}
+                        >
+                          Akses partner
+                        </button>
+                      )}
+                      <button
+                        className="table-action provider-edit-action"
+                        onClick={() => openEdit(provider)}
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1615,6 +1709,43 @@ function ProviderManagement({
                   }
                 />
               </label>
+              <label>
+                Jenis integrasi
+                <select
+                  value={draft.integration_type}
+                  disabled={draft.integration_type === "built_in"}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      integration_type: event.target.value as ProviderDraft["integration_type"],
+                    })
+                  }
+                >
+                  {draft.integration_type === "built_in" && <option value="built_in">Built-in Emisell</option>}
+                  <option value="managed_upstream">Managed upstream</option>
+                  <option value="partner_hosted">Partner-hosted</option>
+                </select>
+                <small>Managed upstream memakai adapter API Kurir; partner-hosted memakai package tersertifikasi.</small>
+              </label>
+              <label>
+                Distribusi
+                <select
+                  value={draft.distribution_type}
+                  disabled={draft.distribution_type === "built_in"}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      distribution_type: event.target.value as ProviderDraft["distribution_type"],
+                    })
+                  }
+                >
+                  {draft.distribution_type === "built_in" && <option value="built_in">Built-in</option>}
+                  <option value="public">Public</option>
+                  <option value="limited">Limited</option>
+                  <option value="private">Private</option>
+                </select>
+                <small>Public tampil umum; limited/private hanya untuk merchant yang diberi akses.</small>
+              </label>
               <label className="span-two">
                 Nama provider
                 <input
@@ -1671,16 +1802,16 @@ function ProviderManagement({
                   <span>
                     <strong>Provider tersedia untuk aktivasi merchant</strong>
                     <small>
-                      Aktifkan hanya setelah adapter dan validasi credential siap.
+                      Aktifkan hanya setelah Partner Connector, sertifikasi, dan validasi credential siap.
                       Provider dengan merchant aktif tidak dapat dinonaktifkan langsung.
                     </small>
                   </span>
                 </label>
               ) : (
                 <div className="span-two provider-key-note">
-                  Provider baru otomatis menggunakan credential seller dan dibuat
-                  berstatus belum tersedia. Setelah adapter siap, edit provider lalu
-                  aktifkan status tersedia.
+                  Provider baru dibuat belum tersedia. Partner-hosted wajib memiliki
+                  release published; managed upstream wajib memiliki adapter dan
+                  credential seller yang valid sebelum diaktifkan.
                 </div>
               )}
               <div className="form-actions span-two">
@@ -1700,7 +1831,933 @@ function ProviderManagement({
           </section>
         </div>
       )}
+
+      {accessProvider && (
+        <div className="modal-backdrop">
+          <section className="modal modal-wide partner-access-modal">
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">PARTNER PORTAL ACCESS</p>
+                <h2>{accessProvider.name}</h2>
+                <small>{accessProvider.code} · provider dikunci oleh backend</small>
+              </div>
+              <button
+                onClick={() => {
+                  if (accessLoading) return;
+                  setAccessProvider(null);
+                  setGeneratedAccessSecret("");
+                }}
+              >
+                Tutup
+              </button>
+            </div>
+
+            <div className="partner-access-intro">
+              <p>
+                Berikan access key ini hanya kepada partner terkait. Saat login,
+                Partner Portal otomatis mengenali provider ini sehingga tidak ada
+                dropdown dan package tidak dapat dikirim atas nama provider lain.
+              </p>
+              <a className="button button-secondary" href="/partner" target="_blank" rel="noreferrer">
+                Buka Partner Portal
+              </a>
+            </div>
+
+            {generatedAccessSecret && (
+              <div className="webhook-generated-secret partner-access-secret">
+                <strong>Salin sekarang — key hanya ditampilkan sekali</strong>
+                <code>{generatedAccessSecret}</code>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => void navigator.clipboard.writeText(generatedAccessSecret)}
+                >
+                  Salin key
+                </button>
+              </div>
+            )}
+
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">ACCESS KEY</p>
+                <h3>Credential milik {accessProvider.name}</h3>
+              </div>
+              <button
+                className="button button-primary"
+                onClick={() => void generatePartnerAccess()}
+                disabled={accessLoading}
+              >
+                {accessLoading ? "Memproses…" : "Generate access key"}
+              </button>
+            </div>
+
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr><th>Key</th><th>Status</th><th>Dibuat</th><th>Terakhir dipakai</th><th>Aksi</th></tr>
+                </thead>
+                <tbody>
+                  {accessKeys.map((item) => (
+                    <tr key={item.id}>
+                      <td><code>{item.display_key}</code></td>
+                      <td><span className={`badge ${item.active ? "badge-success" : "badge-warning"}`}>{item.active ? "aktif" : "dicabut"}</span></td>
+                      <td><strong>{item.created_by}</strong><small>{formatDate(item.created_at)}</small></td>
+                      <td>{formatDate(item.last_used_at)}</td>
+                      <td>
+                        {item.active ? (
+                          <button className="table-action table-action-danger" onClick={() => void revokePartnerAccess(item.id)} disabled={accessLoading}>
+                            Cabut
+                          </button>
+                        ) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                  {!accessKeys.length && (
+                    <tr><td colSpan={5} className="empty-state">Belum ada access key untuk provider ini.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
+
     </>
+  );
+}
+
+function PartnerPortal() {
+  const [accessKey, setAccessKey] = useState(
+    () => sessionStorage.getItem("api-kurir-partner-key") ?? "",
+  );
+  const [accessKeyInput, setAccessKeyInput] = useState(accessKey);
+  const [identity, setIdentity] = useState<PartnerIdentity | null>(null);
+  const [items, setItems] = useState<PartnerSubmission[]>([]);
+  const [selectedID, setSelectedID] = useState("");
+  const [version, setVersion] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(Boolean(accessKey));
+  const [uploading, setUploading] = useState(false);
+  const [starterDownloading, setStarterDownloading] = useState(false);
+  const [error, setError] = useState("");
+
+  const api = useMemo(() => new PartnerPortalApi(accessKey), [accessKey]);
+
+  const loadPortal = useCallback(async (signal?: AbortSignal) => {
+    if (!accessKey) return;
+    setLoading(true);
+    setError("");
+    try {
+		const [partnerIdentity, submissions] = await Promise.all([
+        api.me(signal),
+        api.submissions("", signal),
+      ]);
+      setIdentity(partnerIdentity);
+      setItems(submissions);
+      setSelectedID((current) =>
+        current && submissions.some((item) => item.id === current)
+          ? current
+          : submissions[0]?.id ?? "",
+      );
+    } catch (portalError) {
+      if (portalError instanceof Error && portalError.name === "AbortError") return;
+      if (isUnauthorized(portalError)) {
+        sessionStorage.removeItem("api-kurir-partner-key");
+        setAccessKey("");
+        setAccessKeyInput("");
+        setIdentity(null);
+      }
+      setError(getErrorMessage(portalError));
+    } finally {
+      setLoading(false);
+    }
+  }, [accessKey, api]);
+
+  useEffect(() => {
+    if (!accessKey) return;
+    const controller = new AbortController();
+    void loadPortal(controller.signal);
+    return () => controller.abort();
+  }, [accessKey, loadPortal]);
+
+  function login(event: FormEvent) {
+    event.preventDefault();
+    const normalized = accessKeyInput.trim();
+    if (!normalized) return;
+    sessionStorage.setItem("api-kurir-partner-key", normalized);
+    setAccessKey(normalized);
+  }
+
+  function logout() {
+    sessionStorage.removeItem("api-kurir-partner-key");
+    setAccessKey("");
+    setAccessKeyInput("");
+    setIdentity(null);
+    setItems([]);
+    setSelectedID("");
+    setError("");
+  }
+
+  async function upload(event: FormEvent) {
+    event.preventDefault();
+    if (!file || !version.trim()) return;
+    setUploading(true);
+    setError("");
+    try {
+      const created = await api.uploadSubmission(version.trim(), file);
+      setVersion("");
+      setFile(null);
+      const input = document.getElementById("partner-portal-package") as HTMLInputElement | null;
+      if (input) input.value = "";
+      const submissions = await api.submissions();
+      setItems(submissions);
+      setSelectedID(created.id);
+    } catch (uploadError) {
+      setError(getErrorMessage(uploadError));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function download(item: PartnerSubmission) {
+    setError("");
+    try {
+      const blob = await api.downloadArtifact(item.id);
+      const source = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = source;
+      anchor.download = item.file_name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(source);
+    } catch (downloadError) {
+      setError(getErrorMessage(downloadError));
+    }
+  }
+
+  async function downloadStarterPackage() {
+    if (!identity) return;
+    setStarterDownloading(true);
+    setError("");
+    try {
+      const blob = await api.downloadStarterPackage();
+      const source = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = source;
+      anchor.download = `${identity.provider_code}-partner-starter.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(source);
+    } catch (downloadError) {
+      setError(getErrorMessage(downloadError));
+    } finally {
+      setStarterDownloading(false);
+    }
+  }
+
+  if (!identity) {
+    return (
+      <main className="login-shell partner-login-shell">
+        <section className="login-card partner-login-card">
+          <div className="brand-mark">EP</div>
+          <p className="eyebrow">EMISELL PARTNER PORTAL</p>
+          <h1>Ajukan connector kurir</h1>
+          <p>
+            Gunakan access key yang diterbitkan Emisell. Provider akan dikenali
+            otomatis dan tidak dapat dipilih atau diganti dari browser.
+          </p>
+          <form onSubmit={login} className="login-form">
+            <label>
+              Partner access key
+              <input
+                type="password"
+                value={accessKeyInput}
+                onChange={(event) => setAccessKeyInput(event.target.value)}
+                placeholder="epk_live_…"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            {error && <div className="alert alert-error">{error}</div>}
+            <button className="button button-primary" disabled={loading}>
+              {loading ? "Memeriksa…" : "Masuk Partner Portal"}
+            </button>
+          </form>
+          <a className="partner-staff-link" href="/">Kembali ke API Kurir Admin</a>
+        </section>
+      </main>
+    );
+  }
+
+  const selected = items.find((item) => item.id === selectedID) ?? null;
+
+  return (
+    <main className="partner-portal-shell">
+      <header className="partner-portal-topbar">
+        <a className="brand" href="/partner" aria-label="Emisell Partner Portal">
+          <span className="brand-mark">EP</span>
+          <span><strong>Partner Portal</strong><small>Emisell Logistics Platform</small></span>
+        </a>
+        <nav className="partner-portal-nav" aria-label="Navigasi Partner Portal">
+          <a href="#partner-package">Package</a>
+          <a href="#partner-integration-docs">Dokumentasi</a>
+          <a href="/openapi/api-kurir-partner-v1.yaml" target="_blank" rel="noreferrer">
+            OpenAPI
+          </a>
+        </nav>
+        <div className="partner-portal-identity">
+          <span>Provider terautentikasi</span>
+          <strong>{identity.provider_name}</strong>
+          <code>{identity.provider_code}</code>
+          <button onClick={logout}>Keluar</button>
+        </div>
+      </header>
+
+      <section className="partner-portal-workspace">
+        <section className="provider-key-hero partner-portal-hero">
+          <div>
+            <p className="eyebrow">PACKAGE CERTIFICATION</p>
+            <h1>Integrasi {identity.provider_name}</h1>
+            <p>
+              Upload versi connector untuk scan otomatis, review keamanan,
+              sandbox, dan UAT. Seluruh submission pada halaman ini terkunci
+              untuk provider <strong>{identity.provider_code}</strong>.
+            </p>
+          </div>
+          <span className="badge badge-success">Identitas terkunci</span>
+        </section>
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        <section className="partner-portal-grid" id="partner-package">
+          <form className="panel partner-package-upload" onSubmit={upload}>
+            <div className="panel-heading">
+              <div><p className="eyebrow">NEW SUBMISSION</p><h2>Upload package ZIP</h2></div>
+              <span className="subtle">Maks. 25 MB</span>
+            </div>
+            <div className="partner-provider-lock">
+              <span>Provider</span>
+              <strong>{identity.provider_name}</strong>
+              <code>{identity.provider_code}</code>
+            </div>
+            <label>
+              Versi connector
+              <input
+                value={version}
+                onChange={(event) => setVersion(event.target.value)}
+                placeholder="1.0.0"
+                maxLength={64}
+                pattern="[A-Za-z0-9][A-Za-z0-9._-]*"
+                required
+              />
+            </label>
+            <label>
+              File package
+              <input
+                id="partner-portal-package"
+                type="file"
+                accept=".zip,application/zip"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                required
+              />
+            </label>
+            <div className="partner-package-requirements">
+              <strong>Wajib pada root ZIP</strong>
+              <span>emisell-extension.yaml</span>
+              <span>openapi.yaml</span>
+              <small>10 percobaan/jam · 1 upload aktif · 25 versi atau 500 MB/provider</small>
+              <a href="#partner-developer-preparation">Lihat checklist developer lengkap →</a>
+            </div>
+            <button className="button button-primary" disabled={uploading}>
+              {uploading ? "Memvalidasi package…" : "Upload & validasi"}
+            </button>
+          </form>
+
+          <section className="panel partner-portal-guidance">
+            <p className="eyebrow">ALUR SERTIFIKASI</p>
+            <h2>Dari scan hingga published</h2>
+            <ol>
+              <li><strong>Static scan</strong><span>Format ZIP, manifest, OpenAPI, dan secret diperiksa.</span></li>
+              <li><strong>Sandbox & keamanan</strong><span>Tim Emisell menguji kontrak tanpa menjalankan source di API Kurir.</span></li>
+              <li><strong>UAT</strong><span>Skenario tarif, order, pickup, dan tracking diverifikasi.</span></li>
+              <li><strong>Published</strong><span>Hanya versi yang lulus dapat diaktifkan ke merchant.</span></li>
+            </ol>
+          </section>
+        </section>
+
+        <PartnerPortalIntegrationDocumentation
+          providerCode={identity.provider_code}
+          providerName={identity.provider_name}
+          starterDownloading={starterDownloading}
+          onDownloadStarter={() => void downloadStarterPackage()}
+        />
+
+        <section className="panel panel-table partner-package-table">
+          <div className="panel-heading panel-padding">
+            <div><p className="eyebrow">SUBMISSION HISTORY</p><h2>Versi milik {identity.provider_name}</h2></div>
+            <button className="button button-secondary" onClick={() => void loadPortal()} disabled={loading}>
+              {loading ? "Memuat…" : "Muat ulang"}
+            </button>
+          </div>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Versi</th><th>Package</th><th>Scan</th><th>Status</th><th>Diajukan</th><th>Aksi</th></tr></thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id} className={selectedID === item.id ? "table-row-selected" : ""}>
+                    <td>
+                      <strong>v{item.version}</strong>
+                      <small>{item.provider_code}</small>
+                      {item.is_active_release && <span className="badge badge-success">release aktif</span>}
+                    </td>
+                    <td><strong>{item.file_name}</strong><small>{formatFileSize(item.artifact_size)}</small></td>
+                    <td><span className={`badge ${item.scan_report.passed ? "badge-success" : "badge-danger"}`}>{item.scan_report.passed ? "lulus" : "gagal"}</span></td>
+                    <td><span className={`badge ${partnerStatusTone(item.status)}`}>{PARTNER_SUBMISSION_STATUS_LABELS[item.status]}</span></td>
+                    <td>{formatDate(item.created_at)}</td>
+                    <td><button className="table-action" onClick={() => setSelectedID(item.id)}>Detail</button></td>
+                  </tr>
+                ))}
+                {!items.length && <tr><td colSpan={6} className="empty-state">Belum ada package yang diajukan.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {selected && (
+          <section className="panel partner-package-review partner-portal-result">
+            <div className="panel-heading">
+              <div><p className="eyebrow">HASIL &amp; FEEDBACK</p><h2>v{selected.version} · {PARTNER_SUBMISSION_STATUS_LABELS[selected.status]}</h2></div>
+              <button className="button button-secondary" onClick={() => void download(selected)}>Unduh ZIP</button>
+            </div>
+            {selected.review_note && <div className="alert alert-warning"><strong>Catatan reviewer</strong><p>{selected.review_note}</p></div>}
+            <div className="partner-package-review-grid">
+              <div className="partner-package-checks">
+                {selected.scan_report.checks.map((check) => (
+                  <article key={check.code}>
+                    <span className={`badge ${check.status === "passed" ? "badge-success" : "badge-danger"}`}>{check.status}</span>
+                    <div><strong>{check.code.replaceAll("_", " ")}</strong><p>{check.message}</p></div>
+                  </article>
+                ))}
+              </div>
+              <div className="partner-package-manifest">
+                <h3>Manifest terdeteksi</h3>
+                <dl>
+                  <div><dt>Contract</dt><dd>{selected.scan_report.manifest.contract_version || "—"}</dd></div>
+                  <div><dt>Sandbox</dt><dd>{selected.scan_report.manifest.sandbox_url || "—"}</dd></div>
+                  <div><dt>Capability</dt><dd>{selected.scan_report.manifest.declared_capabilities.join(", ") || "—"}</dd></div>
+                  <div><dt>Scope runtime</dt><dd>{selected.required_scopes.join(", ") || "Tidak ada"}</dd></div>
+                  <div><dt>Service</dt><dd>{selected.scan_report.manifest.declared_services.join(", ") || "—"}</dd></div>
+                </dl>
+              </div>
+            </div>
+          </section>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function PartnerPortalIntegrationDocumentation({
+  providerCode,
+  providerName,
+  starterDownloading,
+  onDownloadStarter,
+}: {
+  providerCode: string;
+  providerName: string;
+  starterDownloading: boolean;
+  onDownloadStarter: () => void;
+}) {
+  return (
+    <section className="partner-integration-docs" id="partner-integration-docs">
+      <section className="panel partner-integration-docs-heading">
+        <div>
+          <p className="eyebrow">DOKUMENTASI INTEGRASI</p>
+          <h2>Bangun connector {providerName} untuk Emisell</h2>
+          <p>
+            Connector tetap berjalan pada infrastruktur partner. API Kurir akan
+            memanggil kontrak standar ini setelah package, sandbox, keamanan,
+            dan UAT dinyatakan lulus.
+          </p>
+        </div>
+        <div className="partner-doc-actions">
+          <button
+            className="button button-primary"
+            type="button"
+            onClick={onDownloadStarter}
+            disabled={starterDownloading}
+          >
+            {starterDownloading ? "Menyiapkan ZIP…" : "Download Starter Package"}
+          </button>
+          <a
+            className="button button-secondary"
+            href="/openapi/api-kurir-partner-v1.yaml"
+            download="api-kurir-partner-v1.yaml"
+          >
+            Unduh kontrak OpenAPI (wajib)
+          </a>
+        </div>
+      </section>
+
+      <div className="partner-integration-flow" aria-label="Alur integrasi partner">
+        <span>Emisell</span><i>→</i><strong>API Kurir</strong><i>→</i>
+        <span>Connector {providerName}</span>
+      </div>
+
+      <section className="partner-integration-docs-grid">
+        <article className="panel">
+          <p className="eyebrow">QUICK START</p>
+          <h3>Enam langkah integrasi</h3>
+          <ol>
+            <li>Unduh dan pelajari kontrak OpenAPI Partner API v1.</li>
+            <li>Implementasikan endpoint yang dibutuhkan pada base path <code>/partner/v1</code>.</li>
+            <li>Sediakan host sandbox dan production menggunakan HTTPS publik.</li>
+            <li>Siapkan manifest, OpenAPI implementasi, dokumentasi, dan bukti pengujian.</li>
+            <li>Upload ZIP dengan nomor versi baru yang tidak pernah dipakai sebelumnya.</li>
+            <li>Perbaiki feedback sampai sandbox, security review, dan UAT lulus.</li>
+          </ol>
+        </article>
+
+        <article className="panel partner-integration-auth">
+          <p className="eyebrow">AUTENTIKASI</p>
+          <h3>Portal key bukan runtime key</h3>
+          <p>
+            Key <code>epk_live_*</code> hanya untuk portal dan submission milik
+            <strong> {providerCode}</strong>. Partner tidak mengisi runtime token
+            secara manual di portal. Credential server-to-server diprovisikan
+            terpisah oleh tim Emisell ketika release siap diaktifkan.
+          </p>
+          <pre><code>{`Authorization: Bearer <partner-runtime-token>
+X-Partner-Key-Id: pk_live_...
+X-Request-Id: req_...`}</code></pre>
+          <p>
+            Semua request POST memakai HMAC-SHA256, timestamp, nonce, dan
+            <code> Idempotency-Key</code> sesuai spesifikasi OpenAPI.
+          </p>
+        </article>
+      </section>
+
+      <section className="partner-developer-preparation" id="partner-developer-preparation">
+        <div className="docs-section-heading">
+          <div>
+            <p className="eyebrow">SEBELUM UPLOAD</p>
+            <h2>Yang perlu disiapkan developer</h2>
+            <p>
+              ZIP adalah artefak sertifikasi, bukan aplikasi yang dijalankan di
+              server API Kurir. Connector tetap di-host dan dioperasikan oleh partner.
+            </p>
+          </div>
+          <span className="badge badge-success">Checklist developer</span>
+        </div>
+
+        <div className="partner-developer-preparation-grid">
+          <article className="panel">
+            <span className="partner-preparation-number">01</span>
+            <p className="eyebrow">WAJIB SAAT UPLOAD</p>
+            <h3>Package dapat divalidasi</h3>
+            <ul>
+              <li><code>emisell-extension.yaml</code> berada tepat pada root ZIP.</li>
+              <li><code>openapi.yaml</code> OpenAPI 3.x berada tepat pada root ZIP.</li>
+              <li>Provider manifest harus <code>{providerCode}</code>.</li>
+              <li>Sandbox dan production memakai HTTPS publik.</li>
+              <li>ZIP maksimal 25 MB, hasil ekstraksi 100 MB, dan 250 entry.</li>
+              <li>Limit 10 percobaan per jam dan satu upload aktif per access key.</li>
+              <li>Kuota maksimal 25 versi atau total 500 MB per provider.</li>
+            </ul>
+          </article>
+
+          <article className="panel">
+            <span className="partner-preparation-number">02</span>
+            <p className="eyebrow">DIREKOMENDASIKAN</p>
+            <h3>Mempercepat proses review</h3>
+            <ul>
+              <li><code>README.md</code> berisi setup, endpoint, dan cara pengujian.</li>
+              <li><code>SECURITY.md</code> berisi kontak dan prosedur insiden.</li>
+              <li><code>CHANGELOG.md</code> menjelaskan perubahan setiap versi.</li>
+              <li>Contoh request/response dan contract test sandbox.</li>
+              <li>Source code dan SBOM tidak diwajibkan pada fase awal.</li>
+            </ul>
+          </article>
+
+          <article className="panel partner-preparation-danger">
+            <span className="partner-preparation-number">03</span>
+            <p className="eyebrow">DILARANG</p>
+            <h3>Jangan masukkan data sensitif</h3>
+            <ul>
+              <li>API key, password, token, private key, atau file <code>.env</code>.</li>
+              <li>Data merchant, customer, alamat, nomor telepon, atau AWB asli.</li>
+              <li>Binary native, symlink, path absolut, atau file hasil build yang tidak perlu.</li>
+              <li>Credential runtime; credential diprovisikan terpisah setelah sertifikasi.</li>
+              <li>Source code bersifat opsional dan tidak pernah dieksekusi API Kurir.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <PartnerConnectorEndpointCatalog />
+
+      <section className="partner-integration-docs-grid">
+        <article className="panel partner-package-doc-checklist">
+          <p className="eyebrow">PACKAGE ZIP</p>
+          <h3>Struktur yang direkomendasikan</h3>
+          <pre><code>{`partner-package.zip
+├── emisell-extension.yaml   # wajib saat upload
+├── openapi.yaml             # wajib saat upload
+├── README.md                # direkomendasikan
+├── SECURITY.md              # direkomendasikan
+├── CHANGELOG.md             # direkomendasikan
+├── examples/
+├── contract-tests/
+└── src/                     # opsional, tidak dieksekusi`}</code></pre>
+          <p>
+            Provider pada manifest wajib <code>{providerCode}</code>. Secret,
+            file <code>.env</code>, private key, binary native, dan data customer
+            tidak boleh dimasukkan ke package.
+          </p>
+        </article>
+
+        <article className="panel partner-package-doc-checklist">
+          <p className="eyebrow">CONTOH MANIFEST</p>
+          <h3>emisell-extension.yaml</h3>
+          <pre><code>{`schema_version: "1"
+provider:
+  code: ${providerCode}
+  name: ${providerName}
+connector:
+  contract_version: v1
+  sandbox_url: https://sandbox.partner.co.id/partner/v1
+  production_url: https://api.partner.co.id/partner/v1
+capabilities:
+  - rates
+  - shipments
+  - pickup
+  - tracking
+services:
+  - regular
+  - next_day
+  - economy
+  - cargo`}</code></pre>
+          <p>
+            Deklarasikan hanya capability dan service yang benar-benar tersedia.
+            Endpoint wajib akan diperiksa otomatis berdasarkan capability tersebut.
+          </p>
+        </article>
+      </section>
+
+      <section className="partner-integration-docs-grid">
+        <article className="panel partner-integration-readiness">
+          <p className="eyebrow">PRODUCTION READINESS</p>
+          <h3>Syarat sebelum published</h3>
+          <ul>
+            <li>TLS 1.2+ dan credential dapat dirotasi tanpa downtime.</li>
+            <li>HMAC, replay protection, idempotency, retry, dan audit trail.</li>
+            <li>Mapping status, service, AWB, label, pickup, dan error konsisten.</li>
+            <li>Isolasi data merchant dan tidak ada credential pada log.</li>
+            <li>Contract test sandbox serta skenario kegagalan lulus.</li>
+          </ul>
+        </article>
+
+        <article className="panel partner-integration-readiness">
+          <p className="eyebrow">HASIL UPLOAD</p>
+          <h3>Apa yang terjadi setelah dikirim?</h3>
+          <ol>
+            <li>ZIP masuk karantina dan memperoleh checksum SHA-256.</li>
+            <li>Struktur arsip, secret, manifest, dan OpenAPI diperiksa otomatis.</li>
+            <li>Hasil gagal mendapatkan status <strong>Perlu revisi</strong> beserta alasannya.</li>
+            <li>Hasil lulus masuk review teknis, sandbox, keamanan, dan UAT.</li>
+            <li>Hanya release published yang dapat diaktifkan untuk merchant.</li>
+          </ol>
+        </article>
+      </section>
+    </section>
+  );
+}
+
+const PARTNER_SUBMISSION_STATUS_LABELS: Record<PartnerSubmissionStatus, string> = {
+  technical_review: "Review teknis",
+  sandbox_testing: "Uji sandbox",
+  security_review: "Review keamanan",
+  uat: "UAT",
+  approved: "Disetujui",
+  published: "Published",
+  changes_requested: "Perlu revisi",
+  rejected: "Ditolak",
+  suspended: "Ditangguhkan",
+  superseded: "Digantikan",
+};
+
+const PARTNER_SUBMISSION_TRANSITIONS: Record<
+  PartnerSubmissionStatus,
+  PartnerSubmissionStatus[]
+> = {
+  technical_review: ["sandbox_testing", "changes_requested", "rejected"],
+  sandbox_testing: ["security_review", "changes_requested", "rejected"],
+  security_review: ["uat", "changes_requested", "rejected"],
+  uat: ["approved", "changes_requested", "rejected"],
+  approved: ["published", "technical_review"],
+  published: ["suspended"],
+  suspended: ["published", "technical_review"],
+  changes_requested: ["rejected"],
+  rejected: [],
+  superseded: ["published"],
+};
+
+function formatFileSize(value: number) {
+  if (value < 1024) return `${value} byte`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function partnerStatusTone(status: PartnerSubmissionStatus) {
+  if (status === "published" || status === "approved") return "badge-success";
+  if (status === "changes_requested" || status === "suspended") return "badge-warning";
+  if (status === "rejected") return "badge-danger";
+  return "";
+}
+
+function PartnerSubmissionManagement({
+  api,
+  onError,
+}: {
+  api: AdminApi;
+  onError: (message: string) => void;
+}) {
+  const [items, setItems] = useState<PartnerSubmission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [selectedID, setSelectedID] = useState("");
+  const [reviewStatus, setReviewStatus] = useState<PartnerSubmissionStatus | "">("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewing, setReviewing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    try {
+      const result = await api.partnerSubmissions({
+        status: statusFilter,
+        limit: 100,
+      }, signal);
+      setItems(result);
+      setSelectedID((current) =>
+        current && result.some((item) => item.id === current)
+          ? current
+          : result[0]?.id ?? "",
+      );
+    } catch (requestError) {
+      if (requestError instanceof Error && requestError.name === "AbortError") return;
+      onError(getErrorMessage(requestError));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, onError, statusFilter]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+
+  const selected = items.find((item) => item.id === selectedID) ?? null;
+  const transitions = selected
+    ? PARTNER_SUBMISSION_TRANSITIONS[selected.status]
+    : [];
+
+  useEffect(() => {
+    if (!selected) {
+      setReviewStatus("");
+      setReviewNote("");
+      return;
+    }
+    setReviewStatus(PARTNER_SUBMISSION_TRANSITIONS[selected.status][0] ?? "");
+    setReviewNote(selected.review_note);
+  }, [selected?.id, selected?.status]);
+
+  async function updateStatus(event: FormEvent) {
+    event.preventDefault();
+    if (!selected || !reviewStatus) return;
+    setReviewing(true);
+    onError("");
+    try {
+      const updated = await api.updatePartnerSubmissionStatus(
+        selected.id,
+        reviewStatus,
+        reviewNote,
+      );
+      await load();
+      setSelectedID(updated.id);
+    } catch (reviewError) {
+      onError(getErrorMessage(reviewError));
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  async function downloadArtifact() {
+    if (!selected) return;
+    setDownloading(true);
+    onError("");
+    try {
+      const blob = await api.downloadPartnerSubmissionArtifact(selected.id);
+      const source = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = source;
+      anchor.download = selected.file_name;
+	  document.body.appendChild(anchor);
+      anchor.click();
+	  anchor.remove();
+      URL.revokeObjectURL(source);
+    } catch (downloadError) {
+      onError(getErrorMessage(downloadError));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  const passedCount = items.filter((item) => item.scan_report.passed).length;
+  const publishedCount = items.filter((item) => item.status === "published").length;
+  const revisionCount = items.filter((item) => item.status === "changes_requested").length;
+
+  return (
+    <div className="partner-package-page">
+      <section className="provider-key-hero partner-package-hero">
+        <div>
+          <p className="eyebrow">SUBMISSION &amp; REVIEW CONSOLE</p>
+          <h2>Package integrasi partner</h2>
+          <p>
+            Staff meninjau package yang dikirim langsung oleh partner melalui
+            Partner Portal. Identitas provider dikunci oleh access key partner,
+            bukan dipilih oleh staff pada formulir upload.
+          </p>
+        </div>
+        <span className="badge">Internal staff</span>
+      </section>
+
+      <section className="provider-management-summary partner-package-summary">
+          <article><span>Submission</span><strong>{formatNumber(items.length)}</strong></article>
+          <article><span>Lulus scan</span><strong>{formatNumber(passedCount)}</strong></article>
+          <article><span>Published</span><strong>{formatNumber(publishedCount)}</strong></article>
+          <article><span>Perlu revisi</span><strong>{formatNumber(revisionCount)}</strong></article>
+      </section>
+
+      <section className="toolbar partner-package-toolbar">
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <option value="">Semua status</option>
+          {Object.entries(PARTNER_SUBMISSION_STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+        <button className="button button-secondary" onClick={() => void load()} disabled={loading}>
+          {loading ? "Memuat…" : "Muat ulang"}
+        </button>
+        <span className="subtle">Versi immutable · satu published per provider</span>
+      </section>
+
+      <section className="panel panel-table partner-package-table">
+        <div className="table-scroll">
+          <table>
+            <thead><tr>
+              <th>Provider / versi</th><th>Package</th><th>Scan</th><th>Status</th>
+              <th>Diajukan</th><th>Aktivitas</th><th>Aksi</th>
+            </tr></thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className={selectedID === item.id ? "table-row-selected" : ""}>
+                  <td>
+                    <strong>{item.provider_name}</strong>
+                    <small>{item.provider_code} · v{item.version}</small>
+                    {item.is_active_release && <span className="badge badge-success">release aktif</span>}
+                  </td>
+                  <td><strong>{item.file_name}</strong><small>{formatFileSize(item.artifact_size)} · sha256 {item.artifact_sha256.slice(0, 12)}…</small></td>
+                  <td><span className={`badge ${item.scan_report.passed ? "badge-success" : "badge-danger"}`}>{item.scan_report.passed ? "lulus" : "gagal"}</span><small>{item.scan_report.file_count} file</small></td>
+                  <td><span className={`badge ${partnerStatusTone(item.status)}`}>{PARTNER_SUBMISSION_STATUS_LABELS[item.status]}</span></td>
+                  <td><strong>{item.submitted_by}</strong><small>{formatDate(item.created_at)}</small></td>
+                  <td><strong>{item.reviewed_by || "Belum direview"}</strong><small>{formatDate(item.updated_at)}</small></td>
+                  <td><button className="table-action" onClick={() => setSelectedID(item.id)}>Review</button></td>
+                </tr>
+              ))}
+              {!items.length && <tr><td colSpan={7} className="empty-state">{loading ? "Memuat submission partner…" : "Belum ada package yang sesuai filter."}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {selected && (
+        <section className="panel partner-package-review">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">HASIL VALIDASI</p>
+              <h2>{selected.provider_name} · v{selected.version}</h2>
+            </div>
+            <button className="button button-secondary" onClick={() => void downloadArtifact()} disabled={downloading}>
+              {downloading ? "Mengunduh…" : "Unduh ZIP"}
+            </button>
+          </div>
+
+          <div className="partner-package-review-grid">
+            <div>
+              <h3>Automated checks</h3>
+              <div className="partner-package-checks">
+                {selected.scan_report.checks.map((check) => (
+                  <article key={check.code}>
+                    <span className={`badge ${check.status === "passed" ? "badge-success" : "badge-danger"}`}>{check.status}</span>
+                    <div><strong>{check.code.replaceAll("_", " ")}</strong><p>{check.message}</p></div>
+                  </article>
+                ))}
+              </div>
+              {selected.scan_report.warnings.map((warning) => (
+                <div className="alert alert-warning" key={warning}>{warning}</div>
+              ))}
+            </div>
+
+            <div className="partner-package-manifest">
+              <h3>Manifest connector</h3>
+              <dl>
+                <div><dt>Contract</dt><dd>{selected.scan_report.manifest.contract_version || "—"}</dd></div>
+                <div><dt>Sandbox</dt><dd>{selected.scan_report.manifest.sandbox_url || "—"}</dd></div>
+                <div><dt>Production</dt><dd>{selected.scan_report.manifest.production_url || "—"}</dd></div>
+                <div><dt>Capability</dt><dd>{selected.scan_report.manifest.declared_capabilities.join(", ") || "—"}</dd></div>
+                <div><dt>Scope runtime</dt><dd>{selected.required_scopes.join(", ") || "Tidak ada"}</dd></div>
+                <div><dt>Service</dt><dd>{selected.scan_report.manifest.declared_services.join(", ") || "—"}</dd></div>
+                <div><dt>OpenAPI paths</dt><dd>{selected.scan_report.required_openapi_paths.join(", ") || "—"}</dd></div>
+              </dl>
+            </div>
+          </div>
+
+          <form className="partner-package-review-form" onSubmit={updateStatus}>
+            <label>
+              Tahap berikutnya
+              <select
+                value={reviewStatus}
+                onChange={(event) => setReviewStatus(event.target.value as PartnerSubmissionStatus)}
+                disabled={!transitions.length}
+                required
+              >
+                {!transitions.length && <option value="">Tidak ada transisi</option>}
+                {transitions.map((status) => (
+                  <option key={status} value={status}>{PARTNER_SUBMISSION_STATUS_LABELS[status]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="partner-package-review-note">
+              Catatan review
+              <textarea
+                value={reviewNote}
+                onChange={(event) => setReviewNote(event.target.value)}
+                maxLength={4000}
+                rows={3}
+                placeholder="Temuan, bukti pengujian, atau perubahan yang diminta…"
+              />
+            </label>
+            <button className="button button-primary" disabled={reviewing || !reviewStatus}>
+              {reviewing ? "Menyimpan…" : "Simpan status"}
+            </button>
+          </form>
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -3366,6 +4423,310 @@ const PARTNER_DOCUMENTATION_VIEW = {
     "Kontrak southbound yang wajib disediakan vendor. API Kurir memanggil connector partner; partner tidak memakai endpoint customer atau admin.",
 };
 
+const PARTNER_CONNECTOR_ENDPOINTS: ApiDocumentationEndpoint[] = [
+  {
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/health",
+    title: "Kesiapan connector",
+    description:
+      "Memastikan connector partner siap melayani request tanpa membuat transaksi atau memanggil carrier downstream.",
+    authentication: "Bearer runtime token + X-Partner-Key-Id",
+    request: `GET https://{{partner_host}}/partner/v1/health
+Authorization: Bearer {{partner_runtime_token}}
+X-Partner-Key-Id: {{partner_key_id}}
+X-Request-Id: req_example`,
+    response: `{
+  "status": "ok",
+  "version": "1.0.0",
+  "time": "2026-08-26T07:00:00Z"
+}`,
+  },
+  {
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/capabilities",
+    title: "Capability partner",
+    description:
+      "Mengembalikan kemampuan connector yang telah disertifikasi, granularitas lokasi, dan jenis webhook yang didukung.",
+    authentication: "Bearer runtime token + X-Partner-Key-Id",
+    request: `GET https://{{partner_host}}/partner/v1/capabilities
+Authorization: Bearer {{partner_runtime_token}}
+X-Partner-Key-Id: {{partner_key_id}}`,
+    response: `{
+  "provider_code": "vendor_x",
+  "provider_name": "Vendor X Logistics",
+  "contract_version": "1.0",
+  "capabilities": {
+    "rates": true,
+    "shipment_create": true,
+    "scheduled_pickup": true,
+    "tracking": true,
+    "balance": false
+  },
+  "location_granularities": ["district", "postal_code", "coordinate"]
+}`,
+  },
+  {
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/services",
+    title: "Katalog layanan partner",
+    description:
+      "Menyediakan service code, kelompok layanan, fitur, batas berat, dan aturan pembulatan yang akan dipetakan ke katalog canonical API Kurir.",
+    authentication: "Bearer runtime token + X-Partner-Key-Id",
+    request: `GET https://{{partner_host}}/partner/v1/services
+Authorization: Bearer {{partner_runtime_token}}
+X-Partner-Key-Id: {{partner_key_id}}`,
+    response: `{
+  "data": [{
+    "code": "REG",
+    "name": "Regular",
+    "service_group": "regular",
+    "service_type": "parcel",
+    "active": true,
+    "minimum_weight_grams": 1000,
+    "maximum_weight_grams": 30000,
+    "volumetric_divisor": 6000
+  }]
+}`,
+  },
+  {
+    scope: "partner",
+    method: "POST",
+    path: "/partner/v1/rates",
+    title: "Quote tarif partner",
+    description:
+      "Mengambil quote yang mengikat rute, paket, service, fitur, harga, dan masa berlaku untuk proses checkout.",
+    authentication: "Bearer runtime token + HMAC-SHA256",
+    parameters: [
+      "origin dan destination — kode wilayah, kode pos, serta koordinat bila didukung",
+      "package.weight_grams — berat aktual dalam gram",
+      "service_codes — opsional; layanan yang ingin diperiksa",
+    ],
+    request: `POST https://{{partner_host}}/partner/v1/rates
+Authorization: Bearer {{partner_runtime_token}}
+X-Partner-Key-Id: {{partner_key_id}}
+X-Signature-Version: v1
+X-Signature-Timestamp: {{unix_timestamp}}
+X-Signature-Nonce: {{nonce}}
+X-Signature: {{signature}}
+
+{
+  "request_id": "req_example",
+  "delivery_mode": "regular",
+  "origin": {"official_code": "3273061001", "postal_code": "40174"},
+  "destination": {"official_code": "3212122001", "postal_code": "45281"},
+  "package": {"weight_grams": 1200, "item_value": 150000},
+  "service_codes": ["REG"]
+}`,
+    response: `{
+  "request_id": "req_example",
+  "quotes": [{
+    "quote_id": "qt_vendor_01J...",
+    "expires_at": "2026-08-26T07:15:00Z",
+    "service": {"code": "REG", "name": "Regular", "delivery_mode": "regular"},
+    "chargeable_weight_grams": 2000,
+    "cost": {"shipping": 18000, "total": 18000, "currency": "IDR"},
+    "etd": {"min_days": 2, "max_days": 3, "text": "2-3 hari"}
+  }]
+}`,
+  },
+  {
+    scope: "partner",
+    method: "POST",
+    path: "/partner/v1/shipments",
+    title: "Membuat shipment",
+    description:
+      "Membuat booking berdasarkan quote yang masih aktif. shipment_id dan Idempotency-Key yang sama tidak boleh menghasilkan booking kedua.",
+    authentication: "Bearer runtime token + HMAC-SHA256",
+    parameters: [
+      "Idempotency-Key — wajib dan unik untuk satu operasi",
+      "quote_id — quote aktif dari endpoint rates",
+      "sender, recipient, package, payment, dan pickup — detail fulfillment",
+    ],
+    request: `POST https://{{partner_host}}/partner/v1/shipments
+Authorization: Bearer {{partner_runtime_token}}
+Idempotency-Key: {{idempotency_key}}
+X-Signature: {{signature}}
+
+{
+  "shipment_id": "shp_01J...",
+  "merchant_reference": "ORDER-10001",
+  "quote_id": "qt_vendor_01J...",
+  "service_code": "REG",
+  "fulfillment": "pickup",
+  "sender": {"name": "Toko Emisell", "phone": "628123456789"},
+  "recipient": {"name": "Budi", "phone": "628987654321"},
+  "package": {"weight_grams": 1200, "item_value": 150000}
+}`,
+    response: `HTTP 201
+{
+  "shipment_id": "shp_01J...",
+  "partner_shipment_id": "VENDOR-10001",
+  "awb": null,
+  "status": "booking_pending",
+  "service_code": "REG",
+  "cost": {"total": 18000, "currency": "IDR"}
+}`,
+  },
+  {
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/shipments/{partner_shipment_id}",
+    title: "Rekonsiliasi shipment",
+    description:
+      "Membaca detail, AWB, status canonical, status mentah, biaya aktual, dan event terbaru ketika webhook terlambat atau gagal.",
+    authentication: "Bearer runtime token + X-Partner-Key-Id",
+    parameters: ["partner_shipment_id — ID shipment yang diterbitkan partner"],
+    request: `GET https://{{partner_host}}/partner/v1/shipments/VENDOR-10001
+Authorization: Bearer {{partner_runtime_token}}
+X-Partner-Key-Id: {{partner_key_id}}`,
+    response: `{
+  "shipment_id": "shp_01J...",
+  "partner_shipment_id": "VENDOR-10001",
+  "awb": "AWB123456789",
+  "status": "in_transit",
+  "partner_status": "ON_PROCESS"
+}`,
+  },
+  {
+    scope: "partner",
+    method: "POST",
+    path: "/partner/v1/shipments/{partner_shipment_id}/cancel",
+    title: "Membatalkan shipment",
+    description:
+      "Meminta pembatalan shipment. HTTP 202 berarti permintaan diterima tetapi status belum final.",
+    authentication: "Bearer runtime token + HMAC-SHA256",
+    parameters: ["Idempotency-Key — wajib", "partner_shipment_id — shipment partner"],
+    request: `POST https://{{partner_host}}/partner/v1/shipments/VENDOR-10001/cancel
+Authorization: Bearer {{partner_runtime_token}}
+Idempotency-Key: {{idempotency_key}}
+X-Signature: {{signature}}
+
+{"reason_code":"customer_request","reason":"Pembeli membatalkan pesanan"}`,
+    response: `HTTP 202
+{"partner_shipment_id":"VENDOR-10001","status":"cancellation_requested"}`,
+  },
+  {
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/shipments/{partner_shipment_id}/label",
+    title: "Mengambil label shipment",
+    description:
+      "Mengembalikan PDF atau URL HTTPS sementara dengan masa berlaku maksimal 15 menit.",
+    authentication: "Bearer runtime token + X-Partner-Key-Id",
+    parameters: ["format — pdf atau format lain yang telah disertifikasi"],
+    request: `GET https://{{partner_host}}/partner/v1/shipments/VENDOR-10001/label?format=pdf
+Authorization: Bearer {{partner_runtime_token}}`,
+    response: `HTTP 200 · application/pdf
+atau
+{"url":"https://labels.partner.example/temporary/label.pdf","expires_at":"2026-08-26T07:15:00Z"}`,
+  },
+  {
+    scope: "partner",
+    method: "POST",
+    path: "/partner/v1/pickups",
+    title: "Meminta pickup",
+    description:
+      "Menjadwalkan pickup untuk satu atau beberapa shipment dan mengembalikan hasil per shipment ketika diproses parsial.",
+    authentication: "Bearer runtime token + HMAC-SHA256",
+    parameters: ["Idempotency-Key — wajib", "partner_shipment_ids — shipment yang akan diambil"],
+    request: `POST https://{{partner_host}}/partner/v1/pickups
+Authorization: Bearer {{partner_runtime_token}}
+Idempotency-Key: {{idempotency_key}}
+X-Signature: {{signature}}
+
+{
+  "partner_shipment_ids": ["VENDOR-10001"],
+  "mode": "scheduled",
+  "scheduled_at": "2026-08-27T09:00:00Z"
+}`,
+    response: `{
+  "pickup_id": "pku_01J...",
+  "partner_pickup_id": "PICKUP-10001",
+  "status": "accepted",
+  "items": [{"partner_shipment_id":"VENDOR-10001","status":"accepted"}]
+}`,
+  },
+  {
+    scope: "partner",
+    method: "POST",
+    path: "/partner/v1/pickup-windows/search",
+    title: "Mencari jadwal pickup",
+    description:
+      "Mengambil slot pickup regular yang tersedia. Instant/on-demand tidak membutuhkan window terjadwal.",
+    authentication: "Bearer runtime token + HMAC-SHA256",
+    request: `POST https://{{partner_host}}/partner/v1/pickup-windows/search
+Authorization: Bearer {{partner_runtime_token}}
+X-Signature: {{signature}}
+
+{"official_code":"3273061001","postal_code":"40174","date":"2026-08-27"}`,
+    response: `{"data":[{"start_at":"2026-08-27T09:00:00Z","end_at":"2026-08-27T12:00:00Z"}]}`,
+  },
+  {
+    scope: "partner",
+    method: "POST",
+    path: "/partner/v1/labels/batch",
+    title: "Membuat label batch",
+    description:
+      "Membuat label beberapa shipment dalam satu PDF atau URL sementara menggunakan layout yang disertifikasi.",
+    authentication: "Bearer runtime token + HMAC-SHA256",
+    parameters: ["Idempotency-Key — wajib", "layout — contoh a4_4 atau thermal_100x150"],
+    request: `POST https://{{partner_host}}/partner/v1/labels/batch
+Authorization: Bearer {{partner_runtime_token}}
+Idempotency-Key: {{idempotency_key}}
+X-Signature: {{signature}}
+
+{"partner_shipment_ids":["VENDOR-10001"],"format":"pdf","layout":"a4_4"}`,
+    response: `{"url":"https://labels.partner.example/temporary/batch.pdf","expires_at":"2026-08-26T07:15:00Z"}`,
+  },
+  {
+    scope: "partner",
+    method: "POST",
+    path: "/partner/v1/tracking/waybills",
+    title: "Tracking AWB eksternal",
+    description:
+      "Melacak AWB yang tidak harus dibuat melalui connector. Wajib hanya jika external_tracking telah disertifikasi.",
+    authentication: "Bearer runtime token + HMAC-SHA256",
+    request: `POST https://{{partner_host}}/partner/v1/tracking/waybills
+Authorization: Bearer {{partner_runtime_token}}
+X-Signature: {{signature}}
+
+{"courier_code":"jne","awb":"AWB123456789","last_phone_digits":null}`,
+    response: `{
+  "awb": "AWB123456789",
+  "status": "in_transit",
+  "history": [{"status":"picked_up","occurred_at":"2026-08-25T10:00:00Z"}]
+}`,
+  },
+  {
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/account/balance",
+    title: "Saldo account partner",
+    description:
+      "Membaca saldo account jika capability balance telah disertifikasi. Saldo partner dipisahkan dari ledger Emisell.",
+    authentication: "Bearer runtime token + X-Partner-Key-Id",
+    request: `GET https://{{partner_host}}/partner/v1/account/balance
+Authorization: Bearer {{partner_runtime_token}}`,
+    response: `{"available":1250000,"pending":50000,"currency":"IDR","updated_at":"2026-08-26T07:00:00Z"}`,
+  },
+  {
+    scope: "partner",
+    method: "GET",
+    path: "/partner/v1/payments/{payment_id}",
+    title: "Rekonsiliasi pembayaran",
+    description:
+      "Membaca status pembayaran provider apabila capability payment inquiry telah disertifikasi.",
+    authentication: "Bearer runtime token + X-Partner-Key-Id",
+    parameters: ["payment_id — ID pembayaran dari provider"],
+    request: `GET https://{{partner_host}}/partner/v1/payments/PAY-10001
+Authorization: Bearer {{partner_runtime_token}}`,
+    response: `{"payment_id":"PAY-10001","status":"settled","amount":18000,"currency":"IDR"}`,
+  },
+];
+
 const DOCUMENTATION_VIEWS = [
   ...API_DOCUMENTATION_CONTRACTS,
   PARTNER_DOCUMENTATION_VIEW,
@@ -3487,7 +4848,10 @@ function ApiDocumentation({
       </section>
 
       {isPartner ? (
-        <PartnerDocumentation />
+        <>
+          <PartnerDocumentation />
+          <PartnerConnectorEndpointCatalog />
+        </>
       ) : (
         <>
           {isGateway && <GatewayTenantDocumentation />}
@@ -3824,6 +5188,34 @@ function PartnerDocumentation() {
         </p>
       </section>
     </div>
+  );
+}
+
+function PartnerConnectorEndpointCatalog() {
+  return (
+    <section className="partner-connector-endpoint-catalog">
+      <div className="docs-section-heading">
+        <div>
+          <p className="eyebrow">ENDPOINT CONNECTOR</p>
+          <h2>{PARTNER_CONNECTOR_ENDPOINTS.length} endpoint · Partner API</h2>
+          <p>
+            Buka endpoint untuk melihat autentikasi, parameter, contoh request,
+            dan response. Partner menyediakan endpoint ini pada host miliknya.
+          </p>
+        </div>
+        <span className="docs-status docs-status-partner">Partner · Draft</span>
+      </div>
+      <div className="endpoint-list">
+        {PARTNER_CONNECTOR_ENDPOINTS.map((endpoint, index) => (
+          <EndpointDocumentation
+            endpoint={endpoint}
+            classification="Partner"
+            key={`${endpoint.method}-${endpoint.path}`}
+            open={index === 0}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 

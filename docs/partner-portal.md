@@ -1,6 +1,6 @@
 # Partner Portal dan Publikasi Extension
 
-Status: **rancangan produk dan operasional**
+Status: **portal dan submission/review tersedia**
 
 ## 1. Tujuan
 
@@ -80,6 +80,10 @@ draft
 
 published -> suspended
 suspended -> technical_review | published
+technical_review | sandbox_testing | security_review | uat
+  -> changes_requested | rejected
+published --(versi baru published)--> superseded
+superseded --(rollback admin)--> published
 ```
 
 | Status | Makna |
@@ -93,10 +97,21 @@ suspended -> technical_review | published
 | `approved` | Versi connector dan capability yang diuji telah disetujui |
 | `published` | Extension dapat ditemukan dan diaktifkan oleh seller Emisell |
 | `suspended` | Order baru dihentikan karena insiden, pelanggaran, atau hasil review |
+| `changes_requested` | Versi ini perlu diperbaiki; partner mengirim versi immutable baru |
+| `rejected` | Versi ditolak dan tidak dapat dipublikasikan |
+| `superseded` | Versi published lama telah digantikan versi yang lebih baru |
 
 Partner tidak dapat mengubah status menjadi `approved`, `published`, atau
 `suspended`. Transisi tersebut hanya dilakukan admin API Kurir dan wajib
 menghasilkan audit log.
+
+Provider dibedakan menjadi tiga jenis. `built_in` adalah Emisell Kurir,
+`managed_upstream` adalah adapter yang dikelola API Kurir seperti RajaOngkir,
+dan `partner_hosted` adalah connector vendor yang mengikuti lifecycle package.
+Partner access key dan Partner Portal hanya tersedia untuk `partner_hosted`.
+Distribusi provider dicatat sebagai `public`, `limited`, atau `private` agar
+katalog merchant tidak mencampur provider bawaan, aggregator, dan extension
+vendor.
 
 Perubahan besar setelah publikasi, seperti major API version, autentikasi,
 status mapping, perhitungan tarif, COD, atau settlement, membuat capability
@@ -115,6 +130,10 @@ Menampilkan:
 - uptime, latency, error rate, dan webhook lag;
 - tugas partner dan catatan reviewer terbaru;
 - versi connector yang aktif.
+
+Versi yang ditetapkan untuk production ditandai sebagai **active release**.
+Publishing versi baru dan rollback ke versi lama selalu atomik, tercatat pada
+audit, dan tidak mengubah file ZIP versi mana pun.
 
 ### 5.2 Company Profile
 
@@ -138,7 +157,23 @@ Portal tidak menerima token RajaOngkir, KiriminAja, carrier, atau sistem native
 partner. API Kurir hanya menyimpan credential koneksi canonical yang
 diterbitkan partner.
 
-### 5.4 Capabilities
+### 5.4 Integration Package
+
+Partner mengirim versi connector sebagai ZIP review artifact dengan manifest
+dan OpenAPI. Package tidak dipasang atau dijalankan pada API Kurir; connector
+tetap di-host pada infrastruktur partner. Hasil static validation, SHA-256,
+status review, dan catatan reviewer ditampilkan per versi.
+
+Upload mandiri tersedia melalui `/partner` dengan access key yang diterbitkan
+staff dari master Provider. Access key terikat ke satu provider, sehingga portal
+tidak mempunyai dropdown provider dan request upload tidak menerima
+`provider_code`. Developer dapat mengunduh starter ZIP yang identitas
+providernya sudah terisi melalui `GET /partner/v1/starter-package`. Menu
+**Partner Packages** pada API Kurir Admin hanya digunakan
+staff untuk review. Format package, endpoint, batas keamanan, dan kekurangan
+fase awal dijelaskan pada [Partner Integration Package](partner-integration-packages.md).
+
+### 5.5 Capabilities
 
 Partner mendeklarasikan fitur yang didukung, antara lain:
 
@@ -154,7 +189,13 @@ Capability baru berstatus `declared` sampai contract test dan sertifikasi
 selesai. Deklarasi partner tidak otomatis membuat capability tersedia bagi
 seller.
 
-### 5.5 Services
+Untuk MVP, manifest upload hanya menerima capability `rates`, `shipments`,
+`pickup`, `tracking`, dan `balance`. Group layanan yang dapat diteruskan ke
+Emisell dibatasi pada `regular`, `next_day`, `economy`, dan `cargo`. Capability
+atau group lain ditambahkan kemudian melalui versi kontrak yang eksplisit,
+bukan melalui string bebas pada manifest.
+
+### 5.6 Services
 
 Menampilkan katalog service yang dikirim Partner Connector API, misalnya
 regular, express, cargo, trucking, same-day, atau instant. Data bersifat
@@ -164,7 +205,15 @@ API Kurir menyimpan kode service mentah untuk audit serta hasil normalisasi
 canonical. Partner bertanggung jawab atas mapping dari kode canonical menuju
 kode internalnya.
 
-### 5.6 Sandbox
+Katalog setiap partner disimpan terpisah dari katalog first-party Emisell
+Kurir. Setelah sinkronisasi connector dan sertifikasi selesai, hanya pasangan
+kurir/service milik provider tersebut yang diteruskan oleh
+`GET /api/v1/integrations/shipping-services` ketika seller mengaktifkan
+provider itu. Pergantian provider tidak mencampur katalog maupun pilihan
+service seller. Emisell Kurir tetap menggunakan katalog internal dan tidak
+perlu mengunggah Partner Package.
+
+### 5.7 Sandbox
 
 Partner dapat menjalankan contract test dan melihat:
 
@@ -177,13 +226,13 @@ Partner dapat menjalankan contract test dan melihat:
 
 Secret, nomor telepon, alamat lengkap, dan payload sensitif harus disamarkan.
 
-### 5.7 Certification
+### 5.8 Certification
 
 Berisi checklist legal, teknis, keamanan, UAT, performance, dan operasional.
 Setiap item memiliki status, catatan reviewer, bukti, waktu pengujian, serta
 penanggung jawab. Partner dapat memperbaiki kekurangan dan mengajukan ulang.
 
-### 5.8 Shipments and Logs
+### 5.9 Shipments and Logs
 
 Partner hanya dapat melihat request yang menuju koneksi miliknya sendiri:
 
@@ -197,7 +246,7 @@ Partner hanya dapat melihat request yang menuju koneksi miliknya sendiri:
 Log bukan sumber untuk mengambil credential atau data pribadi mentah.
 Retention mengikuti kebijakan keamanan dan perjanjian pemrosesan data.
 
-### 5.9 Extension Listing
+### 5.10 Extension Listing
 
 Partner menyiapkan materi yang akan dilihat seller:
 
@@ -213,7 +262,7 @@ Partner dapat menyimpan draft dan mengajukan publikasi. Admin API Kurir
 melakukan persetujuan akhir. Hanya capability yang lulus sertifikasi yang
 boleh tampil pada listing.
 
-### 5.10 Incidents and Support
+### 5.11 Incidents and Support
 
 Partner dapat mengumumkan maintenance, melaporkan insiden, membaca alert, dan
 berkomunikasi dengan operator API Kurir. Insiden kritis tetap mengikuti jalur
@@ -283,6 +332,7 @@ partners
 partner_members
 partner_connections
 partner_connection_versions
+partner_integration_submissions
 partner_capability_submissions
 partner_service_snapshots
 partner_certification_runs
@@ -299,8 +349,10 @@ perubahan draft partner tidak langsung mengubah extension yang sedang aktif.
 
 ## 10. Status implementasi
 
-Dokumen ini mendefinisikan rancangan produk dan kontrol operasional. Partner
-Portal, endpoint onboarding, serta workflow publikasi belum dianggap tersedia
-di production hanya karena telah didokumentasikan. Implementasi harus
-mengikuti Partner Integration Contract, OpenAPI, sertifikasi, dan kebijakan
-keamanan yang terkait.
+Console internal untuk static validation, versioning, review, active release,
+rollback, audit, dan download karantina sudah diimplementasikan. Partner Portal
+MVP berbasis access key juga sudah tersedia dan mengunci satu provider pada
+server. Akun personal/MFA, dynamic sandbox runner, external malware scan,
+provisioning credential runtime, dan rollout bertahap belum dianggap tersedia
+di production. Implementasi berikutnya tetap harus mengikuti Partner
+Integration Contract, OpenAPI, sertifikasi, dan kebijakan keamanan yang terkait.

@@ -18,6 +18,7 @@ import (
 	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/merchantproviders"
 	"github.com/emisell/api-kurir/internal/merchantshipping"
+	"github.com/emisell/api-kurir/internal/partnerpackages"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tenancy"
@@ -154,6 +155,9 @@ func New(
 		)
 	}
 
+	partnerPackageService := partnerpackages.NewService(
+		partnerpackages.NewPostgresRepository(pool),
+	)
 	adminGroup := e.Group("/v1/admin")
 	adminGroup.Use(apiKeyMiddleware(adminAPIKeys))
 	adminGroup.GET("/overview", adminOverviewHandler(adminRepository))
@@ -173,6 +177,35 @@ func New(
 	adminGroup.GET("/shipping-providers", adminShippingProviderListHandler(adminRepository))
 	adminGroup.POST("/shipping-providers", adminShippingProviderCreateHandler(adminRepository))
 	adminGroup.PUT("/shipping-providers/:code", adminShippingProviderUpdateHandler(adminRepository))
+	adminGroup.GET(
+		"/shipping-providers/:code/partner-access-keys",
+		adminPartnerAccessKeyListHandler(partnerPackageService),
+	)
+	adminGroup.POST(
+		"/shipping-providers/:code/partner-access-keys",
+		adminPartnerAccessKeyCreateHandler(partnerPackageService),
+	)
+	adminGroup.POST(
+		"/shipping-providers/:code/partner-access-keys/:id/revoke",
+		adminPartnerAccessKeyRevokeHandler(partnerPackageService),
+	)
+	adminGroup.GET(
+		"/partner-submissions",
+		adminPartnerSubmissionListHandler(partnerPackageService),
+	)
+	adminGroup.GET(
+		"/partner-submissions/:id",
+		adminPartnerSubmissionGetHandler(partnerPackageService),
+	)
+	adminGroup.GET(
+		"/partner-submissions/:id/artifact",
+		adminPartnerSubmissionArtifactHandler(partnerPackageService),
+	)
+	adminGroup.PUT(
+		"/partner-submissions/:id/status",
+		adminPartnerSubmissionStatusHandler(partnerPackageService),
+	)
+	registerPartnerPortalRoutes(e.Group("/partner/v1"), partnerPackageService)
 	adminGroup.GET("/api-keys", adminAPIKeyListHandler(customerAPIKeyService))
 	adminGroup.POST("/api-keys", adminAPIKeyCreateHandler(customerAPIKeyService))
 	adminGroup.POST("/api-keys/:id/revoke", adminAPIKeyRevokeHandler(customerAPIKeyService))
@@ -538,7 +571,7 @@ func developmentCORSMiddleware() echo.MiddlewareFunc {
 				headers := c.Response().Header()
 				headers.Set("Access-Control-Allow-Origin", origin)
 				headers.Set("Access-Control-Allow-Headers", "Authorization, key, Content-Type, X-Request-Id, X-Admin-Actor")
-				headers.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+				headers.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 				headers.Set("Vary", "Origin")
 			}
 			if c.Request().Method == http.MethodOptions {

@@ -22,6 +22,18 @@ Emisell dan API Kurir.
 | `active=true` | Provider menjadi jalur shipping efektif merchant. Maksimal satu yang aktif. |
 | `available=true` | Provider siap dan dikirim pada katalog yang dibaca dashboard seller. |
 
+Setiap provider juga membawa klasifikasi berikut:
+
+| Jenis | Perilaku |
+|---|---|
+| `built_in` | Emisell Kurir; dikelola penuh oleh platform. |
+| `managed_upstream` | API Kurir memiliki adapter; seller memasang credential sendiri bila diwajibkan. |
+| `partner_hosted` | Vendor mengirim package, lulus sertifikasi, dan wajib memiliki active release. |
+
+Distribusi `public` tampil untuk seluruh merchant. `limited` dan `private`
+tidak masuk katalog umum; aksesnya harus telah diprovisikan melalui koneksi
+merchant/provider sebelum dapat dipilih.
+
 Provider berstatus `available=false` hanya terlihat pada dashboard admin API
 Kurir. Provider tersebut tidak dikirim oleh `GET /api/v1/integrations/providers`,
 sehingga otomatis hilang dari daftar extension di dashboard Emisell.
@@ -105,6 +117,10 @@ GET /api/v1/integrations/providers
 `src` gambar oleh dashboard Emisell. `description` adalah teks biasa tanpa HTML.
 Metadata ini berasal dari master provider API Kurir, bukan disimpan ulang per
 merchant. Seluruh item pada response ini selalu mempunyai `available=true`.
+Response juga membawa `integration_type`, `distribution_type`,
+`active_release_version`, `required_scopes`, dan `granted_scopes`. Main Service
+dapat mengabaikannya untuk kompatibilitas, tetapi sebaiknya mencatat versi
+release dan scope pada log aktivasi.
 
 ## Pengelolaan master provider
 
@@ -117,10 +133,12 @@ melalui endpoint admin berikut:
 | `POST` | `/v1/admin/shipping-providers` | Mendaftarkan provider eksternal baru. |
 | `PUT` | `/v1/admin/shipping-providers/{provider_code}` | Mengubah presentasi, urutan, dan status kesiapan. |
 
-Provider baru selalu dibuat `built_in=false`, `requires_credential=true`, dan
-`available=false`. Operator baru mengaktifkan `available` setelah adapter serta
-alur validasi credential selesai diuji. Kode provider dan model credential
-tidak dapat diedit setelah provider dibuat. Provider yang masih dipakai merchant
+Provider baru selalu dibuat `built_in=false` dan `available=false`. Jenis
+default-nya `partner_hosted` dengan distribusi `public`; jenis dapat dipilih
+menjadi `managed_upstream`. Hanya managed-upstream yang memerlukan credential
+seller, sedangkan partner-hosted memerlukan active release published. Operator
+baru mengaktifkan `available` setelah connector atau adapter selesai diuji.
+Kode provider tidak dapat diedit setelah provider dibuat. Provider yang masih dipakai merchant
 aktif tidak dapat dinonaktifkan langsung. Setelah provider tanpa merchant aktif
 dibuat `available=false`, provider langsung hilang dari katalog Emisell tetapi
 tetap tersedia pada menu admin agar dapat diaktifkan kembali.
@@ -176,12 +194,46 @@ memiliki `active=false`. Permintaan ongkir bertenant akan mengembalikan HTTP
    `active_provider_code` tidak `null`; patuhi `limits` dan `selectable` dari
    response agar checkbox tidak melewati batas merchant.
 
+## Katalog layanan per provider
+
+`GET /api/v1/integrations/shipping-services` tetap menjadi satu-satunya endpoint
+yang dipakai dashboard Emisell untuk merender pilihan kurir. Endpoint tidak
+berubah, tetapi isi `couriers` sekarang mengikuti `active_provider_code`:
+
+- `emisell` membaca katalog internal Emisell Kurir;
+- `rajaongkir` membaca katalog layanan RajaOngkir;
+- partner lain hanya membaca layanan yang sudah disinkronkan dan disertifikasi
+  untuk provider tersebut.
+
+Response menambahkan `data.provider_code` dan
+`data.preference.provider_code`. Keduanya membantu Main Service memastikan
+bahwa checkbox yang sedang dirender memang milik provider aktif. Field tambahan
+ini bersifat kompatibel; client lama yang mengabaikan field asing tetap dapat
+memakai response sebelumnya.
+
+Preference seller disimpan dengan kunci `(tenant_id, provider_code)`. Jika
+seller berpindah dari Emisell Kurir ke provider partner, pilihan lama tidak
+dihapus dan tidak diterapkan ke provider baru. Ketika seller kembali ke provider
+sebelumnya, konfigurasi provider itu dapat dibaca kembali. `PUT` hanya menerima
+service yang terdapat pada katalog provider aktif dan akan mengembalikan
+`SHIPPING_DISABLED` apabila tidak ada provider aktif.
+
+Katalog partner tidak boleh diisi manual dari dashboard merchant. Data layanan
+masuk dari hasil sinkronisasi connector partner yang sudah lulus sertifikasi;
+provider baru akan memiliki katalog kosong sampai proses tersebut selesai.
+
+Perubahan ini tidak memindahkan routing runtime. Emisell Kurir tetap first-party
+dengan RajaOngkir utama dan Biteship fallback, sedangkan provider partner baru
+boleh menerima trafik checkout setelah connector runtime-nya disertifikasi dan
+provider ditandai available oleh admin.
+
 ## Error kontrak
 
 | Kode | Kondisi |
 |---|---|
 | `SHIPPING_PROVIDER_NOT_FOUND` | Provider code tidak dikenal. |
 | `SHIPPING_PROVIDER_UNAVAILABLE` | Adapter provider belum siap. |
+| `SHIPPING_PROVIDER_RELEASE_UNAVAILABLE` | Partner-hosted belum mempunyai release published. |
 | `PROVIDER_CREDENTIAL_UNAVAILABLE` | Key aktif dan valid belum tersedia. |
 | `SHIPPING_PROVIDER_VERSION_CONFLICT` | Version katalog sudah berubah. |
 | `SHIPPING_DISABLED` | Merchant belum mengaktifkan provider pengiriman. |

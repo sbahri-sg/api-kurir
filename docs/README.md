@@ -61,7 +61,9 @@ API Kurir.
 4. [Keamanan dan request signing](security-and-signing.md).
 5. [Sertifikasi partner](partner-certification.md).
 6. [Partner Portal dan publikasi extension](partner-portal.md).
-7. [Provider Account API](provider-account-api-v1.md) untuk aktivasi koneksi
+7. [Partner Integration Package](partner-integration-packages.md) untuk format
+   ZIP, static validation, lifecycle versi, dan console review internal.
+8. [Provider Account API](provider-account-api-v1.md) untuk aktivasi koneksi
    seller setelah partner tersedia.
 
 Status `Draft` atau `contract-first` berarti spesifikasi target belum otomatis

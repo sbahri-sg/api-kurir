@@ -264,9 +264,15 @@ export type ShippingProvider = {
   logo: string;
   description: string;
   built_in: boolean;
+  integration_type: "built_in" | "managed_upstream" | "partner_hosted";
+  distribution_type: "built_in" | "public" | "limited" | "private";
   requires_credential: boolean;
   available: boolean;
   display_order: number;
+  active_release_id: string | null;
+  active_release_version: string;
+  active_release_status: string;
+  release_count: number;
   installed_merchant_count: number;
   active_merchant_count: number;
   credential_count: number;
@@ -279,14 +285,98 @@ export type ShippingProviderCreateInput = {
   name: string;
   logo: string;
   description: string;
+  integration_type: "managed_upstream" | "partner_hosted";
+  distribution_type: "public" | "limited" | "private";
   display_order: number;
 };
 
 export type ShippingProviderUpdateInput = Omit<
   ShippingProviderCreateInput,
-  "code"
+  "code" | "integration_type" | "distribution_type"
 > & {
+  integration_type: ShippingProvider["integration_type"];
+  distribution_type: ShippingProvider["distribution_type"];
   available: boolean;
+};
+
+export type PartnerPackageCheck = {
+  code: string;
+  status: "passed" | "failed";
+  message: string;
+};
+
+export type PartnerPackageScanReport = {
+  passed: boolean;
+  file_count: number;
+  expanded_size: number;
+  checks: PartnerPackageCheck[];
+  warnings: string[];
+  manifest: {
+    schema_version: string;
+    provider_code: string;
+    provider_name: string;
+    contract_version: string;
+    sandbox_url: string;
+    production_url: string;
+    declared_capabilities: string[];
+    declared_services: string[];
+  };
+  required_openapi_paths: string[];
+};
+
+export type PartnerSubmissionStatus =
+  | "technical_review"
+  | "sandbox_testing"
+  | "security_review"
+  | "uat"
+  | "approved"
+  | "published"
+  | "changes_requested"
+  | "rejected"
+  | "suspended"
+  | "superseded";
+
+export type PartnerSubmission = {
+  id: string;
+  provider_code: string;
+  provider_name: string;
+  version: string;
+  status: PartnerSubmissionStatus;
+  is_active_release: boolean;
+  file_name: string;
+  content_type: string;
+  artifact_size: number;
+  artifact_sha256: string;
+  scan_report: PartnerPackageScanReport;
+  required_scopes: string[];
+  review_note: string;
+  submitted_by: string;
+  reviewed_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PartnerAccessKey = {
+  id: string;
+  provider_code: string;
+  provider_name: string;
+  display_key: string;
+  active: boolean;
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_by: string;
+  revoked_at: string | null;
+};
+
+export type GeneratedPartnerAccessKey = {
+  access_key: PartnerAccessKey;
+  secret: string;
+};
+
+export type PartnerIdentity = {
+  provider_code: string;
+  provider_name: string;
 };
 
 export type ProviderCredential = {
@@ -475,6 +565,69 @@ export class AdminApi {
     );
   }
 
+  partnerAccessKeys(providerCode: string, signal?: AbortSignal) {
+    return this.request<PartnerAccessKey[]>(
+      `/v1/admin/shipping-providers/${encodeURIComponent(providerCode)}/partner-access-keys`,
+      { signal },
+    );
+  }
+
+  generatePartnerAccessKey(providerCode: string) {
+    return this.request<GeneratedPartnerAccessKey>(
+      `/v1/admin/shipping-providers/${encodeURIComponent(providerCode)}/partner-access-keys`,
+      { method: "POST" },
+    );
+  }
+
+  revokePartnerAccessKey(providerCode: string, id: string) {
+    return this.request<PartnerAccessKey>(
+      `/v1/admin/shipping-providers/${encodeURIComponent(providerCode)}/partner-access-keys/${encodeURIComponent(id)}/revoke`,
+      { method: "POST" },
+    );
+  }
+
+  partnerSubmissions(filters: {
+    provider_code?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  } = {}, signal?: AbortSignal) {
+    const query = new URLSearchParams({
+      limit: String(filters.limit ?? 100),
+      offset: String(filters.offset ?? 0),
+    });
+    if (filters.provider_code?.trim()) {
+      query.set("provider_code", filters.provider_code.trim());
+    }
+    if (filters.status?.trim()) query.set("status", filters.status.trim());
+    return this.request<PartnerSubmission[]>(
+      `/v1/admin/partner-submissions?${query}`,
+      { signal },
+    );
+  }
+
+  updatePartnerSubmissionStatus(
+    id: string,
+    status: PartnerSubmissionStatus,
+    reviewNote: string,
+  ) {
+    return this.request<PartnerSubmission>(
+      `/v1/admin/partner-submissions/${encodeURIComponent(id)}/status`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ status, review_note: reviewNote }),
+      },
+    );
+  }
+
+  async downloadPartnerSubmissionArtifact(id: string) {
+    const response = await this.authorizedFetch(
+      `/v1/admin/partner-submissions/${encodeURIComponent(id)}/artifact`,
+    );
+    await this.ensureSuccess(response);
+    return response.blob();
+  }
+
   providerCredentials(signal?: AbortSignal) {
     return this.request<ProviderCredential[]>(
       "/v1/admin/provider-credentials",
@@ -549,16 +702,26 @@ export class AdminApi {
     path: string,
     init: RequestInit = {},
   ): Promise<T> {
-    const response = await fetch(`${API_URL}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${this.key}`,
-        "Content-Type": "application/json",
-        "X-Admin-Actor": this.actor,
-        ...init.headers,
-      },
-    });
+    const response = await this.authorizedFetch(path, init);
+    await this.ensureSuccess(response);
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    const payload = (await response.json()) as ApiEnvelope<T>;
+    return payload.data;
+  }
 
+  private authorizedFetch(path: string, init: RequestInit = {}) {
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${this.key}`);
+    headers.set("X-Admin-Actor", this.actor);
+    if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    return fetch(`${API_URL}${path}`, { ...init, headers });
+  }
+
+  private async ensureSuccess(response: Response) {
     if (!response.ok) {
       let payload: ApiErrorEnvelope = {};
       try {
@@ -575,10 +738,76 @@ export class AdminApi {
       });
       throw error;
     }
-    if (response.status === 204) {
-      return undefined as T;
-    }
+  }
+}
+
+export class PartnerPortalApi {
+  constructor(private readonly key: string) {}
+
+  me(signal?: AbortSignal) {
+    return this.request<PartnerIdentity>("/partner/v1/me", { signal });
+  }
+
+  submissions(status = "", signal?: AbortSignal) {
+    const query = new URLSearchParams({ limit: "100", offset: "0" });
+    if (status.trim()) query.set("status", status.trim());
+    return this.request<PartnerSubmission[]>(`/partner/v1/submissions?${query}`, {
+      signal,
+    });
+  }
+
+  uploadSubmission(version: string, file: File) {
+    const body = new FormData();
+    body.set("version", version);
+    body.set("package", file, file.name);
+    return this.request<PartnerSubmission>("/partner/v1/submissions", {
+      method: "POST",
+      body,
+    });
+  }
+
+  async downloadStarterPackage() {
+    const response = await this.authorizedFetch("/partner/v1/starter-package");
+    await this.ensureSuccess(response);
+    return response.blob();
+  }
+
+  async downloadArtifact(id: string) {
+    const response = await this.authorizedFetch(
+      `/partner/v1/submissions/${encodeURIComponent(id)}/artifact`,
+    );
+    await this.ensureSuccess(response);
+    return response.blob();
+  }
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await this.authorizedFetch(path, init);
+    await this.ensureSuccess(response);
     const payload = (await response.json()) as ApiEnvelope<T>;
     return payload.data;
+  }
+
+  private authorizedFetch(path: string, init: RequestInit = {}) {
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${this.key}`);
+    if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    return fetch(`${API_URL}${path}`, { ...init, headers });
+  }
+
+  private async ensureSuccess(response: Response) {
+    if (response.ok) return;
+    let payload: ApiErrorEnvelope = {};
+    try {
+      payload = (await response.json()) as ApiErrorEnvelope;
+    } catch {
+      // The status code remains the authoritative fallback.
+    }
+    const error = new Error(
+      payload.error?.message ?? `API merespons HTTP ${response.status}.`,
+    );
+    Object.assign(error, { status: response.status, code: payload.error?.code });
+    throw error;
   }
 }

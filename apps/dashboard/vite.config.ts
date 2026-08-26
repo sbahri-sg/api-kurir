@@ -67,6 +67,9 @@ export default defineConfig(({ mode }) => {
     "/api/v1": {
       ...proxyOptions,
     },
+    "/partner/v1": {
+      ...proxyOptions,
+    },
   };
 
   return {

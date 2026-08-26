@@ -87,6 +87,8 @@ func writeTenantShippingProviderError(c *echo.Context, err error) error {
 		return writeError(c, http.StatusNotFound, "SHIPPING_PROVIDER_NOT_FOUND", "Provider pengiriman tidak ditemukan.", nil)
 	case errors.Is(err, merchantproviders.ErrProviderUnavailable):
 		return writeError(c, http.StatusConflict, "SHIPPING_PROVIDER_UNAVAILABLE", "Provider pengiriman belum tersedia untuk diaktifkan.", nil)
+	case errors.Is(err, merchantproviders.ErrReleaseUnavailable):
+		return writeError(c, http.StatusConflict, "SHIPPING_PROVIDER_RELEASE_UNAVAILABLE", "Provider partner belum memiliki release yang dipublikasikan.", nil)
 	case errors.Is(err, merchantproviders.ErrCredentialRequired):
 		return writeError(c, http.StatusUnprocessableEntity, "PROVIDER_CREDENTIAL_REQUIRED", "Credential provider wajib dipilih.", nil)
 	case errors.Is(err, merchantproviders.ErrCredentialUnavailable):

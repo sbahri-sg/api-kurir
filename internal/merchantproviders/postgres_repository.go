@@ -66,11 +66,34 @@ func (r *PostgresRepository) Activate(
 	}
 
 	var available, builtIn, requiresCredential bool
+	var integrationType string
+	var releaseID *string
+	var grantedScopes []string
 	err = tx.QueryRow(ctx, `
-		SELECT available, built_in, requires_credential
-		FROM shipping_integration_providers
-		WHERE code = $1
-	`, providerCode).Scan(&available, &builtIn, &requiresCredential)
+		SELECT
+			provider.available,
+			provider.built_in,
+			provider.integration_type,
+			provider.requires_credential,
+			provider.active_release_id::text,
+			CASE
+				WHEN provider.integration_type = 'partner_hosted'
+					THEN COALESCE(release.required_scopes, '{}'::text[])
+				ELSE ARRAY['rates:read', 'tracking:read']::text[]
+			END
+		FROM shipping_integration_providers provider
+		LEFT JOIN partner_integration_submissions release
+		  ON release.id = provider.active_release_id
+		WHERE provider.code = $1
+		FOR SHARE OF provider
+	`, providerCode).Scan(
+		&available,
+		&builtIn,
+		&integrationType,
+		&requiresCredential,
+		&releaseID,
+		&grantedScopes,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Catalog{}, ErrProviderNotFound
 	}
@@ -79,6 +102,9 @@ func (r *PostgresRepository) Activate(
 	}
 	if !available {
 		return Catalog{}, ErrProviderUnavailable
+	}
+	if integrationType == "partner_hosted" && releaseID == nil {
+		return Catalog{}, ErrReleaseUnavailable
 	}
 
 	var credentialID any
@@ -103,7 +129,7 @@ func (r *PostgresRepository) Activate(
 		}
 		credentialID = selectedCredentialID
 	} else {
-		if !builtIn {
+		if !builtIn && integrationType != "partner_hosted" {
 			return Catalog{}, ErrInvalidCredential
 		}
 		credentialID = nil
@@ -114,16 +140,20 @@ func (r *PostgresRepository) Activate(
 			tenant_id,
 			provider_code,
 			credential_id,
+			release_id,
+			granted_scopes,
 			updated_by
 		)
-		VALUES ($1, $2, $3::uuid, $4)
+		VALUES ($1, $2, $3::uuid, $4::uuid, $5, $6)
 		ON CONFLICT (tenant_id) DO UPDATE
 		SET provider_code = EXCLUDED.provider_code,
 		    credential_id = EXCLUDED.credential_id,
+		    release_id = EXCLUDED.release_id,
+		    granted_scopes = EXCLUDED.granted_scopes,
 		    version = tenant_active_shipping_providers.version + 1,
 		    updated_by = EXCLUDED.updated_by,
 		    updated_at = now()
-	`, tenantID, providerCode, credentialID, input.UpdatedBy)
+	`, tenantID, providerCode, credentialID, releaseID, grantedScopes, input.UpdatedBy)
 	if err != nil {
 		return Catalog{}, fmt.Errorf("activate shipping provider: %w", err)
 	}
@@ -167,12 +197,16 @@ func (r *PostgresRepository) Deactivate(
 			tenant_id,
 			provider_code,
 			credential_id,
+			release_id,
+			granted_scopes,
 			updated_by
 		)
-		VALUES ($1, NULL, NULL, $2)
+		VALUES ($1, NULL, NULL, NULL, '{}'::text[], $2)
 		ON CONFLICT (tenant_id) DO UPDATE
 		SET provider_code = EXCLUDED.provider_code,
 		    credential_id = NULL,
+		    release_id = NULL,
+		    granted_scopes = '{}'::text[],
 		    version = tenant_active_shipping_providers.version + 1,
 		    updated_by = EXCLUDED.updated_by,
 		    updated_at = now()
@@ -203,9 +237,19 @@ func catalogWithQuerier(
 			provider.logo_url,
 			provider.description,
 			provider.built_in,
+			provider.integration_type,
+			provider.distribution_type,
 			provider.requires_credential,
-			provider.available,
-			provider.built_in OR EXISTS (
+			provider.available AND (
+				provider.integration_type <> 'partner_hosted'
+				OR provider.active_release_id IS NOT NULL
+			),
+			provider.built_in
+			OR (
+				provider.integration_type = 'partner_hosted'
+				AND provider.active_release_id IS NOT NULL
+			)
+			OR EXISTS (
 				SELECT 1
 				FROM provider_credentials credential
 				WHERE credential.tenant_id = $1
@@ -214,12 +258,41 @@ func catalogWithQuerier(
 				  AND credential.validation_status = 'valid'
 			) AS installed,
 			COALESCE(selection.provider_code = provider.code, false),
+			COALESCE(active_release.version, ''),
+			CASE
+				WHEN provider.integration_type = 'partner_hosted'
+					THEN COALESCE(active_release.required_scopes, '{}'::text[])
+				ELSE ARRAY['rates:read', 'tracking:read']::text[]
+			END,
+			CASE
+				WHEN selection.provider_code = provider.code
+					THEN selection.granted_scopes
+				ELSE '{}'::text[]
+			END,
 			selection.provider_code,
 			COALESCE(selection.version, 0)
 		FROM shipping_integration_providers provider
 		LEFT JOIN tenant_active_shipping_providers selection
 		  ON selection.tenant_id = $1
+		LEFT JOIN partner_integration_submissions active_release
+		  ON active_release.id = provider.active_release_id
 		WHERE provider.available
+		  AND (
+			provider.integration_type <> 'partner_hosted'
+			OR provider.active_release_id IS NOT NULL
+		  )
+		  AND (
+			provider.distribution_type IN ('built_in', 'public')
+			OR selection.provider_code = provider.code
+			OR EXISTS (
+				SELECT 1
+				FROM provider_credentials credential
+				WHERE credential.tenant_id = $1
+				  AND credential.provider_code = provider.code
+				  AND credential.active
+				  AND credential.validation_status = 'valid'
+			)
+		  )
 		ORDER BY provider.display_order, provider.name
 	`, tenantID)
 	if err != nil {
@@ -236,10 +309,15 @@ func catalogWithQuerier(
 			&item.Logo,
 			&item.Description,
 			&item.BuiltIn,
+			&item.IntegrationType,
+			&item.DistributionType,
 			&item.RequiresCredential,
 			&item.Available,
 			&item.Installed,
 			&item.Active,
+			&item.ActiveReleaseVersion,
+			&item.RequiredScopes,
+			&item.GrantedScopes,
 			&activeProvider,
 			&version,
 		); err != nil {

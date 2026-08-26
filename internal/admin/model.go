@@ -199,9 +199,15 @@ type ShippingProvider struct {
 	Logo                   string    `json:"logo"`
 	Description            string    `json:"description"`
 	BuiltIn                bool      `json:"built_in"`
+	IntegrationType        string    `json:"integration_type"`
+	DistributionType       string    `json:"distribution_type"`
 	RequiresCredential     bool      `json:"requires_credential"`
 	Available              bool      `json:"available"`
 	DisplayOrder           int       `json:"display_order"`
+	ActiveReleaseID        *string   `json:"active_release_id"`
+	ActiveReleaseVersion   string    `json:"active_release_version"`
+	ActiveReleaseStatus    string    `json:"active_release_status"`
+	ReleaseCount           int64     `json:"release_count"`
 	InstalledMerchantCount int64     `json:"installed_merchant_count"`
 	ActiveMerchantCount    int64     `json:"active_merchant_count"`
 	CredentialCount        int64     `json:"credential_count"`
@@ -210,19 +216,23 @@ type ShippingProvider struct {
 }
 
 type ShippingProviderCreateInput struct {
-	Code         string
-	Name         string
-	Logo         string
-	Description  string
-	DisplayOrder int
+	Code             string
+	Name             string
+	Logo             string
+	Description      string
+	IntegrationType  string
+	DistributionType string
+	DisplayOrder     int
 }
 
 type ShippingProviderUpdateInput struct {
-	Name         string
-	Logo         string
-	Description  string
-	Available    bool
-	DisplayOrder int
+	Name             string
+	Logo             string
+	Description      string
+	IntegrationType  string
+	DistributionType string
+	Available        bool
+	DisplayOrder     int
 }
 
 type Catalog struct {
