@@ -21,7 +21,8 @@ func StarterPackage(providerCode, providerName string) (Artifact, error) {
 	manifest.Provider.Code = providerCode
 	manifest.Provider.Name = providerName
 	manifest.Connector.ContractVersion = "v1"
-	manifest.Connector.BaseURL = "https://api.partner.example/partner/v1"
+	hostedBaseURL := fmt.Sprintf("https://api-kurir.emisell.com/connectors/%s/v1", providerCode)
+	manifest.Connector.BaseURL = hostedBaseURL
 	manifest.Capabilities = []string{"rates"}
 	manifest.Services = []string{"regular"}
 	manifestPayload, err := yaml.Marshal(manifest)
@@ -34,7 +35,7 @@ func StarterPackage(providerCode, providerName string) (Artifact, error) {
 		content string
 	}{
 		{name: "emisell-extension.yaml", content: string(manifestPayload)},
-		{name: "openapi.yaml", content: starterOpenAPI},
+		{name: "openapi.yaml", content: fmt.Sprintf(starterOpenAPI, hostedBaseURL)},
 		{name: "README.md", content: fmt.Sprintf(starterREADME, providerName, providerCode)},
 		{name: "examples/rates-request.json", content: starterRatesRequest},
 		{name: "examples/rates-response.json", content: starterRatesResponse},
@@ -70,7 +71,7 @@ info:
   title: Emisell Partner Connector
   version: 1.0.0
 servers:
-  - url: https://api.partner.example/partner/v1
+  - url: %s
 paths:
   /health:
     get:
@@ -103,7 +104,7 @@ const starterREADME = `# Connector %s
 
 Package sertifikasi untuk provider \x60%s\x60.
 
-1. Ganti connector.base_url pada emisell-extension.yaml dengan endpoint HTTPS aktif.
+1. connector.base_url sudah diarahkan ke endpoint hosted API Kurir untuk provider ini.
 2. Deklarasikan hanya capability dan service yang sudah tersedia.
 3. Lengkapi openapi.yaml mengikuti kontrak Partner API v1.
 4. Gunakan data sintetis pada examples dan contract-tests.

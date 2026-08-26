@@ -72,7 +72,7 @@ provider:
   name: Mengantar
 connector:
   contract_version: v1
-  base_url: https://api.partner.example/partner/v1
+  base_url: https://api-kurir.emisell.com/connectors/mengantar/v1
 capabilities:
   - rates
   - shipments
@@ -86,10 +86,11 @@ services:
   - cargo
 ```
 
+`schema_version: "1"` adalah versi struktur manifest, bukan versi rilis package.
 `provider.code` harus sama dengan provider yang terikat pada access key.
-`connector.base_url` adalah satu endpoint HTTPS aktif milik connector. API Kurir
-menentukan alamat gateway publik berdasarkan environment: domain lokal saat
-development dan `api-kurir.emisell.com` saat production. Secret, API key, `.env`, private key,
+`connector.base_url` adalah endpoint hosted API Kurir dengan pola
+`https://api-kurir.emisell.com/connectors/{provider_code}/v1`. Pada development,
+akses explorer menggunakan origin lokal dashboard. Secret, API key, `.env`, private key,
 credential native provider, dan data customer dilarang berada dalam ZIP.
 
 Capability yang diterima pada MVP adalah `rates`, `shipments`, `pickup`,

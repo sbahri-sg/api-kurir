@@ -22,7 +22,7 @@ func TestStarterPackageIsScopedAndPassesValidator(t *testing.T) {
 	if report.Manifest.ProviderCode != "mengantar" {
 		t.Fatalf("provider=%q want mengantar", report.Manifest.ProviderCode)
 	}
-	if report.Manifest.BaseURL != "https://api.partner.example/partner/v1" {
+	if report.Manifest.BaseURL != "https://api-kurir.emisell.com/connectors/mengantar/v1" {
 		t.Fatalf("starter package must use one connector base URL: %#v", report.Manifest)
 	}
 

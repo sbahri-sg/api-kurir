@@ -3043,7 +3043,7 @@ provider:
   name: ${providerName}
 connector:
   contract_version: v1
-  base_url: https://api.partner.co.id/partner/v1
+  base_url: https://api-kurir.emisell.com/connectors/${providerCode}/v1
 capabilities:
   - rates
   - shipments
@@ -3055,8 +3055,10 @@ services:
   - economy
   - cargo`}</code></pre>
           <p>
-            Deklarasikan hanya capability dan service yang benar-benar tersedia.
-            Endpoint wajib akan diperiksa otomatis berdasarkan capability tersebut.
+            <code>schema_version: &quot;1&quot;</code> adalah versi format manifest,
+            bukan versi package. Base URL menunjuk ke connector hosted API Kurir.
+            Deklarasikan hanya capability dan service yang benar-benar tersedia;
+            endpoint wajib akan diperiksa otomatis berdasarkan capability tersebut.
           </p>
         </article>
       </section>
