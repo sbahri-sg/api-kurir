@@ -321,29 +321,94 @@ func applyCourierPresentation(
 	if serviceCode == "" {
 		serviceCode = strings.ToUpper(strings.TrimSpace(card.ServiceCode))
 	}
-	if serviceName := presentation.ServiceNames[serviceCode]; serviceName != "" {
-		card.ServiceName = conciseServiceName(presentation.Name, serviceName)
+	serviceName := strings.TrimSpace(card.ServiceName)
+	if masterName := presentation.ServiceNames[serviceCode]; masterName != "" {
+		serviceName = masterName
 	}
+	card.ServiceName = conciseServiceName(
+		card.CourierCode,
+		card.CourierName,
+		serviceCode,
+		serviceName,
+	)
 	return card
 }
 
-func conciseServiceName(courierName, serviceName string) string {
+func conciseServiceName(
+	courierCode,
+	courierName,
+	serviceCode,
+	serviceName string,
+) string {
+	courierCode = strings.ToUpper(strings.TrimSpace(courierCode))
 	courierName = strings.TrimSpace(courierName)
+	serviceCode = strings.ToUpper(strings.TrimSpace(serviceCode))
 	serviceName = strings.TrimSpace(serviceName)
-	if courierName == "" || serviceName == "" {
-		return serviceName
+	if serviceName == "" {
+		return serviceDisplayFromCode(courierCode, serviceCode)
 	}
-	if len(serviceName) >= len(courierName) &&
-		strings.EqualFold(serviceName[:len(courierName)], courierName) {
-		trimmed := strings.TrimLeft(
-			serviceName[len(courierName):],
-			" \t-–—:|/",
-		)
-		if trimmed != "" {
-			return trimmed
+
+	prefixes := []string{courierName, courierCode}
+	if open := strings.LastIndex(courierName, "("); open >= 0 && strings.HasSuffix(courierName, ")") {
+		prefixes = append(prefixes, strings.TrimSpace(courierName[open+1:len(courierName)-1]))
+	}
+	for _, suffix := range []string{" Express", " Xpress", " Parcel"} {
+		if len(courierName) > len(suffix) && strings.HasSuffix(strings.ToLower(courierName), strings.ToLower(suffix)) {
+			prefixes = append(prefixes, strings.TrimSpace(courierName[:len(courierName)-len(suffix)]))
 		}
 	}
-	return serviceName
+	for _, prefix := range prefixes {
+		if prefix == "" || len(serviceName) < len(prefix) || !strings.EqualFold(serviceName[:len(prefix)], prefix) {
+			continue
+		}
+		serviceName = strings.TrimLeft(serviceName[len(prefix):], " \t-–—:|/")
+		break
+	}
+
+	serviceName = strings.TrimSpace(serviceName)
+	if len(serviceName) >= len("Layanan ") && strings.EqualFold(serviceName[:len("Layanan ")], "Layanan ") {
+		serviceName = strings.TrimSpace(serviceName[len("Layanan "):])
+	}
+	if serviceName == "" || strings.EqualFold(serviceName, courierName) {
+		return serviceDisplayFromCode(courierCode, serviceCode)
+	}
+	switch strings.ToUpper(serviceName) {
+	case "REGULAR", "REGULER", "REGULAR SERVICE", "REGULER SERVICE", "NORMAL":
+		return "Regular"
+	case "ECONOMY", "ECONOMY SERVICE", "EKONOMI", "EKONOMIS":
+		return "Economy"
+	case "NEXT DAY", "NEXTDAY":
+		return "Next Day"
+	case "MINI CARGO", "MINI KARGO":
+		return "Mini Cargo"
+	default:
+		return serviceName
+	}
+}
+
+func serviceDisplayFromCode(courierCode, serviceCode string) string {
+	courierCode = strings.ToUpper(strings.TrimSpace(courierCode))
+	serviceCode = strings.ToUpper(strings.TrimSpace(serviceCode))
+	if courierCode == "WAHANA" && serviceCode == "EXPRESS" {
+		return "Regular"
+	}
+	if strings.HasPrefix(serviceCode, "JTR") {
+		return "Trucking"
+	}
+	switch serviceCode {
+	case "REG", "REGULER", "NORMAL":
+		return "Regular"
+	case "DOK", "DOC":
+		return "Document"
+	case "ECO", "EKONOMI":
+		return "Economy"
+	case "MIC":
+		return "Mini Cargo"
+	case "ND", "NEXT_DAY", "NEXTDAY":
+		return "Next Day"
+	default:
+		return serviceCode
+	}
 }
 
 func (s *Service) loadServicePolicies(

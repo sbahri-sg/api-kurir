@@ -407,15 +407,46 @@ func TestServiceUsesCourierMasterNameForProviderCheckoutResult(t *testing.T) {
 func TestConciseServiceName(t *testing.T) {
 	t.Parallel()
 
-	tests := map[string]string{
-		"JNE Regular": "Regular",
-		"JNE - YES":   "YES",
-		"OKE Ekonomi": "OKE Ekonomi",
+	tests := []struct {
+		courierCode string
+		courierName string
+		serviceCode string
+		serviceName string
+		expected    string
+	}{
+		{courierCode: "jne", courierName: "JNE", serviceCode: "REG", serviceName: "JNE Regular", expected: "Regular"},
+		{courierCode: "jne", courierName: "JNE", serviceCode: "YES", serviceName: "JNE - YES", expected: "YES"},
+		{courierCode: "jne", courierName: "JNE", serviceCode: "OKE", serviceName: "OKE Ekonomi", expected: "OKE Ekonomi"},
+		{courierCode: "jnt", courierName: "J&T Express", serviceCode: "EZ", serviceName: "J&T EZ", expected: "EZ"},
+		{courierCode: "wahana", courierName: "Wahana Express", serviceCode: "NORMAL", serviceName: "Wahana Express", expected: "Regular"},
+		{courierCode: "wahana", courierName: "Wahana Express", serviceCode: "EXPRESS", serviceName: "Wahana Express", expected: "Regular"},
+		{courierCode: "rex", courierName: "Royal Express Asia", serviceCode: "REG", serviceName: "REX Regular", expected: "Regular"},
+		{courierCode: "jne", courierName: "Jalur Nugraha Ekakurir (JNE)", serviceCode: "JTR<130", serviceName: "JNE Trucking", expected: "Trucking"},
 	}
-	for input, expected := range tests {
-		if actual := conciseServiceName("JNE", input); actual != expected {
-			t.Errorf("conciseServiceName(%q)=%q want %q", input, actual, expected)
+	for _, test := range tests {
+		actual := conciseServiceName(
+			test.courierCode,
+			test.courierName,
+			test.serviceCode,
+			test.serviceName,
+		)
+		if actual != test.expected {
+			t.Errorf("conciseServiceName(%q)=%q want %q", test.serviceName, actual, test.expected)
 		}
+	}
+}
+
+func TestApplyCourierPresentationNormalizesHostedFallback(t *testing.T) {
+	t.Parallel()
+
+	card := applyCourierPresentation(RateCard{
+		CourierCode: "jnt",
+		CourierName: "J&T Express",
+		ServiceCode: "EZ",
+		ServiceName: "J&T EZ",
+	}, CourierPresentation{Name: "J&T Express"})
+	if card.CourierName != "J&T Express" || card.ServiceName != "EZ" {
+		t.Fatalf("unexpected hosted fallback presentation: %#v", card)
 	}
 }
 

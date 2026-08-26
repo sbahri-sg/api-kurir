@@ -24,6 +24,59 @@ const DEFAULT_COURIERS = [
   "anteraja", "pos", "ncs", "rex", "rpx", "sentral", "star", "wahana", "dse",
 ];
 const ALLOWED_GROUPS = new Set(["regular", "next_day", "economy", "cargo"]);
+const COURIER_NAMES = Object.freeze({
+  jne: "JNE",
+  sicepat: "SiCepat",
+  ide: "ID Express",
+  sap: "SAPX",
+  jnt: "J&T",
+  ninja: "Ninja Xpress",
+  tiki: "TIKI",
+  lion: "Lion Parcel",
+  anteraja: "AnterAja",
+  pos: "Pos Indonesia",
+  ncs: "NCS",
+  rex: "REX",
+  rpx: "RPX",
+  sentral: "Sentral Cargo",
+  star: "STAR Cargo",
+  wahana: "Wahana",
+  dse: "DSE",
+});
+const COURIER_PREFIXES = Object.freeze({
+  jne: ["Jalur Nugraha Ekakurir (JNE)", "Jalur Nugraha Ekakurir", "JNE"],
+  sicepat: ["SiCepat Express", "SiCepat"],
+  ide: ["ID Express", "IDExpress"],
+  sap: ["SAP Express", "SAPX", "SAP"],
+  jnt: ["J&T Express", "J&T"],
+  ninja: ["Ninja Xpress", "Ninja"],
+  tiki: ["TIKI"],
+  lion: ["Lion Parcel", "Lion"],
+  anteraja: ["AnterAja", "Anteraja"],
+  pos: ["POS Indonesia", "Pos Indonesia", "Pos"],
+  ncs: ["NCS"],
+  rex: ["Royal Express Asia", "REX"],
+  rpx: ["RPX"],
+  sentral: ["Sentral Cargo", "Sentral"],
+  star: ["STAR Cargo", "STAR"],
+  wahana: ["Wahana Express", "Wahana"],
+  dse: ["DSE", "21 Express"],
+});
+const SERVICE_NAMES = Object.freeze({
+  anteraja: Object.freeze({ DOK: "Document", ECO: "Economy", MIC: "Mini Cargo", ND: "Next Day", REG: "Regular" }),
+  jnt: Object.freeze({ DOC: "Document", ECO: "Economy", EZ: "EZ", HBO: "HEBOH", SUPER: "Super" }),
+  jne: Object.freeze({ OKE: "OKE", REG: "Regular", SS: "Super Speed", YES: "YES" }),
+  sicepat: Object.freeze({ BEST: "BEST", GOKIL: "GOKIL", H3LO: "H3LO", HALU: "HALU", REG: "Regular", REGULER: "Regular" }),
+  wahana: Object.freeze({ EKONOMIS: "Economy", EXPRESS: "Regular", KARGO: "Cargo", NEXT_DAY: "Next Day", NEXTDAY: "Next Day", NORMAL: "Regular" }),
+});
+const COMMON_SERVICE_NAMES = Object.freeze({
+  ECO: "Economy",
+  EKONOMI: "Economy",
+  OKE: "OKE",
+  REG: "Regular",
+  REGULER: "Regular",
+  YES: "YES",
+});
 const DELIVERY_PATHS = Object.freeze({
   create: "order/api/v1/orders/store",
   detail: "order/api/v1/orders/detail",
@@ -96,6 +149,33 @@ export function serviceGroup(code, description = "") {
   if (/(OKE|ECO|EKONOMI|ECONOMY|HEMAT|SAVE)/.test(value)) return "economy";
   if (/(YES|ONS|NEXT|NEXTDAY|OVERNIGHT|SDS|SAME DAY|SUPER SPEED)/.test(value)) return "next_day";
   return "regular";
+}
+
+export function canonicalCourierName(code, fallback = "") {
+  const courierCode = String(code || "").trim().toLowerCase();
+  return COURIER_NAMES[courierCode] || String(fallback || code || "").trim();
+}
+
+export function canonicalServiceName(courier, code, description = "") {
+  const courierCode = String(courier || "").trim().toLowerCase();
+  const serviceCode = String(code || "").trim().toUpperCase();
+  if (courierCode === "jne" && serviceCode.startsWith("JTR")) return "Trucking";
+  const configured = SERVICE_NAMES[courierCode]?.[serviceCode] || COMMON_SERVICE_NAMES[serviceCode];
+  if (configured) return configured;
+
+  let value = String(description || code || "").trim();
+  for (const prefix of COURIER_PREFIXES[courierCode] || []) {
+    if (value.toLocaleLowerCase("id-ID").startsWith(prefix.toLocaleLowerCase("id-ID"))) {
+      value = value.slice(prefix.length).replace(/^[\s\-–—:|/]+/, "");
+      break;
+    }
+  }
+  value = value.replace(/^layanan\s+/i, "").trim();
+  if (/^reg(ular|uler)( service)?$/i.test(value)) return "Regular";
+  if (!value || value.toLocaleLowerCase("id-ID") === canonicalCourierName(courierCode).toLocaleLowerCase("id-ID")) {
+    return serviceCode || String(description || "").trim();
+  }
+  return value;
 }
 
 function mapUpstreamStatus(status) {
@@ -192,12 +272,14 @@ async function rates(request, response, id, apiKey) {
   const quotes = (Array.isArray(upstream.payload?.data) ? upstream.payload.data : [])
     .map((item) => {
       const group = serviceGroup(item.service, item.description);
+      const courierCode = String(item.code || "").trim().toLowerCase();
+      const serviceCode = String(item.service || "").trim();
       return {
         provider_code: PROVIDER_CODE,
-        courier_code: String(item.code || "").trim().toLowerCase(),
-        courier_name: String(item.name || item.code || "").trim(),
-        service_code: String(item.service || "").trim(),
-        service_name: String(item.description || item.service || "").trim(),
+        courier_code: courierCode,
+        courier_name: canonicalCourierName(courierCode, item.name),
+        service_code: serviceCode,
+        service_name: canonicalServiceName(courierCode, serviceCode, item.description),
         service_group: group,
         price: Number(item.cost || 0),
         currency: "IDR",

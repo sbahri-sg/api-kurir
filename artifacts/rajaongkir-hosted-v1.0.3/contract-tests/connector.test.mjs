@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  canonicalCourierName,
+  canonicalServiceName,
   createConnectorServer,
   PROVIDER_CODE,
   serviceGroup,
@@ -25,6 +27,17 @@ test("service group hanya menghasilkan empat group checkout", () => {
   assert.equal(serviceGroup("OKE", "Ekonomi"), "economy");
   assert.equal(serviceGroup("YES", "Yakin Esok Sampai"), "next_day");
   assert.equal(serviceGroup("JTR", "Trucking"), "cargo");
+});
+
+test("label rate dinormalisasi untuk checkout Emisell", () => {
+  assert.equal(canonicalCourierName("jne", "Jalur Nugraha Ekakurir (JNE)"), "JNE");
+  assert.equal(canonicalServiceName("jne", "REG", "Layanan Reguler"), "Regular");
+  assert.equal(canonicalServiceName("jne", "JTR<130", "JNE Trucking"), "Trucking");
+  assert.equal(canonicalCourierName("jnt", "J&T Express"), "J&T");
+  assert.equal(canonicalServiceName("jnt", "EZ", "J&T EZ"), "EZ");
+  assert.equal(canonicalServiceName("anteraja", "DOK", "Anteraja Document"), "Document");
+  assert.equal(canonicalCourierName("wahana", "Wahana Express"), "Wahana");
+  assert.equal(canonicalServiceName("wahana", "Normal", "Wahana Express"), "Regular");
 });
 
 test("health, capabilities, dan services dapat dibaca tanpa credential upstream", async () => {
