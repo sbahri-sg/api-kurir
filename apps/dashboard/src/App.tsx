@@ -177,6 +177,8 @@ const WEBHOOK_TRACKING_PAYLOAD = `{
       "provider": "rajaongkir",
       "provider_fetched_at": "2026-08-20T10:00:00Z",
       "next_refresh_at": "2026-08-20T22:00:00Z",
+      "shipped_at": "2026-08-20T09:00:00Z",
+      "delivered_at": null,
       "is_final": false
     }
   }
@@ -3122,9 +3124,16 @@ function WebhookManagement({
             <p className="eyebrow">HTTP CONTRACT</p>
             <h2>Header dan payload yang diterima Emisell</h2>
             <p>
-              Nomor resi selalu termasking. Cocokkan order menggunakan
+              Nomor resi dikirim utuh hanya ke backend Emisell. Tetap cocokkan
+              order menggunakan
               <code>merchant_id</code>, <code>order_id</code>, dan
               <code>fulfillment_id</code>, bukan menggunakan nomor resi.
+            </p>
+            <p>
+              <code>shipped_at</code> adalah waktu paket diserahkan ke kurir.
+              <code>delivered_at</code> tetap <code>null</code> sampai provider
+              mengonfirmasi paket diterima. Keduanya memakai waktu manifest/POD,
+              bukan waktu polling API Kurir.
             </p>
           </div>
         </div>

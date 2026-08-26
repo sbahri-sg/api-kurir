@@ -3809,6 +3809,8 @@ components:
         - summary
         - events
         - provider
+        - shipped_at
+        - delivered_at
         - is_final
         - refresh_queued
       properties:
@@ -3846,6 +3848,18 @@ components:
         next_refresh_at:
           type: [string, "null"]
           format: date-time
+        shipped_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            Waktu paket pertama kali diserahkan atau dipickup kurir. Diambil
+            dari manifest/history provider; null selama paket belum dikirim.
+        delivered_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            Waktu aktual paket diterima berdasarkan POD/history provider.
+            Tetap null sampai provider menyatakan paket delivered.
         is_final:
           type: boolean
         refresh_queued:

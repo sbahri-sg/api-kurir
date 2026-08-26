@@ -141,6 +141,8 @@ Field penting pada `shipment`:
   "status_label": "Dalam perjalanan",
   "provider_fetched_at": "2026-08-20T10:00:00Z",
   "next_refresh_at": "2026-08-20T22:00:00Z",
+  "shipped_at": "2026-08-20T09:00:00Z",
+  "delivered_at": null,
   "provider_hit_count": 3,
   "provider_hit_limit": 10,
   "polling_stopped": false
@@ -217,11 +219,20 @@ Payload:
       "provider": "rajaongkir",
       "provider_fetched_at": "2026-08-20T10:00:00Z",
       "next_refresh_at": null,
+      "shipped_at": "2026-08-20T09:00:00Z",
+      "delivered_at": "2026-08-20T09:55:00Z",
       "is_final": true
     }
   }
 }
 ```
+
+`shipped_at` berasal dari waktu pickup/manifest pertama yang menunjukkan paket
+sudah dikuasai kurir. `delivered_at` berasal dari POD atau history berstatus
+delivered dan selalu `null` sebelum paket diterima. Jika provider tidak memberi
+timestamp milestone, API Kurir memakai waktu pertama status tersebut teramati.
+Kedua field dikirim pada seluruh event tracking, termasuk
+`tracking.status_changed` dan `tracking.delivered`.
 
 Header keamanan:
 

@@ -111,12 +111,37 @@ func TestTrackingAdapterNormalizesPublicTracking(t *testing.T) {
 	if result.NextRefreshAt == nil || result.NextRefreshAt.Sub(result.FetchedAt) != 12*time.Hour {
 		t.Fatalf("expected economical twelve-hour checkpoint, got %#v", result.NextRefreshAt)
 	}
+	wantShipped := time.Date(2026, 8, 20, 1, 0, 0, 0, time.UTC)
+	if result.ShippedAt == nil || !result.ShippedAt.Equal(wantShipped) ||
+		result.DeliveredAt != nil {
+		t.Fatalf("unexpected tracking milestones: %#v", result)
+	}
 	if resolverTenant != "" || quotaTenant != "" {
 		t.Fatalf(
 			"platform fallback must use global credential/quota: resolver=%q quota=%q",
 			resolverTenant,
 			quotaTenant,
 		)
+	}
+}
+
+func TestNormalizeBiteshipTrackingUsesDeliveredHistoryTime(t *testing.T) {
+	t.Parallel()
+
+	fetchedAt := time.Date(2026, 8, 22, 15, 0, 0, 0, time.UTC)
+	result := normalizeBiteshipTracking(PublicTracking{
+		Status: "delivered",
+		History: []TrackingHistory{
+			{Status: "picked", UpdatedAt: "2026-08-20T09:00:00+07:00"},
+			{Status: "delivered", UpdatedAt: "2026-08-22T14:25:00+07:00"},
+		},
+	}, "sicepat", fetchedAt)
+	wantShipped := time.Date(2026, 8, 20, 2, 0, 0, 0, time.UTC)
+	wantDelivered := time.Date(2026, 8, 22, 7, 25, 0, 0, time.UTC)
+	if result.ShippedAt == nil || !result.ShippedAt.Equal(wantShipped) ||
+		result.DeliveredAt == nil || !result.DeliveredAt.Equal(wantDelivered) ||
+		!result.IsFinal {
+		t.Fatalf("unexpected delivered tracking result: %#v", result)
 	}
 }
 

@@ -169,16 +169,34 @@ func normalizeBiteshipTracking(
 ) tracking.Result {
 	status := normalizeBiteshipStatus(input.Status)
 	events := make([]tracking.Event, 0, len(input.History))
+	var shippedAt, deliveredAt *time.Time
 	for _, history := range input.History {
 		occurredAt, err := time.Parse(time.RFC3339, history.UpdatedAt)
 		if err != nil {
 			continue
+		}
+		eventStatus := normalizeBiteshipStatus(history.Status)
+		if biteshipStatusIndicatesShipped(eventStatus) {
+			shippedAt = earlierBiteshipTime(shippedAt, occurredAt)
+		}
+		if eventStatus == "delivered" {
+			deliveredAt = earlierBiteshipTime(deliveredAt, occurredAt)
 		}
 		events = append(events, tracking.Event{
 			Code:        history.Status,
 			Description: history.Note,
 			OccurredAt:  occurredAt.UTC(),
 		})
+	}
+	if status == "delivered" && deliveredAt == nil {
+		deliveredAt = biteshipTimePointer(fetchedAt)
+	}
+	if biteshipStatusIndicatesShipped(status) && shippedAt == nil {
+		fallback := fetchedAt
+		if deliveredAt != nil && deliveredAt.Before(fallback) {
+			fallback = *deliveredAt
+		}
+		shippedAt = biteshipTimePointer(fallback)
 	}
 	result := tracking.Result{
 		NormalizedStatus: status,
@@ -199,9 +217,33 @@ func normalizeBiteshipTracking(
 		Events:       events,
 		ProviderCode: "biteship",
 		FetchedAt:    fetchedAt,
+		ShippedAt:    shippedAt,
+		DeliveredAt:  deliveredAt,
 		IsFinal:      false,
 	}
 	return tracking.ApplyEconomyCheckpoint(result, 1, tracking.DefaultProviderHitLimit)
+}
+
+func biteshipStatusIndicatesShipped(status string) bool {
+	switch status {
+	case "picked_up", "in_transit", "out_for_delivery", "delivered", "returned":
+		return true
+	default:
+		return false
+	}
+}
+
+func earlierBiteshipTime(current *time.Time, candidate time.Time) *time.Time {
+	candidate = candidate.UTC()
+	if current == nil || candidate.Before(*current) {
+		return biteshipTimePointer(candidate)
+	}
+	return current
+}
+
+func biteshipTimePointer(value time.Time) *time.Time {
+	value = value.UTC()
+	return &value
 }
 
 func normalizeBiteshipStatus(value string) string {

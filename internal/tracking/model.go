@@ -36,6 +36,8 @@ type Shipment struct {
 	ProviderCode      string         `json:"provider"`
 	ProviderFetchedAt *time.Time     `json:"provider_fetched_at"`
 	NextRefreshAt     *time.Time     `json:"next_refresh_at"`
+	ShippedAt         *time.Time     `json:"shipped_at"`
+	DeliveredAt       *time.Time     `json:"delivered_at"`
 	IsFinal           bool           `json:"is_final"`
 	RefreshQueued     bool           `json:"refresh_queued"`
 	LastErrorCode     string         `json:"last_error_code,omitempty"`
@@ -131,6 +133,8 @@ type Result struct {
 	ProviderCode     string
 	FetchedAt        time.Time
 	NextRefreshAt    *time.Time
+	ShippedAt        *time.Time
+	DeliveredAt      *time.Time
 	IsFinal          bool
 }
 

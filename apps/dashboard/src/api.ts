@@ -152,6 +152,8 @@ export type TrackingShipment = {
   provider: string;
   provider_fetched_at: string | null;
   next_refresh_at: string | null;
+  shipped_at: string | null;
+  delivered_at: string | null;
   is_final: boolean;
   refresh_queued: boolean;
   last_error_code?: string;

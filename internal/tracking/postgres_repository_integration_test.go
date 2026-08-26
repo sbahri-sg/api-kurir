@@ -53,6 +53,8 @@ func TestPostgresTrackingJobLifecycle(t *testing.T) {
 	if job.ShipmentID != shipment.ID || job.CourierCode != "integration-test" {
 		t.Fatalf("unexpected claimed job: %#v", job)
 	}
+	shippedAt := time.Now().UTC().Truncate(time.Microsecond).Add(-48 * time.Hour)
+	deliveredAt := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
 	if err := repository.Complete(ctx, job, Result{
 		NormalizedStatus: "delivered",
 		StatusLabel:      "Terkirim",
@@ -60,6 +62,8 @@ func TestPostgresTrackingJobLifecycle(t *testing.T) {
 		Events:           []Event{},
 		ProviderCode:     "integration",
 		FetchedAt:        time.Now().UTC(),
+		ShippedAt:        &shippedAt,
+		DeliveredAt:      &deliveredAt,
 		IsFinal:          true,
 	}); err != nil {
 		t.Fatal(err)
@@ -67,15 +71,29 @@ func TestPostgresTrackingJobLifecycle(t *testing.T) {
 
 	var status string
 	var final bool
+	var storedShippedAt, storedDeliveredAt *time.Time
 	if err := pool.QueryRow(ctx, `
-		SELECT normalized_status, is_final
+		SELECT normalized_status, is_final, shipped_at, delivered_at
 		FROM tracking_shipments
 		WHERE id = $1::uuid
-	`, shipment.ID).Scan(&status, &final); err != nil {
+	`, shipment.ID).Scan(
+		&status,
+		&final,
+		&storedShippedAt,
+		&storedDeliveredAt,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if status != "delivered" || !final {
-		t.Fatalf("unexpected completed shipment: status=%s final=%t", status, final)
+	if status != "delivered" || !final || storedShippedAt == nil ||
+		storedDeliveredAt == nil || !storedShippedAt.Equal(shippedAt) ||
+		!storedDeliveredAt.Equal(deliveredAt) {
+		t.Fatalf(
+			"unexpected completed shipment: status=%s final=%t shipped=%v delivered=%v",
+			status,
+			final,
+			storedShippedAt,
+			storedDeliveredAt,
+		)
 	}
 }
 
@@ -127,7 +145,8 @@ func TestPostgresTrackingSubscriptionCreatesWebhookOutbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fetchedAt := time.Now().UTC()
+	fetchedAt := time.Now().UTC().Truncate(time.Microsecond)
+	shippedAt := fetchedAt.Add(-time.Hour)
 	result := ApplyEconomyCheckpoint(Result{
 		NormalizedStatus: "in_transit",
 		StatusLabel:      "Dalam perjalanan",
@@ -135,6 +154,7 @@ func TestPostgresTrackingSubscriptionCreatesWebhookOutbox(t *testing.T) {
 		Events:           []Event{},
 		ProviderCode:     "integration",
 		FetchedAt:        fetchedAt,
+		ShippedAt:        &shippedAt,
 	}, 1, DefaultProviderHitLimit)
 	if err := repository.Complete(ctx, job, result); err != nil {
 		t.Fatal(err)
@@ -148,8 +168,49 @@ func TestPostgresTrackingSubscriptionCreatesWebhookOutbox(t *testing.T) {
 		webhook.Data["fulfillment_id"] != "fulfillment-integration" {
 		t.Fatalf("unexpected webhook: %#v", webhook)
 	}
+	shipmentData, ok := webhook.Data["shipment"].(map[string]any)
+	shippedValue, shippedOK := shipmentData["shipped_at"].(string)
+	webhookShippedAt, parseErr := time.Parse(time.RFC3339Nano, shippedValue)
+	if !ok || !shippedOK || parseErr != nil || !webhookShippedAt.Equal(shippedAt) ||
+		shipmentData["delivered_at"] != nil {
+		t.Fatalf("unexpected webhook shipment milestones: %#v", webhook.Data["shipment"])
+	}
 	if err := repository.CompleteWebhook(ctx, webhook.ID, 202); err != nil {
 		t.Fatal(err)
+	}
+
+	deliveredAt := shippedAt.Add(48 * time.Hour)
+	laterShippedObservation := shippedAt.Add(time.Hour)
+	deliveredResult := ApplyEconomyCheckpoint(Result{
+		NormalizedStatus: "delivered",
+		StatusLabel:      "Terkirim",
+		Summary:          map[string]any{"status": "DELIVERED"},
+		Events:           []Event{},
+		ProviderCode:     "integration",
+		FetchedAt:        deliveredAt.Add(time.Hour),
+		ShippedAt:        &laterShippedObservation,
+		DeliveredAt:      &deliveredAt,
+	}, 2, DefaultProviderHitLimit)
+	if err := repository.CompleteImmediate(ctx, shipment.ID, deliveredResult); err != nil {
+		t.Fatal(err)
+	}
+	deliveredWebhook, err := repository.ClaimWebhook(ctx, "webhook-integration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveredShipment, ok := deliveredWebhook.Data["shipment"].(map[string]any)
+	deliveredValue, deliveredOK := deliveredShipment["delivered_at"].(string)
+	webhookDeliveredAt, parseErr := time.Parse(time.RFC3339Nano, deliveredValue)
+	preservedShippedValue, preservedShippedOK := deliveredShipment["shipped_at"].(string)
+	preservedShippedAt, shippedParseErr := time.Parse(
+		time.RFC3339Nano,
+		preservedShippedValue,
+	)
+	if deliveredWebhook.EventType != "tracking.delivered" || !ok ||
+		!deliveredOK || parseErr != nil || !webhookDeliveredAt.Equal(deliveredAt) ||
+		!preservedShippedOK || shippedParseErr != nil ||
+		!preservedShippedAt.Equal(shippedAt) {
+		t.Fatalf("unexpected delivered webhook: %#v", deliveredWebhook)
 	}
 }
 

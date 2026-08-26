@@ -657,6 +657,8 @@ Respons:
     "provider": "carrier_adapter",
     "provider_fetched_at": "2026-07-28T08:10:00Z",
     "next_refresh_at": "2026-07-28T20:10:00Z",
+    "shipped_at": "2026-07-28T04:22:00Z",
+    "delivered_at": null,
     "is_final": false,
     "refresh_queued": false,
     "last_error_code": "",

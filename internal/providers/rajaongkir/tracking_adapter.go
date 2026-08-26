@@ -196,6 +196,12 @@ func normalizeTrackingResult(input WaybillTracking, fetchedAt time.Time) trackin
 			OccurredAt:  occurredAt,
 		})
 	}
+	shippedAt, deliveredAt := rajaOngkirMilestones(
+		input,
+		status,
+		fetchedAt,
+		events,
+	)
 	summary := map[string]any{
 		"courier_code":      input.Summary.CourierCode,
 		"courier_name":      input.Summary.CourierName,
@@ -230,9 +236,72 @@ func normalizeTrackingResult(input WaybillTracking, fetchedAt time.Time) trackin
 		Events:           events,
 		ProviderCode:     "rajaongkir",
 		FetchedAt:        fetchedAt,
+		ShippedAt:        shippedAt,
+		DeliveredAt:      deliveredAt,
 		IsFinal:          false,
 	}
 	return tracking.ApplyEconomyCheckpoint(result, 1, tracking.DefaultProviderHitLimit)
+}
+
+func rajaOngkirMilestones(
+	input WaybillTracking,
+	currentStatus string,
+	fetchedAt time.Time,
+	events []tracking.Event,
+) (*time.Time, *time.Time) {
+	var shippedAt, deliveredAt *time.Time
+	for _, event := range events {
+		eventStatus := normalizeTrackingStatus(
+			event.Code+" "+event.Description,
+			false,
+		)
+		if trackingStatusIndicatesShipped(eventStatus) {
+			shippedAt = earlierTrackingTime(shippedAt, event.OccurredAt)
+		}
+		if eventStatus == "delivered" {
+			deliveredAt = earlierTrackingTime(deliveredAt, event.OccurredAt)
+		}
+	}
+	if podAt, ok := parseProviderDateTime(
+		input.Delivery.PODDate,
+		input.Delivery.PODTime,
+	); ok {
+		deliveredAt = earlierTrackingTime(deliveredAt, podAt)
+	}
+	if currentStatus == "delivered" && deliveredAt == nil {
+		deliveredAt = trackingTimePointer(fetchedAt)
+	}
+	if trackingStatusIndicatesShipped(currentStatus) && shippedAt == nil {
+		fallback := fetchedAt
+		if deliveredAt != nil && deliveredAt.Before(fallback) {
+			fallback = *deliveredAt
+		}
+		shippedAt = trackingTimePointer(fallback)
+	}
+	return shippedAt, deliveredAt
+}
+
+func trackingStatusIndicatesShipped(status string) bool {
+	switch status {
+	case "picked_up", "in_transit", "out_for_delivery", "delivered",
+		"delivery_failed", "returned":
+		return true
+	default:
+		return false
+	}
+}
+
+func earlierTrackingTime(current *time.Time, candidate time.Time) *time.Time {
+	candidate = candidate.UTC()
+	if current == nil || candidate.Before(*current) {
+		return trackingTimePointer(candidate)
+	}
+	return current
+}
+
+func trackingTimePointer(value time.Time) *time.Time {
+	value = value.UTC()
+	return &value
 }
 
 func normalizeTrackingStatus(value string, delivered bool) string {

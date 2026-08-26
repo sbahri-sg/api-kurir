@@ -128,11 +128,49 @@ func TestNormalizeTrackingResultMarksDeliveredFinal(t *testing.T) {
 			CourierCode: "jne",
 			Status:      "DELIVERED",
 		},
+		Delivery: WaybillDelivery{
+			PODDate: "2026-07-28",
+			PODTime: "10:30",
+		},
+		Manifest: []WaybillManifest{
+			{
+				Code:        "PU",
+				Description: "Received by courier",
+				Date:        "2026-07-27",
+				Time:        "08:15",
+			},
+		},
 	}, now)
 	if result.NormalizedStatus != "delivered" ||
 		!result.IsFinal ||
 		result.NextRefreshAt != nil {
 		t.Fatalf("unexpected delivered result: %#v", result)
+	}
+	wantShipped := time.Date(2026, 7, 27, 1, 15, 0, 0, time.UTC)
+	wantDelivered := time.Date(2026, 7, 28, 3, 30, 0, 0, time.UTC)
+	if result.ShippedAt == nil || !result.ShippedAt.Equal(wantShipped) ||
+		result.DeliveredAt == nil || !result.DeliveredAt.Equal(wantDelivered) {
+		t.Fatalf("unexpected tracking milestones: %#v", result)
+	}
+}
+
+func TestNormalizeTrackingResultLeavesDeliveredAtNullWhileInTransit(t *testing.T) {
+	t.Parallel()
+
+	fetchedAt := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)
+	result := normalizeTrackingResult(WaybillTracking{
+		Summary: WaybillSummary{Status: "IN TRANSIT"},
+		Manifest: []WaybillManifest{
+			{
+				Code:        "PU",
+				Description: "Picked up by courier",
+				Date:        "2026-08-20",
+				Time:        "09:00",
+			},
+		},
+	}, fetchedAt)
+	if result.ShippedAt == nil || result.DeliveredAt != nil {
+		t.Fatalf("unexpected in-transit milestones: %#v", result)
 	}
 }
 

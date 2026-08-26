@@ -324,6 +324,16 @@ func (r *PostgresRepository) Complete(
 		    provider_fetched_at = $7,
 		    next_refresh_at = $8,
 		    is_final = $9,
+		    shipped_at = CASE
+		        WHEN $10::timestamptz IS NULL THEN shipped_at
+		        WHEN shipped_at IS NULL THEN $10
+		        ELSE least(shipped_at, $10)
+		    END,
+		    delivered_at = CASE
+		        WHEN $11::timestamptz IS NULL THEN delivered_at
+		        WHEN delivered_at IS NULL THEN $11
+		        ELSE least(delivered_at, $11)
+		    END,
 		    validation_status = 'valid',
 		    validation_checked_at = $7,
 		    not_found_count = 0,
@@ -345,6 +355,8 @@ func (r *PostgresRepository) Complete(
 		result.FetchedAt,
 		result.NextRefreshAt,
 		result.IsFinal,
+		result.ShippedAt,
+		result.DeliveredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("update tracking shipment: %w", err)
@@ -438,6 +450,16 @@ func (r *PostgresRepository) CompleteImmediate(
 		    provider_fetched_at = $7,
 		    next_refresh_at = $8,
 		    is_final = $9,
+		    shipped_at = CASE
+		        WHEN $10::timestamptz IS NULL THEN shipped_at
+		        WHEN shipped_at IS NULL THEN $10
+		        ELSE least(shipped_at, $10)
+		    END,
+		    delivered_at = CASE
+		        WHEN $11::timestamptz IS NULL THEN delivered_at
+		        WHEN delivered_at IS NULL THEN $11
+		        ELSE least(delivered_at, $11)
+		    END,
 		    validation_status = 'valid',
 		    validation_checked_at = $7,
 		    not_found_count = 0,
@@ -459,6 +481,8 @@ func (r *PostgresRepository) CompleteImmediate(
 		result.FetchedAt,
 		result.NextRefreshAt,
 		result.IsFinal,
+		result.ShippedAt,
+		result.DeliveredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("update immediate tracking shipment: %w", err)
@@ -753,6 +777,8 @@ func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipme
 			coalesce(shipment.provider_code, ''),
 			shipment.provider_fetched_at,
 			shipment.next_refresh_at,
+			shipment.shipped_at,
+			shipment.delivered_at,
 			shipment.is_final,
 			coalesce(shipment.last_error_code, ''),
 			shipment.validation_status,
@@ -785,6 +811,8 @@ func (r *PostgresRepository) getShipment(ctx context.Context, id string) (Shipme
 		&shipment.ProviderCode,
 		&shipment.ProviderFetchedAt,
 		&shipment.NextRefreshAt,
+		&shipment.ShippedAt,
+		&shipment.DeliveredAt,
 		&shipment.IsFinal,
 		&shipment.LastErrorCode,
 		&shipment.ValidationStatus,
@@ -1162,6 +1190,8 @@ func enqueueTrackingWebhook(
 					'provider', coalesce(shipment.provider_code, ''),
 					'provider_fetched_at', shipment.provider_fetched_at,
 					'next_refresh_at', shipment.next_refresh_at,
+					'shipped_at', shipment.shipped_at,
+					'delivered_at', shipment.delivered_at,
 					'is_final', shipment.is_final
 				)
 			)
