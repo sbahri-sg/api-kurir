@@ -22,14 +22,18 @@ func TestStarterPackageIsScopedAndPassesValidator(t *testing.T) {
 	if report.Manifest.ProviderCode != "mengantar" {
 		t.Fatalf("provider=%q want mengantar", report.Manifest.ProviderCode)
 	}
+	if report.Manifest.BaseURL != "https://api.partner.example/partner/v1" {
+		t.Fatalf("starter package must use one connector base URL: %#v", report.Manifest)
+	}
 
 	reader, err := zip.NewReader(bytes.NewReader(artifact.Payload), int64(len(artifact.Payload)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	foundREADME := false
+	foundSingleEndpointManifest := false
 	for _, file := range reader.File {
-		if file.Name != "README.md" {
+		if file.Name != "README.md" && file.Name != "emisell-extension.yaml" {
 			continue
 		}
 		entry, openErr := file.Open()
@@ -41,9 +45,19 @@ func TestStarterPackageIsScopedAndPassesValidator(t *testing.T) {
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		foundREADME = bytes.Contains(content, []byte("Mengantar"))
+		if file.Name == "README.md" {
+			foundREADME = bytes.Contains(content, []byte("Mengantar"))
+		}
+		if file.Name == "emisell-extension.yaml" {
+			foundSingleEndpointManifest = bytes.Contains(content, []byte("base_url:")) &&
+				!bytes.Contains(content, []byte("sandbox_url:")) &&
+				!bytes.Contains(content, []byte("production_url:"))
+		}
 	}
 	if !foundREADME {
 		t.Fatal("starter README must contain provider identity")
+	}
+	if !foundSingleEndpointManifest {
+		t.Fatal("starter manifest must contain only connector.base_url")
 	}
 }

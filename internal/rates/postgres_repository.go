@@ -15,6 +15,53 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+func (r *PostgresRepository) FindActiveCourierPresentations(
+	ctx context.Context,
+	courierCodes []string,
+) (map[string]CourierPresentation, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			c.code,
+			c.name,
+			c.logo_url,
+			coalesce(service.code, ''),
+			coalesce(service.name, '')
+		FROM couriers c
+		LEFT JOIN courier_services service
+		  ON service.courier_id = c.id
+		 AND service.active
+		WHERE c.active
+		  AND c.code = ANY($1::text[])
+		ORDER BY c.code, service.code
+	`, courierCodes)
+	if err != nil {
+		return nil, fmt.Errorf("query active courier presentations: %w", err)
+	}
+	defer rows.Close()
+
+	presentations := make(map[string]CourierPresentation, len(courierCodes))
+	for rows.Next() {
+		var code, name, logo, serviceCode, serviceName string
+		if err := rows.Scan(&code, &name, &logo, &serviceCode, &serviceName); err != nil {
+			return nil, fmt.Errorf("scan active courier presentation: %w", err)
+		}
+		presentation := presentations[code]
+		presentation.Name = name
+		presentation.Logo = logo
+		if presentation.ServiceNames == nil {
+			presentation.ServiceNames = make(map[string]string)
+		}
+		if serviceCode != "" && serviceName != "" {
+			presentation.ServiceNames[serviceCode] = serviceName
+		}
+		presentations[code] = presentation
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active courier presentations: %w", err)
+	}
+	return presentations, nil
+}
+
 func (r *PostgresRepository) FindActiveCourierLogos(
 	ctx context.Context,
 	courierCodes []string,

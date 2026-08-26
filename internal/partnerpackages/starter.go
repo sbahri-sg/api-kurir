@@ -21,8 +21,7 @@ func StarterPackage(providerCode, providerName string) (Artifact, error) {
 	manifest.Provider.Code = providerCode
 	manifest.Provider.Name = providerName
 	manifest.Connector.ContractVersion = "v1"
-	manifest.Connector.SandboxURL = "https://sandbox.partner.example/partner/v1"
-	manifest.Connector.ProductionURL = "https://api.partner.example/partner/v1"
+	manifest.Connector.BaseURL = "https://api.partner.example/partner/v1"
 	manifest.Capabilities = []string{"rates"}
 	manifest.Services = []string{"regular"}
 	manifestPayload, err := yaml.Marshal(manifest)
@@ -71,7 +70,7 @@ info:
   title: Emisell Partner Connector
   version: 1.0.0
 servers:
-  - url: https://sandbox.partner.example/partner/v1
+  - url: https://api.partner.example/partner/v1
 paths:
   /health:
     get:
@@ -104,7 +103,7 @@ const starterREADME = `# Connector %s
 
 Package sertifikasi untuk provider \x60%s\x60.
 
-1. Ganti sandbox_url dan production_url pada emisell-extension.yaml.
+1. Ganti connector.base_url pada emisell-extension.yaml dengan endpoint HTTPS aktif.
 2. Deklarasikan hanya capability dan service yang sudah tersedia.
 3. Lengkapi openapi.yaml mengikuti kontrak Partner API v1.
 4. Gunakan data sintetis pada examples dan contract-tests.

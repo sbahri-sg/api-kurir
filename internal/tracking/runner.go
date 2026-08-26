@@ -43,6 +43,10 @@ func NewRunner(
 	adapterByCourier := make(map[string]Adapter)
 	for _, adapter := range adapters {
 		for _, courierCode := range adapter.CourierCodes() {
+			courierCode = normalizeCourierCode(courierCode)
+			if courierCode == "" {
+				continue
+			}
 			adapterByCourier[courierCode] = adapter
 		}
 	}
@@ -167,6 +171,7 @@ func (r *Runner) processOneAs(ctx context.Context, workerID string) error {
 	if result.FetchedAt.IsZero() {
 		result.FetchedAt = time.Now().UTC()
 	}
+	result = normalizeResultCourier(result, request.CourierCode)
 	result = ApplyEconomyCheckpoint(
 		result,
 		job.ProviderHitCount+1,

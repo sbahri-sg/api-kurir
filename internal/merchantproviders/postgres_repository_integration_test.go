@@ -27,9 +27,13 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 	suffix := time.Now().UTC().UnixNano()
 	tenantID := fmt.Sprintf("provider_merchant_%d", suffix)
 	otherTenantID := fmt.Sprintf("provider_other_%d", suffix)
+	providerCode := fmt.Sprintf("provider_test_%d", suffix)
+	if len(providerCode) > 48 {
+		providerCode = providerCode[:48]
+	}
 	credentialID := fmt.Sprintf("00000000-0000-4000-8000-%012x", uint64(suffix)&0xffffffffffff)
 	fingerprint := sha256.Sum256([]byte(credentialID))
-	alias := fmt.Sprintf("rajaongkir-provider-%d", suffix)
+	alias := fmt.Sprintf("provider-test-%d", suffix)
 	defer func() {
 		_, _ = pool.Exec(context.Background(), `
 			DELETE FROM tenant_active_shipping_providers
@@ -38,7 +42,24 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `
 			DELETE FROM provider_credentials WHERE id = $1::uuid
 		`, credentialID)
+		_, _ = pool.Exec(context.Background(), `
+			DELETE FROM shipping_integration_providers WHERE code = $1
+		`, providerCode)
 	}()
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO shipping_integration_providers (
+			code, name, logo_url, description, built_in,
+			integration_type, distribution_type,
+			requires_credential, credential_type, available, display_order
+		)
+		VALUES ($1, 'Provider Test', 'https://example.com/provider.svg',
+			'Provider managed untuk pengujian aktivasi merchant.', false,
+			'managed_upstream', 'merchant', true, 'api_key', true, 9999)
+	`, providerCode)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	_, err = pool.Exec(ctx, `
 		INSERT INTO provider_credentials (
@@ -53,8 +74,8 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 			daily_limit,
 			created_by
 		)
-		VALUES ($1::uuid, $2, 'rajaongkir', $3, $4, $5, 'test', '1234', 50000, 'integration-test')
-	`, credentialID, tenantID, alias, []byte("ciphertext"), fingerprint[:])
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, 'test', '1234', 50000, 'integration-test')
+	`, credentialID, tenantID, providerCode, alias, []byte("ciphertext"), fingerprint[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,18 +121,18 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 	}
 
 	version = inactive.Version
-	active, err := service.Activate(ctx, tenantID, "rajaongkir", ChangeInput{
+	active, err := service.Activate(ctx, tenantID, providerCode, ChangeInput{
 		ExpectedVersion: &version,
 		UpdatedBy:       "integration-test",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if active.ActiveProviderCode == nil || *active.ActiveProviderCode != "rajaongkir" || active.Version != 3 {
+	if active.ActiveProviderCode == nil || *active.ActiveProviderCode != providerCode || active.Version != 3 {
 		t.Fatalf("unexpected active catalog: %#v", active)
 	}
 
-	_, err = service.Activate(ctx, otherTenantID, "rajaongkir", ChangeInput{
+	_, err = service.Activate(ctx, otherTenantID, providerCode, ChangeInput{
 		UpdatedBy: "integration-test",
 	})
 	if !errors.Is(err, ErrCredentialUnavailable) {
@@ -162,11 +183,11 @@ func TestCatalogExcludesUnavailableProvidersIntegration(t *testing.T) {
 		INSERT INTO shipping_integration_providers (
 			code, name, logo_url, description, built_in,
 			integration_type, distribution_type,
-			requires_credential, available, display_order
+			requires_credential, credential_type, available, display_order
 		)
 		VALUES ($1, 'Hidden Provider', 'https://example.com/provider.svg',
 			'Provider integration test yang belum tersedia.', false,
-			'managed_upstream', 'public', true, false, 9999)
+			'managed_upstream', 'merchant', true, 'api_key', false, 9999)
 	`, providerCode)
 	if err != nil {
 		t.Fatal(err)
@@ -242,11 +263,11 @@ func TestPartnerHostedActivationPinsReleaseAndScopesIntegration(t *testing.T) {
 		INSERT INTO shipping_integration_providers (
 			code, name, logo_url, description, built_in,
 			integration_type, distribution_type, requires_credential,
-			available, display_order
+			credential_type, available, display_order
 		)
 		VALUES ($1, 'Hosted Partner', 'https://example.com/provider.svg',
 			'Provider partner-hosted untuk pengujian instalasi release.', false,
-			'partner_hosted', 'public', false, true, 9997)
+			'partner_hosted', 'merchant', false, 'none', true, 9997)
 	`, providerCode)
 	if err != nil {
 		t.Fatal(err)

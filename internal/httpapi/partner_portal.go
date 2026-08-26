@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/emisell/api-kurir/internal/partnerexplorer"
 	"github.com/emisell/api-kurir/internal/partnerpackages"
 	"github.com/labstack/echo/v5"
 )
@@ -16,6 +17,7 @@ const partnerIdentityContextKey = "partner_access_identity"
 func registerPartnerPortalRoutes(
 	group *echo.Group,
 	service *partnerpackages.Service,
+	explorerServices ...*partnerexplorer.Service,
 ) {
 	group.Use(partnerAccessKeyMiddleware(service))
 	group.GET("/me", partnerPortalMeHandler())
@@ -24,6 +26,17 @@ func registerPartnerPortalRoutes(
 	group.POST("/submissions", partnerSubmissionUploadHandler(service))
 	group.GET("/submissions/:id", partnerSubmissionGetHandler(service))
 	group.GET("/submissions/:id/artifact", partnerSubmissionArtifactHandler(service))
+	if len(explorerServices) > 0 && explorerServices[0] != nil {
+		explorer := explorerServices[0]
+		group.GET("/explorer/credential", partnerExplorerCredentialGetHandler(explorer))
+		group.PUT("/explorer/credential", partnerExplorerCredentialPutHandler(explorer))
+		group.DELETE("/explorer/credential", partnerExplorerCredentialDeleteHandler(explorer))
+		group.PUT("/explorer/credentials/:code", partnerExplorerCredentialProfilePutHandler(explorer))
+		group.DELETE("/explorer/credentials/:code", partnerExplorerCredentialProfileDeleteHandler(explorer))
+		group.GET("/submissions/:id/explorer", partnerExplorerCatalogHandler(explorer))
+		group.POST("/submissions/:id/explorer/execute", partnerExplorerExecuteHandler(explorer))
+		group.GET("/submissions/:id/explorer/runs", partnerExplorerRunsHandler(explorer))
+	}
 }
 
 func partnerStarterPackageHandler() echo.HandlerFunc {

@@ -33,7 +33,7 @@ func NewService(
 ) *Service {
 	supported := make(map[string]struct{}, len(supportedCouriers))
 	for _, courierCode := range supportedCouriers {
-		courierCode = strings.ToLower(strings.TrimSpace(courierCode))
+		courierCode = normalizeCourierCode(courierCode)
 		if courierCode != "" {
 			supported[courierCode] = struct{}{}
 		}
@@ -52,7 +52,7 @@ func (s *Service) RevealWaybill(courierCode string, ciphertext []byte) (string, 
 	if s == nil || s.cipher == nil {
 		return "", errors.New("tracking cipher is unavailable")
 	}
-	courierCode = strings.ToLower(strings.TrimSpace(courierCode))
+	courierCode = normalizeCourierCode(courierCode)
 	plaintext, err := s.cipher.Decrypt(ciphertext, []byte(courierCode))
 	if err != nil {
 		return "", err
@@ -139,7 +139,7 @@ func (s *Service) Verify(
 	adapter Adapter,
 	request VerificationRequest,
 ) (VerificationResult, error) {
-	request.CourierCode = strings.ToLower(strings.TrimSpace(request.CourierCode))
+	request.CourierCode = normalizeCourierCode(request.CourierCode)
 	request.Waybill = strings.ToUpper(strings.TrimSpace(request.Waybill))
 	request.LastPhoneDigits = strings.TrimSpace(request.LastPhoneDigits)
 	if !validWaybill.MatchString(request.Waybill) {
@@ -303,6 +303,7 @@ func (s *Service) trackNow(
 	if result.FetchedAt.IsZero() {
 		result.FetchedAt = s.now().UTC()
 	}
+	result = normalizeResultCourier(result, request.CourierCode)
 	result = ApplyEconomyCheckpoint(
 		result,
 		shipment.ProviderHitCount+1,
@@ -435,7 +436,7 @@ func (s *Service) RemoveSubscription(
 }
 
 func (s *Service) normalizeRequest(request Request) (Request, error) {
-	request.CourierCode = strings.ToLower(strings.TrimSpace(request.CourierCode))
+	request.CourierCode = normalizeCourierCode(request.CourierCode)
 	request.Waybill = strings.ToUpper(strings.TrimSpace(request.Waybill))
 	request.LastPhoneDigits = strings.TrimSpace(request.LastPhoneDigits)
 	if request.CourierCode == "" || !validWaybill.MatchString(request.Waybill) {
@@ -454,7 +455,7 @@ func (s *Service) normalizeRequest(request Request) (Request, error) {
 }
 
 func resultFromShipment(shipment Shipment) Result {
-	return Result{
+	return normalizeResultCourier(Result{
 		NormalizedStatus: shipment.NormalizedStatus,
 		StatusLabel:      shipment.StatusLabel,
 		Summary:          shipment.Summary,
@@ -463,7 +464,7 @@ func resultFromShipment(shipment Shipment) Result {
 		FetchedAt:        valueOrZero(shipment.ProviderFetchedAt),
 		NextRefreshAt:    shipment.NextRefreshAt,
 		IsFinal:          shipment.IsFinal,
-	}
+	}, shipment.CourierCode)
 }
 
 func valueOrZero(value *time.Time) time.Time {

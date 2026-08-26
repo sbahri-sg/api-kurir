@@ -55,7 +55,7 @@ func TestValidateArchiveRejectsProviderMismatch(t *testing.T) {
 func TestValidateArchiveRejectsPrivateConnectorURL(t *testing.T) {
 	manifest := strings.ReplaceAll(
 		testManifest("mengantar"),
-		"https://sandbox.partner.example/partner/v1",
+		"https://api.partner.example/partner/v1",
 		"https://127.0.0.1/partner/v1",
 	)
 	report := ValidateArchive(testArchive(t, map[string]string{
@@ -65,6 +65,23 @@ func TestValidateArchiveRejectsPrivateConnectorURL(t *testing.T) {
 
 	if report.Passed || !hasFailedCheck(report, "manifest") {
 		t.Fatalf("expected private connector URL failure: %#v", report.Checks)
+	}
+}
+
+func TestValidateArchiveRejectsLegacyConnectorURLs(t *testing.T) {
+	manifest := strings.Replace(
+		testManifest("mengantar"),
+		"  base_url: https://api.partner.example/partner/v1",
+		"  sandbox_url: https://sandbox.partner.example/partner/v1\n  production_url: https://api.partner.example/partner/v1",
+		1,
+	)
+	report := ValidateArchive(testArchive(t, map[string]string{
+		"emisell-extension.yaml": manifest,
+		"openapi.yaml":           testOpenAPI(),
+	}), "mengantar")
+
+	if report.Passed || !hasFailedCheck(report, "manifest") {
+		t.Fatalf("expected legacy connector fields to be rejected: %#v", report)
 	}
 }
 
@@ -140,8 +157,7 @@ provider:
   name: Test Partner
 connector:
   contract_version: v1
-  sandbox_url: https://sandbox.partner.example/partner/v1
-  production_url: https://api.partner.example/partner/v1
+  base_url: https://api.partner.example/partner/v1
 capabilities: [rates, shipments, pickup, tracking, balance]
 services: [regular, cargo]
 `

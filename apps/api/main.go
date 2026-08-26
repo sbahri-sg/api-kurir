@@ -13,13 +13,16 @@ import (
 	"github.com/emisell/api-kurir/internal/config"
 	"github.com/emisell/api-kurir/internal/couriers"
 	"github.com/emisell/api-kurir/internal/database"
+	"github.com/emisell/api-kurir/internal/fulfillment"
 	"github.com/emisell/api-kurir/internal/httpapi"
 	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/merchantproviders"
 	"github.com/emisell/api-kurir/internal/merchantshipping"
+	"github.com/emisell/api-kurir/internal/partnerexplorer"
 	"github.com/emisell/api-kurir/internal/platform/cache"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/providers/biteship"
+	"github.com/emisell/api-kurir/internal/providers/hosted"
 	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tracking"
@@ -124,9 +127,18 @@ func run(logger *slog.Logger) error {
 		},
 	)
 	fallbacks := make(map[string]providercredentials.StaticCredential)
-	if cfg.RajaOngkir.APIKey != "" {
+	if cfg.RajaOngkir.APIKey != "" || cfg.RajaOngkir.DeliveryAPIKey != "" {
 		fallbacks["rajaongkir"] = providercredentials.StaticCredential{
-			Secret:          cfg.RajaOngkir.APIKey,
+			Secret: cfg.RajaOngkir.APIKey,
+			CapabilitySecrets: map[string]string{
+				"rates:read":       cfg.RajaOngkir.APIKey,
+				"tracking:read":    cfg.RajaOngkir.APIKey,
+				"shipments:write":  cfg.RajaOngkir.DeliveryAPIKey,
+				"shipments:read":   cfg.RajaOngkir.DeliveryAPIKey,
+				"pickup:write":     cfg.RajaOngkir.DeliveryAPIKey,
+				"labels:read":      cfg.RajaOngkir.DeliveryAPIKey,
+				"shipments:cancel": cfg.RajaOngkir.DeliveryAPIKey,
+			},
 			CredentialAlias: cfg.RajaOngkir.CredentialAlias,
 			DailyLimit:      cfg.RajaOngkir.DailyLimit,
 		}
@@ -136,16 +148,28 @@ func run(logger *slog.Logger) error {
 		fallbacks,
 		merchantProviderService,
 	)
-	rajaOngkirProvider := rajaongkir.NewDynamicProvider(
+	rajaOngkirHostedClient, err := hosted.NewClient(
+		cfg.RajaOngkirHosted.BaseURL,
+		cfg.RajaOngkirHosted.Timeout,
+	)
+	if err != nil {
+		return err
+	}
+	fulfillmentService := fulfillment.NewService(
+		fulfillment.NewPostgresRepository(pool, providerCredentialCipher),
+		merchantProviderService,
 		providerResolver,
-		cfg.RajaOngkir.BaseURL,
-		cfg.RajaOngkir.Timeout,
-		cfg.RajaOngkir.MinRequestInterval,
+		hosted.NewFulfillmentAdapter("rajaongkir", rajaOngkirHostedClient),
+	)
+	rajaOngkirProvider := hosted.NewRateProvider(
+		"rajaongkir",
+		rajaOngkirHostedClient,
+		providerResolver,
 		locationRepository,
 		rateRepository,
 		cfg.RajaOngkir.SnapshotTTL,
 	)
-	rateLockTTL := cfg.RajaOngkir.Timeout + cfg.Biteship.Timeout + 2*time.Second
+	rateLockTTL := cfg.RajaOngkirHosted.Timeout + cfg.Biteship.Timeout + 2*time.Second
 	var rateProviderOption rates.Option
 	if cfg.Biteship.RateFallbackEnabled {
 		biteshipRateProvider := biteship.NewDynamicRateProvider(
@@ -170,20 +194,21 @@ func run(logger *slog.Logger) error {
 			rajaOngkirProvider,
 			rateRepository,
 			runtimeLocker,
-			cfg.RajaOngkir.Timeout+2*time.Second,
+			cfg.RajaOngkirHosted.Timeout+2*time.Second,
 		)
 	}
 	rateOptions := []rates.Option{rateProviderOption, rates.WithCredentialSelector(providerCredentialService), rates.WithShippingProviderGate(merchantProviderService), rates.WithResultPolicy(merchantShippingService), rates.WithServicePolicyCache(
 		runtimeCache,
 		5*time.Minute,
 	)}
-	operationTimeout := cfg.RajaOngkir.Timeout + 2*time.Second
+	operationTimeout := cfg.RajaOngkirHosted.Timeout + 2*time.Second
 	if cfg.Biteship.RateFallbackEnabled {
 		operationTimeout += 2*cfg.Biteship.Timeout + 2*time.Second
 	}
 	logger.Info(
 		"runtime shipping provider resolver enabled",
 		"primary", "rajaongkir",
+		"transport", "partner_hosted",
 		"rate_fallback", cfg.Biteship.RateFallbackEnabled,
 	)
 	rateService := rates.NewService(rateRepository, operationTimeout, rateOptions...)
@@ -204,12 +229,10 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		rajaOngkirTrackingAdapter := rajaongkir.NewDynamicTrackingAdapter(
+		rajaOngkirTrackingAdapter := hosted.NewTrackingAdapter(
+			"rajaongkir",
+			rajaOngkirHostedClient,
 			providerResolver,
-			cfg.RajaOngkir.BaseURL,
-			cfg.RajaOngkir.Timeout,
-			cfg.RajaOngkir.MinRequestInterval,
-			rateRepository,
 			rateRepository,
 			cfg.RajaOngkir.TrackingCouriers,
 		)
@@ -255,10 +278,17 @@ func run(logger *slog.Logger) error {
 		webhookSettingsService,
 		merchantProviderService,
 		merchantShippingService,
+		providerCredentialCipher,
 		cfg.APIKeys,
 		cfg.AdminAPIKeys,
 		logger,
 		cfg.AppEnv,
+		httpapi.WithFulfillmentService(fulfillmentService),
+		httpapi.WithManagedPartnerConnector(partnerexplorer.ManagedConnector{
+			ProviderCode:   "rajaongkir",
+			PublicBaseURL:  cfg.RajaOngkirHosted.PublicBaseURL,
+			RuntimeBaseURL: cfg.RajaOngkirHosted.BaseURL,
+		}),
 	)
 
 	logger.Info("API listening", "address", cfg.HTTPAddr)

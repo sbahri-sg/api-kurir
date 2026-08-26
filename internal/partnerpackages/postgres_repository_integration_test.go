@@ -60,11 +60,11 @@ func TestPublishedReleaseAndRollbackIntegration(t *testing.T) {
 		INSERT INTO shipping_integration_providers (
 			code, name, logo_url, description, built_in,
 			integration_type, distribution_type, requires_credential,
-			available, display_order
+			credential_type, available, display_order
 		)
 		VALUES ($1, 'Release Provider', 'https://example.com/provider.svg',
 			'Provider untuk menguji release immutable dan rollback.', false,
-			'partner_hosted', 'public', false, false, 9998)
+			'partner_hosted', 'merchant', false, 'none', false, 9998)
 	`, providerCode)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestManagedProviderCannotReceivePartnerPortalKeyIntegration(t *testing.T) {
 	defer pool.Close()
 
 	service := NewService(NewPostgresRepository(pool))
-	_, err = service.GenerateAccessKey(ctx, "rajaongkir", "integration-test", "req-key-type")
+	_, err = service.GenerateAccessKey(ctx, "kiriminaja", "integration-test", "req-key-type")
 	if !errors.Is(err, ErrProviderType) {
 		t.Fatalf("managed provider access key error=%v want ErrProviderType", err)
 	}
@@ -208,11 +208,11 @@ func TestPartnerUploadGuardrailsIntegration(t *testing.T) {
 		INSERT INTO shipping_integration_providers (
 			code, name, logo_url, description, built_in,
 			integration_type, distribution_type, requires_credential,
-			available, display_order
+			credential_type, available, display_order
 		)
 		VALUES ($1, 'Guardrail Provider', 'https://example.com/provider.svg',
 			'Provider untuk menguji upload guardrail.', false,
-			'partner_hosted', 'public', false, false, 9997)
+			'partner_hosted', 'merchant', false, 'none', false, 9997)
 	`, providerCode)
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +269,7 @@ func insertApprovedSubmission(
 		VALUES (
 			$1, $2, 'approved', $2 || '.zip', 'application/zip',
 			1, repeat('a', 64), decode('00', 'hex'),
-			'{"passed":true,"file_count":1,"expanded_size":1,"checks":[],"warnings":[],"manifest":{"schema_version":"1","provider_code":"test","provider_name":"Test","contract_version":"v1","sandbox_url":"https://sandbox.example.com","production_url":"https://api.example.com","declared_capabilities":["rates","tracking"],"declared_services":["regular"]},"required_openapi_paths":[]}'::jsonb,
+			'{"passed":true,"file_count":1,"expanded_size":1,"checks":[],"warnings":[],"manifest":{"schema_version":"1","provider_code":"test","provider_name":"Test","contract_version":"v1","base_url":"https://api.example.com","declared_capabilities":["rates","tracking"],"declared_services":["regular"]},"required_openapi_paths":[]}'::jsonb,
 			ARRAY['rates:read', 'tracking:read']::text[], 'integration-test', 'integration-test'
 		)
 		RETURNING id::text

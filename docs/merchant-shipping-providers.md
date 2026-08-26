@@ -28,11 +28,12 @@ Setiap provider juga membawa klasifikasi berikut:
 |---|---|
 | `built_in` | Emisell Kurir; dikelola penuh oleh platform. |
 | `managed_upstream` | API Kurir memiliki adapter; seller memasang credential sendiri bila diwajibkan. |
-| `partner_hosted` | Vendor mengirim package, lulus sertifikasi, dan wajib memiliki active release. |
+| `partner_hosted` | Connector package lulus sertifikasi dan wajib memiliki active release; dapat memakai credential BYOK seller. |
 
-Distribusi `public` tampil untuk seluruh merchant. `limited` dan `private`
-tidak masuk katalog umum; aksesnya harus telah diprovisikan melalui koneksi
-merchant/provider sebelum dapat dipilih.
+Distribusi tidak dapat dipilih. Provider eksternal selalu memakai nilai
+`merchant` dan hanya dapat ditemukan melalui gateway merchant Emisell yang
+terautentikasi. Provider bawaan memakai nilai `built_in`; tidak ada katalog
+provider publik.
 
 Provider berstatus `available=false` hanya terlihat pada dashboard admin API
 Kurir. Provider tersebut tidak dikirim oleh `GET /api/v1/integrations/providers`,
@@ -135,9 +136,11 @@ melalui endpoint admin berikut:
 
 Provider baru selalu dibuat `built_in=false` dan `available=false`. Jenis
 default-nya `partner_hosted` dengan distribusi `public`; jenis dapat dipilih
-menjadi `managed_upstream`. Hanya managed-upstream yang memerlukan credential
-seller, sedangkan partner-hosted memerlukan active release published. Operator
-baru mengaktifkan `available` setelah connector atau adapter selesai diuji.
+menjadi `managed_upstream`. Partner-hosted dapat memakai credential seller
+apabila connector meneruskan autentikasi BYOK. RajaOngkir memakai model ini:
+release connector wajib published dan merchant wajib memasang Shipping Cost
+API key; Shipping Delivery API key ditambahkan untuk fulfillment. Operator baru
+mengaktifkan `available` setelah connector atau adapter selesai diuji.
 Kode provider tidak dapat diedit setelah provider dibuat. Provider yang masih dipakai merchant
 aktif tidak dapat dinonaktifkan langsung. Setelah provider tanpa merchant aktif
 dibuat `available=false`, provider langsung hilang dari katalog Emisell tetapi

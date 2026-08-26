@@ -72,8 +72,7 @@ provider:
   name: Mengantar
 connector:
   contract_version: v1
-  sandbox_url: https://sandbox.partner.example/partner/v1
-  production_url: https://api.partner.example/partner/v1
+  base_url: https://api.partner.example/partner/v1
 capabilities:
   - rates
   - shipments
@@ -87,8 +86,10 @@ services:
   - cargo
 ```
 
-`provider.code` harus sama dengan provider yang terikat pada access key. URL
-sandbox dan production harus HTTPS publik. Secret, API key, `.env`, private key,
+`provider.code` harus sama dengan provider yang terikat pada access key.
+`connector.base_url` adalah satu endpoint HTTPS aktif milik connector. API Kurir
+menentukan alamat gateway publik berdasarkan environment: domain lokal saat
+development dan `api-kurir.emisell.com` saat production. Secret, API key, `.env`, private key,
 credential native provider, dan data customer dilarang berada dalam ZIP.
 
 Capability yang diterima pada MVP adalah `rates`, `shipments`, `pickup`,
@@ -119,6 +120,42 @@ Path tambahan mengikuti capability manifest:
 Detail request, response, signing, dan idempotency tetap mengikuti
 [`openapi/partner-v1.yaml`](../openapi/partner-v1.yaml) dan
 [`partner-api-v1.md`](partner-api-v1.md).
+
+Jika provider memakai lebih dari satu API key, setiap key wajib dinyatakan
+sebagai security scheme terpisah. Jangan menaruh nilai key di OpenAPI atau ZIP.
+Visual API Explorer akan membuat form credential berdasarkan deklarasi ini:
+
+```yaml
+components:
+  securitySchemes:
+    shipping_cost:
+      type: apiKey
+      in: header
+      name: key
+      x-emisell-credential-code: shipping_cost
+      x-emisell-label: RajaOngkir Shipping Cost
+    shipping_delivery:
+      type: apiKey
+      in: header
+      name: x-api-key
+      x-emisell-credential-code: shipping_delivery
+      x-emisell-label: RajaOngkir Shipping Delivery
+paths:
+  /rates:
+    post:
+      security:
+        - shipping_cost: []
+  /shipments:
+    post:
+      security:
+        - shipping_delivery: []
+```
+
+Untuk connector berbasis RajaOngkir, domain upstream resmi berada di source
+connector: Shipping Cost memakai `https://rajaongkir.komerce.id/api/v1/`,
+sedangkan Shipping Delivery production memakai
+`https://api.collaborator.komerce.id/`. URL manifest tetap domain connector
+partner karena kontrak canonical API Kurir berbeda dari path native RajaOngkir.
 
 ## 5. Validasi keamanan upload
 
@@ -160,6 +197,9 @@ suspended -> published | technical_review
 
 - Versi bersifat immutable dan unik per provider.
 - Package gagal scan dimulai dari `changes_requested`.
+- Provider managed/hosted API Kurir dapat memakai endpoint official yang sama
+  selama fase pengujian; sandbox domain terpisah tidak diwajibkan. Operasi
+  transaksional tetap terkunci sampai tahap sertifikasi yang sesuai.
 - `approved` dan `published` hanya dapat dicapai bila static scan lulus.
 - Ketika versi baru menjadi `published`, versi published sebelumnya otomatis
   menjadi `superseded`.
@@ -210,8 +250,9 @@ terikat pada key. Percobaan membaca ID submission provider lain menghasilkan
 - akun personal, MFA, serta role anggota tim partner; fase awal memakai access
   key provider yang dapat dirotasi;
 - external malware/dependency scanner;
-- runner contract test lengkap untuk rates, shipment, pickup, tracking, retry,
-  dan performance;
+- official read-only runner untuk health, rates, dan tracking sudah tersedia;
+  runner transaksi shipment/pickup/cancel, retry, full response schema, dan
+  performance masih tahap berikutnya;
 - evidence upload per test case dan approval dua pihak;
 - object storage, retention policy otomatis, dan deletion workflow;
 - workflow approval dua pihak dan rollout bertahap per persentase merchant.

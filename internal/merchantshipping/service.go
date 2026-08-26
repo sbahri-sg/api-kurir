@@ -453,7 +453,7 @@ func normalizeSelections(input []Selection) ([]Selection, bool) {
 	seen := make(map[string]struct{}, len(input))
 	result := make([]Selection, 0, len(input))
 	for _, selection := range input {
-		selection.CourierCode = strings.ToLower(strings.TrimSpace(selection.CourierCode))
+		selection.CourierCode = couriers.NormalizeCode(selection.CourierCode)
 		selection.ServiceCode = strings.ToUpper(strings.TrimSpace(selection.ServiceCode))
 		if selection.CourierCode == "" || selection.ServiceCode == "" ||
 			len(selection.CourierCode) > 32 || len(selection.ServiceCode) > 64 {
@@ -474,7 +474,7 @@ func normalizeSelections(input []Selection) ([]Selection, bool) {
 }
 
 func selectionKey(courierCode, serviceCode string) string {
-	return strings.ToLower(strings.TrimSpace(courierCode)) + ":" +
+	return couriers.NormalizeCode(courierCode) + ":" +
 		strings.ToUpper(strings.TrimSpace(serviceCode))
 }
 

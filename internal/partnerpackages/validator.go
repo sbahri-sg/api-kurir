@@ -47,8 +47,7 @@ type integrationManifest struct {
 	} `yaml:"provider"`
 	Connector struct {
 		ContractVersion string `yaml:"contract_version"`
-		SandboxURL      string `yaml:"sandbox_url"`
-		ProductionURL   string `yaml:"production_url"`
+		BaseURL         string `yaml:"base_url,omitempty"`
 	} `yaml:"connector"`
 	Capabilities []string `yaml:"capabilities"`
 	Services     []string `yaml:"services"`
@@ -157,7 +156,7 @@ func ValidateArchive(payload []byte, providerCode string) ScanReport {
 		fail("manifest", manifestErr.Error())
 	} else {
 		report.Manifest = manifest
-		pass("manifest", "Manifest schema v1 dan endpoint HTTPS valid.")
+		pass("manifest", "Manifest schema v1 dan endpoint connector HTTPS valid.")
 	}
 
 	requiredPaths, openAPIErr := validateOpenAPI(openAPIBytes, manifest.DeclaredCapability)
@@ -188,7 +187,9 @@ func readZipEntry(entry *zip.File, maximum int64) ([]byte, error) {
 
 func validateManifest(payload []byte, providerCode string) (ManifestSummary, error) {
 	var manifest integrationManifest
-	if err := yaml.Unmarshal(payload, &manifest); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(payload))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&manifest); err != nil {
 		return ManifestSummary{}, errors.New("emisell-extension.yaml bukan YAML yang valid")
 	}
 	manifest.Provider.Code = strings.ToLower(strings.TrimSpace(manifest.Provider.Code))
@@ -204,8 +205,9 @@ func validateManifest(payload []byte, providerCode string) (ManifestSummary, err
 	if manifest.Connector.ContractVersion != "v1" {
 		return ManifestSummary{}, errors.New("connector.contract_version wajib bernilai v1")
 	}
-	if !validHTTPSURL(manifest.Connector.SandboxURL) || !validHTTPSURL(manifest.Connector.ProductionURL) {
-		return ManifestSummary{}, errors.New("sandbox_url dan production_url wajib URL HTTPS publik")
+	baseURL := strings.TrimSpace(manifest.Connector.BaseURL)
+	if !validHTTPSURL(baseURL) {
+		return ManifestSummary{}, errors.New("connector.base_url wajib URL HTTPS publik")
 	}
 	capabilities := normalizedUnique(manifest.Capabilities)
 	services := normalizedUnique(manifest.Services)
@@ -226,8 +228,7 @@ func validateManifest(payload []byte, providerCode string) (ManifestSummary, err
 		ProviderCode:       manifest.Provider.Code,
 		ProviderName:       strings.TrimSpace(manifest.Provider.Name),
 		ContractVersion:    manifest.Connector.ContractVersion,
-		SandboxURL:         strings.TrimSpace(manifest.Connector.SandboxURL),
-		ProductionURL:      strings.TrimSpace(manifest.Connector.ProductionURL),
+		BaseURL:            baseURL,
 		DeclaredCapability: capabilities,
 		DeclaredServices:   services,
 	}, nil

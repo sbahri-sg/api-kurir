@@ -2,7 +2,7 @@
 
 Status: **contract-first**
 Versi: **1.0**
-Terakhir ditinjau: **24 Agustus 2026**
+Terakhir ditinjau: **26 Agustus 2026**
 
 ## 1. Tujuan
 
@@ -19,8 +19,10 @@ tenant, dan tanggung jawab operasional tidak tercampur.
 | Canonical/Internal | Dashboard atau service internal | API Kurir | `/v1`, `openapi/public.yaml` |
 | Merchant Shipping Services | Backend Extension Kurir Emisell | API Kurir | `/api/v1/integrations/shipping-services`, `openapi/public.yaml` |
 | Merchant Shipping Provider | Backend Extension Kurir Emisell | API Kurir | `/api/v1/integrations/providers`, `openapi/public.yaml` |
+| Merchant Fulfillment | Main Service Emisell | API Kurir | `/api/v1/integrations/shipments*`, `openapi/public.yaml` |
 | Admin | Operator API Kurir | API Kurir | `/v1/admin`, `openapi/public.yaml` |
 | Provider Account API | Seller/admin Emisell | API Kurir | `openapi/provider-account-v1.yaml` |
+| Partner Visual API Explorer | Partner Portal | API Kurir, lalu endpoint resmi partner | `/partner/v1/submissions/{id}/explorer*`, `openapi/public.yaml` |
 | Partner Connector API | API Kurir | Sistem partner | `openapi/partner-v1.yaml` |
 | Partner Event Webhook | Sistem partner | API Kurir | bagian `webhooks` pada `openapi/partner-v1.yaml` |
 
@@ -74,6 +76,18 @@ RajaOngkir dan Biteship dapat menjadi provider bawaan yang adapter-nya
 dioperasikan API Kurir. Batas, capability, dan urutan implementasi keduanya
 dibandingkan dengan partner pada
 [Strategi Provider Fulfillment](fulfillment-provider-landscape.md).
+
+### 2.4 Partner Visual API Explorer
+
+Visual API Explorer adalah fasilitas pengujian pada Partner Portal, bukan
+bagian dari kontrak runtime seller. Partner memilih operasi read-only yang
+berasal dari `openapi.yaml` pada package yang telah lolos validasi. API Kurir
+menjalankan request terkontrol ke endpoint HTTPS resmi partner memakai
+credential khusus Explorer yang tersimpan terenkripsi.
+
+Operasi transaksi seperti booking, pickup, pembatalan, dan perubahan data
+tetap terkunci. Credential Explorer juga tidak dipakai sebagai runtime
+credential setelah extension dipublikasikan.
 
 ## 3. Routing multi-provider
 

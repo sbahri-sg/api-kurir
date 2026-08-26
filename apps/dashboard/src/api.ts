@@ -208,6 +208,46 @@ export type TrackingOperationPage = {
   summary: TrackingOperationSummary;
 };
 
+export type FulfillmentOperationSummary = {
+	total: number;
+	booking_pending: number;
+	tracking_pending: number;
+	failed: number;
+	final: number;
+};
+
+export type FulfillmentOperation = {
+	shipment_id: string;
+	merchant_id: string;
+	order_id: string;
+	provider: string;
+	provider_shipment_id?: string;
+	courier: string;
+	service: string;
+	waybill?: string;
+	status: string;
+	provider_status?: string;
+	tracking_registration_status: string;
+	tracking_status?: string;
+	queue_status: string;
+	job_type?: string;
+	job_attempt_count: number;
+	job_max_attempts: number;
+	job_available_at?: string | null;
+	last_reconciled_at?: string | null;
+	next_reconcile_at?: string | null;
+	reconcile_error?: string;
+	webhook_status: string;
+	created_at: string;
+	updated_at: string;
+};
+
+export type FulfillmentOperationPage = {
+	items: FulfillmentOperation[];
+	total: number;
+	summary: FulfillmentOperationSummary;
+};
+
 export type RateSnapshot = {
   id: string;
   tenant_id?: string;
@@ -267,8 +307,10 @@ export type ShippingProvider = {
   description: string;
   built_in: boolean;
   integration_type: "built_in" | "managed_upstream" | "partner_hosted";
-  distribution_type: "built_in" | "public" | "limited" | "private";
+  distribution_type: "built_in" | "merchant";
   requires_credential: boolean;
+  credential_type: ProviderCredentialType;
+  credential_fields: ProviderCredentialField[];
   available: boolean;
   display_order: number;
   active_release_id: string | null;
@@ -282,22 +324,40 @@ export type ShippingProvider = {
   updated_at: string;
 };
 
+export type ProviderCredentialType =
+  | "none"
+  | "api_key"
+  | "capability_api_keys"
+  | "bearer_token"
+  | "api_key_secret"
+  | "oauth2_client_credentials";
+
+export type ProviderCredentialField = {
+  code: string;
+  label: string;
+  input_type: "text" | "password";
+  secret: boolean;
+  required: boolean;
+  placeholder: string;
+  help: string;
+  capabilities: string[];
+};
+
 export type ShippingProviderCreateInput = {
   code: string;
   name: string;
   logo: string;
   description: string;
   integration_type: "managed_upstream" | "partner_hosted";
-  distribution_type: "public" | "limited" | "private";
+  credential_type: ProviderCredentialType;
   display_order: number;
 };
 
 export type ShippingProviderUpdateInput = Omit<
   ShippingProviderCreateInput,
-  "code" | "integration_type" | "distribution_type"
+  "code" | "integration_type"
 > & {
   integration_type: ShippingProvider["integration_type"];
-  distribution_type: ShippingProvider["distribution_type"];
   available: boolean;
 };
 
@@ -318,8 +378,7 @@ export type PartnerPackageScanReport = {
     provider_code: string;
     provider_name: string;
     contract_version: string;
-    sandbox_url: string;
-    production_url: string;
+    base_url: string;
     declared_capabilities: string[];
     declared_services: string[];
   };
@@ -379,6 +438,101 @@ export type GeneratedPartnerAccessKey = {
 export type PartnerIdentity = {
   provider_code: string;
   provider_name: string;
+};
+
+export type PartnerExplorerCredential = {
+  provider_code: string;
+  credential_code: string;
+  display_key: string;
+  auth_header: string;
+  auth_prefix: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PartnerExplorerCredentialState = {
+  code: string;
+  label: string;
+  description: string;
+  auth_header: string;
+  auth_prefix: string;
+  configured: boolean;
+  credential: PartnerExplorerCredential | null;
+};
+
+export type PartnerExplorerParameter = {
+  name: string;
+  in: "path" | "query";
+  required: boolean;
+  description: string;
+  type: string;
+  example: string;
+};
+
+export type PartnerExplorerOperation = {
+  id: string;
+  method: string;
+  path: string;
+  summary: string;
+  description: string;
+  capability: string;
+  safety: "read_only" | "transactional_locked";
+  base_url: string;
+  credential_code: string;
+  credential_label: string;
+  credential_description: string;
+  auth_header: string;
+  auth_prefix: string;
+  parameters: PartnerExplorerParameter[];
+  request_example?: unknown;
+};
+
+export type PartnerExplorerCatalog = {
+  submission_id: string;
+  provider_code: string;
+  provider_name: string;
+  version: string;
+  environment: "official";
+  base_url: string;
+  credential: PartnerExplorerCredentialState;
+  credentials: PartnerExplorerCredentialState[];
+  operations: PartnerExplorerOperation[];
+};
+
+export type PartnerExplorerExecution = {
+  run_id: string;
+  operation: PartnerExplorerOperation;
+  environment: "official";
+  response_status: number;
+  duration_ms: number;
+  success: boolean;
+  content_type: string;
+  response_body: string;
+  response_headers: Record<string, string>;
+  truncated: boolean;
+  error_code?: string;
+  validation: {
+    http_passed: boolean;
+    json_passed: boolean;
+  };
+  executed_at: string;
+};
+
+export type PartnerExplorerRun = {
+  id: string;
+  submission_id: string;
+  provider_code: string;
+  operation_id: string;
+  method: string;
+  path: string;
+  environment: "official";
+  response_status: number;
+  duration_ms: number;
+  outcome: "passed" | "failed";
+  error_code: string;
+  response_preview: string;
+  created_by: string;
+  created_at: string;
 };
 
 export type ProviderCredential = {
@@ -522,6 +676,35 @@ export class AdminApi {
     });
   }
 
+	fulfillmentOperations(filters: {
+		search?: string;
+		provider?: string;
+		status?: string;
+		queue_status?: string;
+		limit?: number;
+		offset?: number;
+	} = {}, signal?: AbortSignal) {
+		const query = new URLSearchParams({
+			limit: String(filters.limit ?? 100),
+			offset: String(filters.offset ?? 0),
+		});
+		if (filters.search?.trim()) query.set("search", filters.search.trim());
+		if (filters.provider?.trim()) query.set("provider", filters.provider.trim());
+		if (filters.status?.trim()) query.set("status", filters.status.trim());
+		if (filters.queue_status?.trim()) query.set("queue_status", filters.queue_status.trim());
+		return this.request<FulfillmentOperationPage>(
+			`/v1/admin/fulfillment-operations?${query}`,
+			{ signal },
+		);
+	}
+
+	reconcileFulfillment(id: string) {
+		return this.request<{ shipment_id: string; refresh_queued: boolean }>(
+			`/v1/admin/fulfillment-operations/${encodeURIComponent(id)}/reconcile`,
+			{ method: "POST" },
+		);
+	}
+
   rateSnapshots(search = "", signal?: AbortSignal) {
     const query = new URLSearchParams({ limit: "100" });
     if (search.trim()) query.set("search", search.trim());
@@ -564,6 +747,13 @@ export class AdminApi {
     return this.request<ShippingProvider>(
       `/v1/admin/shipping-providers/${encodeURIComponent(code)}`,
       { method: "PUT", body: JSON.stringify(input) },
+    );
+  }
+
+  deleteShippingProvider(code: string) {
+    return this.request<void>(
+      `/v1/admin/shipping-providers/${encodeURIComponent(code)}`,
+      { method: "DELETE" },
     );
   }
 
@@ -780,6 +970,77 @@ export class PartnerPortalApi {
     );
     await this.ensureSuccess(response);
     return response.blob();
+  }
+
+  explorerCredential(signal?: AbortSignal) {
+    return this.request<PartnerExplorerCredentialState>(
+      "/partner/v1/explorer/credential",
+      { signal },
+    );
+  }
+
+  saveExplorerCredential(input: {
+    official_api_key: string;
+    auth_header: string;
+    auth_prefix: string;
+  }) {
+    return this.request<PartnerExplorerCredentialState>(
+      "/partner/v1/explorer/credential",
+      { method: "PUT", body: JSON.stringify(input) },
+    );
+  }
+
+  saveExplorerCredentialProfile(code: string, input: {
+    official_api_key: string;
+    auth_header: string;
+    auth_prefix: string;
+  }) {
+    return this.request<PartnerExplorerCredentialState>(
+      `/partner/v1/explorer/credentials/${encodeURIComponent(code)}`,
+      { method: "PUT", body: JSON.stringify(input) },
+    );
+  }
+
+  async deleteExplorerCredential() {
+    const response = await this.authorizedFetch(
+      "/partner/v1/explorer/credential",
+      { method: "DELETE" },
+    );
+    await this.ensureSuccess(response);
+  }
+
+  async deleteExplorerCredentialProfile(code: string) {
+    const response = await this.authorizedFetch(
+      `/partner/v1/explorer/credentials/${encodeURIComponent(code)}`,
+      { method: "DELETE" },
+    );
+    await this.ensureSuccess(response);
+  }
+
+  explorerCatalog(id: string, signal?: AbortSignal) {
+    return this.request<PartnerExplorerCatalog>(
+      `/partner/v1/submissions/${encodeURIComponent(id)}/explorer`,
+      { signal },
+    );
+  }
+
+  explorerRuns(id: string, signal?: AbortSignal) {
+    return this.request<PartnerExplorerRun[]>(
+      `/partner/v1/submissions/${encodeURIComponent(id)}/explorer/runs?limit=25`,
+      { signal },
+    );
+  }
+
+  executeExplorer(id: string, input: {
+    operation_id: string;
+    path_params: Record<string, string>;
+    query: Record<string, string>;
+    body: unknown;
+  }) {
+    return this.request<PartnerExplorerExecution>(
+      `/partner/v1/submissions/${encodeURIComponent(id)}/explorer/execute`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {

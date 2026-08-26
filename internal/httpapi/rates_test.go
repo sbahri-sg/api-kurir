@@ -78,12 +78,12 @@ func TestNormalizeCalculateRequestSortsAndDeduplicatesCouriers(t *testing.T) {
 		Origin:      " loc_origin ",
 		Destination: "loc_destination",
 		Weight:      1200,
-		Courier:     "TIKI:jne:tiki",
+		Courier:     "TIKI:J&T:tiki:jnt",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(request.Couriers) != 2 || request.Couriers[0] != "jne" || request.Couriers[1] != "tiki" {
+	if len(request.Couriers) != 2 || request.Couriers[0] != "jnt" || request.Couriers[1] != "tiki" {
 		t.Fatalf("unexpected courier normalization: %#v", request.Couriers)
 	}
 }

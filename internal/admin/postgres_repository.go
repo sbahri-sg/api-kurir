@@ -190,6 +190,150 @@ func (r *PostgresRepository) ListTrackingOperations(
 	return page, nil
 }
 
+func (r *PostgresRepository) ListFulfillmentOperations(
+	ctx context.Context,
+	filter FulfillmentOperationFilter,
+) (FulfillmentOperationPage, error) {
+	filter.Search = strings.TrimSpace(filter.Search)
+	filter.Provider = strings.ToLower(strings.TrimSpace(filter.Provider))
+	filter.Status = strings.ToLower(strings.TrimSpace(filter.Status))
+	filter.QueueStatus = strings.ToLower(strings.TrimSpace(filter.QueueStatus))
+
+	var page FulfillmentOperationPage
+	err := r.pool.QueryRow(ctx, `
+		WITH effective AS (
+			SELECT shipment.normalized_status,
+			       shipment.tracking_registration_status,
+			       coalesce(job.status, 'idle') AS queue_status,
+			       CASE
+			         WHEN tracking.validation_status = 'valid'
+			          AND tracking.normalized_status <> 'unknown'
+			         THEN tracking.normalized_status
+			         ELSE shipment.normalized_status
+			       END AS effective_status
+			FROM fulfillment_shipments shipment
+			LEFT JOIN tracking_shipments tracking ON tracking.id = shipment.tracking_shipment_id
+			LEFT JOIN LATERAL (
+				SELECT status
+				FROM fulfillment_lifecycle_jobs
+				WHERE shipment_id = shipment.id
+				ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'dead' THEN 2 ELSE 3 END,
+				         updated_at DESC
+				LIMIT 1
+			) job ON true
+		)
+		SELECT count(*),
+		       count(*) FILTER (WHERE normalized_status = 'booking_pending'),
+		       count(*) FILTER (WHERE tracking_registration_status = 'pending'),
+		       count(*) FILTER (WHERE normalized_status = 'booking_failed'
+		                         OR tracking_registration_status = 'failed'
+		                         OR queue_status = 'dead'),
+		       count(*) FILTER (WHERE effective_status IN ('delivered', 'cancelled'))
+		FROM effective
+	`).Scan(
+		&page.Summary.Total, &page.Summary.BookingPending,
+		&page.Summary.TrackingPending, &page.Summary.Failed, &page.Summary.Final,
+	)
+	if err != nil {
+		return FulfillmentOperationPage{}, fmt.Errorf("summarize fulfillment operations: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		WITH operations AS (
+			SELECT shipment.id::text,
+			       shipment.tenant_id,
+			       shipment.merchant_reference,
+			       shipment.provider_code,
+			       coalesce(shipment.provider_shipment_id, '') AS provider_shipment_id,
+			       shipment.courier_code,
+			       shipment.service_code,
+			       coalesce(shipment.awb, '') AS awb,
+			       CASE
+			         WHEN tracking.validation_status = 'valid'
+			          AND tracking.normalized_status <> 'unknown'
+			         THEN tracking.normalized_status
+			         ELSE shipment.normalized_status
+			       END AS effective_status,
+			       shipment.provider_status,
+			       shipment.tracking_registration_status,
+			       coalesce(tracking.normalized_status, '') AS tracking_status,
+			       CASE
+			         WHEN coalesce(tracking.is_final, false) OR shipment.normalized_status IN ('delivered', 'cancelled') THEN 'final'
+			         ELSE coalesce(job.status, 'idle')
+			       END AS queue_status,
+			       coalesce(job.job_type, ''),
+			       coalesce(job.attempt_count, 0),
+			       coalesce(job.max_attempts, 0),
+			       job.available_at,
+			       shipment.last_reconciled_at,
+			       shipment.next_reconcile_at,
+			       shipment.reconcile_error,
+			       coalesce(webhook.status, 'none') AS webhook_status,
+			       shipment.created_at,
+			       shipment.updated_at
+			FROM fulfillment_shipments shipment
+			LEFT JOIN tracking_shipments tracking ON tracking.id = shipment.tracking_shipment_id
+			LEFT JOIN LATERAL (
+				SELECT job_type, status, attempt_count, max_attempts, available_at, updated_at
+				FROM fulfillment_lifecycle_jobs
+				WHERE shipment_id = shipment.id
+				ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'dead' THEN 2 ELSE 3 END,
+				         updated_at DESC
+				LIMIT 1
+			) job ON true
+			LEFT JOIN LATERAL (
+				SELECT status
+				FROM fulfillment_webhook_outbox
+				WHERE shipment_id = shipment.id
+				ORDER BY created_at DESC
+				LIMIT 1
+			) webhook ON true
+		)
+		SELECT operations.*, count(*) OVER()
+		FROM operations
+		WHERE ($1 = '' OR lower(
+			merchant_reference || ' ' || tenant_id || ' ' || provider_code || ' ' ||
+			provider_shipment_id || ' ' || courier_code || ' ' || service_code || ' ' || awb
+		) LIKE '%' || lower($1) || '%')
+		  AND ($2 = '' OR provider_code = $2)
+		  AND ($3 = '' OR effective_status = $3)
+		  AND ($4 = '' OR queue_status = $4)
+		ORDER BY CASE queue_status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'dead' THEN 2 ELSE 3 END,
+		         updated_at DESC
+		LIMIT $5 OFFSET $6
+	`, filter.Search, filter.Provider, filter.Status, filter.QueueStatus,
+		filter.Limit, filter.Offset)
+	if err != nil {
+		return FulfillmentOperationPage{}, fmt.Errorf("list fulfillment operations: %w", err)
+	}
+	defer rows.Close()
+	page.Items = make([]FulfillmentOperation, 0)
+	for rows.Next() {
+		var item FulfillmentOperation
+		var total int64
+		if err := rows.Scan(
+			&item.ID, &item.TenantID, &item.MerchantReference,
+			&item.ProviderCode, &item.ProviderShipmentID,
+			&item.CourierCode, &item.ServiceCode, &item.AWB,
+			&item.Status, &item.ProviderStatus,
+			&item.TrackingRegistrationStatus, &item.TrackingStatus,
+			&item.QueueStatus, &item.JobType, &item.JobAttemptCount,
+			&item.JobMaxAttempts, &item.JobAvailableAt,
+			&item.LastReconciledAt, &item.NextReconcileAt,
+			&item.ReconcileError, &item.WebhookStatus,
+			&item.CreatedAt, &item.UpdatedAt, &total,
+		); err != nil {
+			return FulfillmentOperationPage{}, fmt.Errorf("scan fulfillment operation: %w", err)
+		}
+		page.Total = total
+		page.Items = append(page.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return FulfillmentOperationPage{}, fmt.Errorf("iterate fulfillment operations: %w", err)
+	}
+	return page, nil
+}
+
 // DeleteTrackingOperation permanently removes a tracking shipment and every
 // dependent queue, snapshot history, subscription, revision, and webhook row.
 // The foreign keys use ON DELETE CASCADE; the transaction keeps the audit trail
@@ -972,6 +1116,11 @@ func insertAudit(
 func isUniqueViolation(err error) bool {
 	var postgresError *pgconn.PgError
 	return errors.As(err, &postgresError) && postgresError.Code == "23505"
+}
+
+func isForeignKeyViolation(err error) bool {
+	var postgresError *pgconn.PgError
+	return errors.As(err, &postgresError) && postgresError.Code == "23503"
 }
 
 func nullIfBlank(value string) any {

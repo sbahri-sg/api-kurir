@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/couriers"
 	"github.com/emisell/api-kurir/internal/platform/cache"
 	"golang.org/x/sync/singleflight"
 )
@@ -145,6 +146,7 @@ func NewService(repository Repository, queryTimeout time.Duration, options ...Op
 }
 
 func (s *Service) Calculate(ctx context.Context, request Request) ([]Result, error) {
+	request.Couriers = normalizeRequestedCouriers(request.Couriers)
 	key := requestKey(request)
 	resultCh := s.group.DoChan(key, func() (any, error) {
 		operationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.queryTimeout)
@@ -183,12 +185,29 @@ func (s *Service) Calculate(ctx context.Context, request Request) ([]Result, err
 	}
 }
 
+func normalizeRequestedCouriers(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = couriers.NormalizeCode(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
 func (s *Service) calculate(ctx context.Context, request Request, key string) ([]Result, error) {
 	policies, err := s.loadServicePolicies(ctx, request.Couriers)
 	if err != nil {
 		return nil, err
 	}
-	courierLogos, err := s.loadCourierLogos(ctx, request.Couriers)
+	courierPresentations, err := s.loadCourierPresentations(ctx, request.Couriers)
 	if err != nil {
 		return nil, err
 	}
@@ -201,9 +220,7 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 	results := make([]Result, 0, len(cards))
 	coveredCouriers := make(map[string]struct{}, len(cards))
 	for _, card := range cards {
-		if logo := courierLogos[card.CourierCode]; logo != "" {
-			card.CourierLogo = logo
-		}
+		card = applyCourierPresentation(card, courierPresentations[card.CourierCode])
 		var evaluation *PolicyEvaluation
 		if policy, ok := policies.match(card); ok {
 			checked := evaluateServicePolicy(request, policy)
@@ -239,9 +256,10 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 		providerResults, providerErr := s.calculateProviderFallback(ctx, fallbackRequest, key)
 		if providerErr == nil {
 			for _, result := range providerResults {
-				if logo := courierLogos[result.Card.CourierCode]; logo != "" {
-					result.Card.CourierLogo = logo
-				}
+				result.Card = applyCourierPresentation(
+					result.Card,
+					courierPresentations[result.Card.CourierCode],
+				)
 				if policy, ok := policies.match(result.Card); ok {
 					evaluation := evaluateServicePolicy(request, policy)
 					if !evaluation.Eligible {
@@ -267,15 +285,65 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 	return results, nil
 }
 
-func (s *Service) loadCourierLogos(
+func (s *Service) loadCourierPresentations(
 	ctx context.Context,
 	courierCodes []string,
-) (map[string]string, error) {
-	repository, ok := s.repository.(CourierLogoRepository)
+) (map[string]CourierPresentation, error) {
+	if repository, ok := s.repository.(CourierPresentationRepository); ok {
+		return repository.FindActiveCourierPresentations(ctx, courierCodes)
+	}
+	legacy, ok := s.repository.(CourierLogoRepository)
 	if !ok {
 		return nil, nil
 	}
-	return repository.FindActiveCourierLogos(ctx, courierCodes)
+	logos, err := legacy.FindActiveCourierLogos(ctx, courierCodes)
+	if err != nil {
+		return nil, err
+	}
+	presentations := make(map[string]CourierPresentation, len(logos))
+	for courierCode, logo := range logos {
+		presentations[courierCode] = CourierPresentation{Logo: logo}
+	}
+	return presentations, nil
+}
+
+func applyCourierPresentation(
+	card RateCard,
+	presentation CourierPresentation,
+) RateCard {
+	if presentation.Name != "" {
+		card.CourierName = presentation.Name
+	}
+	if presentation.Logo != "" {
+		card.CourierLogo = presentation.Logo
+	}
+	serviceCode := strings.ToUpper(strings.TrimSpace(card.CanonicalServiceCode))
+	if serviceCode == "" {
+		serviceCode = strings.ToUpper(strings.TrimSpace(card.ServiceCode))
+	}
+	if serviceName := presentation.ServiceNames[serviceCode]; serviceName != "" {
+		card.ServiceName = conciseServiceName(presentation.Name, serviceName)
+	}
+	return card
+}
+
+func conciseServiceName(courierName, serviceName string) string {
+	courierName = strings.TrimSpace(courierName)
+	serviceName = strings.TrimSpace(serviceName)
+	if courierName == "" || serviceName == "" {
+		return serviceName
+	}
+	if len(serviceName) >= len(courierName) &&
+		strings.EqualFold(serviceName[:len(courierName)], courierName) {
+		trimmed := strings.TrimLeft(
+			serviceName[len(courierName):],
+			" \t-–—:|/",
+		)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return serviceName
 }
 
 func (s *Service) loadServicePolicies(
@@ -474,11 +542,11 @@ func missingProviderQuoteCouriers(
 ) []string {
 	covered := make(map[string]struct{}, len(quotes))
 	for _, quote := range quotes {
-		covered[strings.ToLower(strings.TrimSpace(quote.CourierCode))] = struct{}{}
+		covered[couriers.NormalizeCode(quote.CourierCode)] = struct{}{}
 	}
 	missing := make([]string, 0, len(requested))
 	for _, courier := range requested {
-		courier = strings.ToLower(strings.TrimSpace(courier))
+		courier = couriers.NormalizeCode(courier)
 		if _, exists := covered[courier]; !exists && courier != "" {
 			missing = append(missing, courier)
 		}

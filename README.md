@@ -261,6 +261,14 @@ proses rotasi membuat credential database tidak dapat didekripsi.
 `RAJAONGKIR_API_KEY` masih dikenali sebagai fallback instalasi lama, tetapi
 harus dibiarkan kosong pada instalasi baru.
 
+Fulfillment (buat shipment, pickup, label, dan pembatalan) memakai key Shipping
+Delivery yang berbeda dari key cek ongkir/tracking. Untuk fallback legacy,
+server mengenali `RAJAONGKIR_DELIVERY_API_KEY` dan
+`RAJAONGKIR_DELIVERY_BASE_URL`. Instalasi baru sebaiknya menyimpan
+`shipping_api_key` dan `delivery_api_key` terenkripsi melalui credential
+RajaOngkir di dashboard; key tidak dikirim oleh Main Service pada setiap
+request.
+
 `location-sync` tidak lagi dijalankan sebagai service default. Full sync
 RajaOngkir hanya disimpan sebagai alat pemulihan legacy di profile Compose
 `legacy-provider-full-sync`.

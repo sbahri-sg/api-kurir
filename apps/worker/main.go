@@ -9,10 +9,11 @@ import (
 
 	"github.com/emisell/api-kurir/internal/config"
 	"github.com/emisell/api-kurir/internal/database"
+	"github.com/emisell/api-kurir/internal/fulfillment"
 	"github.com/emisell/api-kurir/internal/merchantproviders"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/providers/biteship"
-	"github.com/emisell/api-kurir/internal/providers/rajaongkir"
+	"github.com/emisell/api-kurir/internal/providers/hosted"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tracking"
 	"github.com/emisell/api-kurir/internal/webhooksettings"
@@ -56,9 +57,18 @@ func main() {
 			nil,
 		)
 		fallbacks := make(map[string]providercredentials.StaticCredential)
-		if cfg.RajaOngkir.APIKey != "" {
+		if cfg.RajaOngkir.APIKey != "" || cfg.RajaOngkir.DeliveryAPIKey != "" {
 			fallbacks["rajaongkir"] = providercredentials.StaticCredential{
-				Secret:          cfg.RajaOngkir.APIKey,
+				Secret: cfg.RajaOngkir.APIKey,
+				CapabilitySecrets: map[string]string{
+					"rates:read":       cfg.RajaOngkir.APIKey,
+					"tracking:read":    cfg.RajaOngkir.APIKey,
+					"shipments:write":  cfg.RajaOngkir.DeliveryAPIKey,
+					"shipments:read":   cfg.RajaOngkir.DeliveryAPIKey,
+					"pickup:write":     cfg.RajaOngkir.DeliveryAPIKey,
+					"labels:read":      cfg.RajaOngkir.DeliveryAPIKey,
+					"shipments:cancel": cfg.RajaOngkir.DeliveryAPIKey,
+				},
 				CredentialAlias: cfg.RajaOngkir.CredentialAlias,
 				DailyLimit:      cfg.RajaOngkir.DailyLimit,
 			}
@@ -71,13 +81,19 @@ func main() {
 			fallbacks,
 			merchantProviderService,
 		)
+		rajaOngkirHostedClient, err := hosted.NewClient(
+			cfg.RajaOngkirHosted.BaseURL,
+			cfg.RajaOngkirHosted.Timeout,
+		)
+		if err != nil {
+			logger.Error("initialize RajaOngkir hosted connector", "error", err)
+			os.Exit(1)
+		}
 		providerRepository := rates.NewPostgresRepository(pool)
-		rajaOngkirTrackingAdapter := rajaongkir.NewDynamicTrackingAdapter(
+		rajaOngkirTrackingAdapter := hosted.NewTrackingAdapter(
+			"rajaongkir",
+			rajaOngkirHostedClient,
 			providerResolver,
-			cfg.RajaOngkir.BaseURL,
-			cfg.RajaOngkir.Timeout,
-			cfg.RajaOngkir.MinRequestInterval,
-			providerRepository,
 			providerRepository,
 			cfg.RajaOngkir.TrackingCouriers,
 		)
@@ -99,7 +115,7 @@ func main() {
 		)
 		adapters := []tracking.Adapter{fallbackTrackingAdapter}
 		logger.Info(
-			"dynamic tracking credential resolver enabled",
+			"hosted RajaOngkir tracking resolver enabled",
 			"rajaongkir_couriers", len(cfg.RajaOngkir.TrackingCouriers),
 			"biteship_fallback_couriers", len(biteshipTrackingAdapter.CourierCodes()),
 		)
@@ -147,7 +163,43 @@ func main() {
 			logger,
 		)
 		group.Go(func() error { return dispatcher.Run(workerCtx) })
+		fulfillmentRepository := fulfillment.NewPostgresRepository(
+			pool, providerCredentialCipher,
+		)
+		fulfillmentService := fulfillment.NewService(
+			fulfillmentRepository,
+			merchantProviderService,
+			providerResolver,
+			hosted.NewFulfillmentAdapter("rajaongkir", rajaOngkirHostedClient),
+		)
+		fulfillmentRunner := fulfillment.NewRunner(
+			fulfillmentRepository,
+			fulfillmentService,
+			fulfillment.NewTrackingServiceRegistrar(
+				tracking.NewService(
+					trackingRepository,
+					trackingCipher,
+					fallbackTrackingAdapter.CourierCodes()...,
+				),
+			),
+			cfg.Tracking.WorkerID,
+			2,
+			cfg.Tracking.PollInterval,
+			logger,
+		)
+		group.Go(func() error { return fulfillmentRunner.Run(workerCtx) })
+		fulfillmentWebhookDispatcher := fulfillment.NewWebhookDispatcher(
+			fulfillmentRepository,
+			webhookSettingsService,
+			cfg.Tracking.WorkerID,
+			cfg.Tracking.WebhookConcurrency,
+			cfg.Tracking.WebhookPollInterval,
+			cfg.Tracking.WebhookTimeout,
+			logger,
+		)
+		group.Go(func() error { return fulfillmentWebhookDispatcher.Run(workerCtx) })
 		logger.Info("tracking webhook dispatcher ready; database settings override environment fallback")
+		logger.Info("fulfillment lifecycle and webhook workers ready")
 		if err := group.Wait(); err != nil {
 			logger.Error("tracking worker stopped", "error", err)
 			os.Exit(1)

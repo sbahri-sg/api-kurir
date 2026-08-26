@@ -3,7 +3,6 @@ package tracking
 import (
 	"context"
 	"errors"
-	"strings"
 )
 
 // FallbackAdapter routes a courier to the first supporting adapter. A second
@@ -43,7 +42,7 @@ func newFallbackAdapter(
 		}
 		filtered = append(filtered, adapter)
 		for _, code := range adapter.CourierCodes() {
-			code = strings.ToLower(strings.TrimSpace(code))
+			code = normalizeCourierCode(code)
 			if code == "" {
 				continue
 			}
@@ -66,7 +65,8 @@ func (a *FallbackAdapter) CourierCodes() []string {
 }
 
 func (a *FallbackAdapter) Track(ctx context.Context, request Request) (Result, error) {
-	courierCode := strings.ToLower(strings.TrimSpace(request.CourierCode))
+	courierCode := normalizeCourierCode(request.CourierCode)
+	request.CourierCode = courierCode
 	matched := false
 	var lastErr error
 	for index, adapter := range a.adapters {
@@ -88,7 +88,7 @@ func (a *FallbackAdapter) Track(ctx context.Context, request Request) (Result, e
 		matched = true
 		result, err := adapter.Track(ctx, request)
 		if err == nil {
-			return result, nil
+			return normalizeResultCourier(result, courierCode), nil
 		}
 		lastErr = err
 		if !allowsProviderFallback(err) {
@@ -123,7 +123,7 @@ func (a *FallbackAdapter) fallbackAllowed(ctx context.Context) (bool, error) {
 
 func adapterSupportsCourier(adapter Adapter, courierCode string) bool {
 	for _, supported := range adapter.CourierCodes() {
-		if strings.EqualFold(strings.TrimSpace(supported), courierCode) {
+		if normalizeCourierCode(supported) == courierCode {
 			return true
 		}
 	}

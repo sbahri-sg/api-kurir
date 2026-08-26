@@ -70,11 +70,15 @@ services:
       DATABASE_URL: postgres://api_kurir:api_kurir@postgres:5432/api_kurir?sslmode=disable
       REDIS_ENABLED: "${REDIS_ENABLED:-false}"
       REDIS_ADDR: "${COMPOSE_REDIS_ADDR:-redis:6379}"
+      RAJAONGKIR_HOSTED_BASE_URL: http://rajaongkir-hosted:8080/partner/v1
+      RAJAONGKIR_HOSTED_PUBLIC_BASE_URL: "${RAJAONGKIR_HOSTED_PUBLIC_BASE_URL:-http://127.0.0.1:${DASHBOARD_PORT:-5173}/connectors/rajaongkir/v1}"
     ports:
       - "${HTTP_BIND_ADDR:-0.0.0.0}:${HTTP_PORT:-8080}:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      rajaongkir-hosted:
+        condition: service_healthy
 
   worker:
     build:
@@ -89,9 +93,33 @@ services:
       DATABASE_URL: postgres://api_kurir:api_kurir@postgres:5432/api_kurir?sslmode=disable
       REDIS_ENABLED: "${REDIS_ENABLED:-false}"
       REDIS_ADDR: "${COMPOSE_REDIS_ADDR:-redis:6379}"
+      RAJAONGKIR_HOSTED_BASE_URL: http://rajaongkir-hosted:8080/partner/v1
     depends_on:
       migrate:
         condition: service_completed_successfully
+      rajaongkir-hosted:
+        condition: service_healthy
+
+  rajaongkir-hosted:
+    build:
+      context: ./artifacts/rajaongkir-hosted-v1.0.3
+    environment:
+      PORT: "8080"
+      RAJAONGKIR_DELIVERY_ENV: "${RAJAONGKIR_DELIVERY_ENV:-production}"
+      UPSTREAM_TIMEOUT_MS: "${RAJAONGKIR_HOSTED_TIMEOUT_MS:-8000}"
+    expose:
+      - "8080"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/partner/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   dashboard:
     build:
@@ -101,6 +129,7 @@ services:
       - "${DASHBOARD_BIND_ADDR:-0.0.0.0}:${DASHBOARD_PORT:-5173}:80"
     depends_on:
       - api
+      - rajaongkir-hosted
 
   location-sync:
     profiles: ["legacy-provider-full-sync"]

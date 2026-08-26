@@ -18,8 +18,8 @@ servers:
     description: Partner Connector API
     variables:
       partnerHost:
-        default: sandbox.partner.example
-        description: Host sandbox atau production milik partner
+        default: api.partner.example
+        description: Host HTTPS aktif connector milik partner
 security:
   - partnerBearerAuth: []
     partnerKeyId: []

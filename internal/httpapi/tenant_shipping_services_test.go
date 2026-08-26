@@ -286,10 +286,17 @@ func TestRegisterTenantIntegrationRoutesUsesCanonicalAPIPath(t *testing.T) {
 		"POST /api/v1/integrations/providers/:provider_code/deactivate",
 		"GET /api/v1/integrations/shipping-services",
 		"PUT /api/v1/integrations/shipping-services",
+		"POST /api/v1/integrations/shipments",
+		"GET /api/v1/integrations/shipments/:shipment_id",
+		"POST /api/v1/integrations/shipments/:shipment_id/pickup",
+		"GET /api/v1/integrations/shipments/:shipment_id/label",
+		"POST /api/v1/integrations/shipments/:shipment_id/cancel",
+		"GET /api/v1/integrations/shipments/:shipment_id/history",
 		"POST /api/v1/integrations/tracking/subscriptions",
 		"GET /api/v1/integrations/tracking/subscriptions/:fulfillment_id",
 		"DELETE /api/v1/integrations/tracking/subscriptions/:fulfillment_id",
 		"GET /v1/integrations/provider-credentials",
+		"POST /v1/integrations/shipments",
 	} {
 		if !routes[expected] {
 			t.Fatalf("route %q is not registered", expected)

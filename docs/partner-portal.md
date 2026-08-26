@@ -50,10 +50,11 @@ partner tidak boleh memberikan akses ke data partner lain.
 | Aktivitas | Partner | Admin API Kurir |
 |---|---:|---:|
 | Mengubah profil dan kontak partner | Ya | Review |
-| Mengatur URL connector sandbox/production | Ya | Validasi |
+| Mengatur satu URL connector HTTPS aktif | Ya | Validasi |
 | Mengatur webhook dan melakukan rotasi credential | Ya | Audit |
 | Mendeklarasikan capability dan service | Ya | Sertifikasi |
-| Menjalankan contract test sandbox | Ya | Melihat bukti |
+| Menjalankan contract test | Ya | Melihat bukti |
+| Menjalankan official read-only API Explorer | Ya | Melihat bukti dan audit |
 | Mengajukan review atau publikasi | Ya | Memutuskan |
 | Mengaktifkan akses production | Tidak | Ya |
 | Publish, unpublish, atau suspend extension | Tidak | Ya |
@@ -91,7 +92,7 @@ superseded --(rollback admin)--> published
 | `draft` | Profil atau konfigurasi partner belum lengkap |
 | `submitted` | Partner telah mengajukan integrasi untuk diperiksa |
 | `technical_review` | Kontrak endpoint, autentikasi, service, dan status mapping sedang diperiksa |
-| `sandbox_testing` | Contract test tarif, shipment, pickup, label, cancel, dan tracking dijalankan |
+| `sandbox_testing` | Nama status kompatibilitas untuk contract test; tidak mewajibkan domain sandbox terpisah |
 | `security_review` | Signature, replay protection, isolasi tenant, dan perlindungan data diperiksa |
 | `uat` | Skenario operasional end-to-end diuji bersama |
 | `approved` | Versi connector dan capability yang diuji telah disetujui |
@@ -106,17 +107,25 @@ Partner tidak dapat mengubah status menjadi `approved`, `published`, atau
 menghasilkan audit log.
 
 Provider dibedakan menjadi tiga jenis. `built_in` adalah Emisell Kurir,
-`managed_upstream` adalah adapter yang dikelola API Kurir seperti RajaOngkir,
-dan `partner_hosted` adalah connector vendor yang mengikuti lifecycle package.
+`managed_upstream` adalah adapter langsung yang dikelola API Kurir, sedangkan
+`partner_hosted` adalah connector yang mengikuti lifecycle package. RajaOngkir
+menggunakan `partner_hosted` canonical yang di-host API Kurir dan tetap memakai
+credential BYOK seller per capability.
 Partner access key dan Partner Portal hanya tersedia untuk `partner_hosted`.
-Distribusi provider dicatat sebagai `public`, `limited`, atau `private` agar
-katalog merchant tidak mencampur provider bawaan, aggregator, dan extension
-vendor.
+Distribusi bukan pilihan partner maupun admin. Provider eksternal selalu
+bernilai `merchant` dan hanya tampil pada katalog merchant Emisell yang
+terautentikasi. Provider bawaan tetap memakai nilai `built_in`.
 
 Perubahan besar setelah publikasi, seperti major API version, autentikasi,
 status mapping, perhitungan tarif, COD, atau settlement, membuat capability
 terkait kembali ke `technical_review`. Versi production lama dapat tetap
 melayani shipment aktif sampai proses migrasi disetujui.
+
+Provider uji coba yang belum pernah dipublikasikan dan belum mempunyai data
+merchant dapat dihapus permanen oleh admin. Penghapusan ini sekaligus
+membersihkan submission package, Partner Access Key, credential Explorer,
+hasil test, dan katalog service provider. Provider bawaan, active release,
+riwayat published, credential seller, atau data operasional selalu dilindungi.
 
 ## 5. Menu Partner Portal
 
@@ -125,7 +134,7 @@ melayani shipment aktif sampai proses migrasi disetujui.
 Menampilkan:
 
 - status onboarding dan persentase checklist;
-- environment sandbox dan production;
+- endpoint connector aktif dan status release;
 - capability yang diajukan, lulus, atau ditolak;
 - uptime, latency, error rate, dan webhook lag;
 - tugas partner dan catatan reviewer terbaru;
@@ -145,7 +154,7 @@ privasi. Dokumen sensitif hanya dapat dilihat role reviewer yang berwenang.
 
 Partner mengatur:
 
-- base URL sandbox dan production;
+- satu base URL connector HTTPS aktif;
 - metode autentikasi canonical;
 - public key atau key ID untuk request signing;
 - webhook configuration;
@@ -153,9 +162,10 @@ Partner mengatur:
 - jadwal rotasi credential;
 - status maintenance dan kontak insiden.
 
-Portal tidak menerima token RajaOngkir, KiriminAja, carrier, atau sistem native
-partner. API Kurir hanya menyimpan credential koneksi canonical yang
-diterbitkan partner.
+Credential resmi sistem native partner boleh dimasukkan hanya melalui Visual
+API Explorer untuk pengujian read-only. Credential tersebut dienkripsi,
+terpisah dari ZIP dan Partner Access Key, serta tidak otomatis menjadi runtime
+production credential.
 
 ### 5.4 Integration Package
 
@@ -172,6 +182,18 @@ providernya sudah terisi melalui `GET /partner/v1/starter-package`. Menu
 **Partner Packages** pada API Kurir Admin hanya digunakan
 staff untuk review. Format package, endpoint, batas keamanan, dan kekurangan
 fase awal dijelaskan pada [Partner Integration Package](partner-integration-packages.md).
+
+### 5.4.1 Visual API Explorer
+
+Setelah package lulus static scan, partner dapat memilih versi, capability,
+dan endpoint dari `openapi.yaml`, lalu menjalankan request read-only melalui
+controlled test runner. Base URL menggunakan production/official URL karena
+tidak semua provider menyediakan sandbox key. Portal menampilkan peringatan
+bahwa request dapat memakai quota resmi provider.
+
+Endpoint transaksi tetap terlihat tetapi terkunci sampai tersedia approval,
+test account, idempotency, serta batas transaksi. Detail keamanan dan endpoint
+portal berada pada [Partner Visual API Explorer](partner-visual-api-explorer.md).
 
 ### 5.5 Capabilities
 
@@ -213,7 +235,7 @@ provider itu. Pergantian provider tidak mencampur katalog maupun pilihan
 service seller. Emisell Kurir tetap menggunakan katalog internal dan tidak
 perlu mengunggah Partner Package.
 
-### 5.7 Sandbox
+### 5.7 Pengujian kontrak
 
 Partner dapat menjalankan contract test dan melihat:
 

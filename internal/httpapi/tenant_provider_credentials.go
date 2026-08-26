@@ -65,15 +65,24 @@ func tenantProviderCredentialCreateHandler(
 		if err := decodeAdminJSON(c, &request); err != nil {
 			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), nil)
 		}
-		result, err := service.AddForTenant(
-			c.Request().Context(),
-			identity.TenantID,
-			request.ProviderCode,
-			request.APIKey,
-			request.DailyLimit,
-			"tenant:"+identity.TenantID,
-			requestID(c),
-		)
+		var result providercredentials.Credential
+		var err error
+		if len(request.Credentials) > 0 {
+			if strings.TrimSpace(request.APIKey) != "" {
+				return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "Gunakan credentials atau api_key, bukan keduanya.", nil)
+			}
+			result, err = service.AddForTenantCredentials(
+				c.Request().Context(), identity.TenantID, request.ProviderCode,
+				request.Credentials, request.DailyLimit,
+				"tenant:"+identity.TenantID, requestID(c),
+			)
+		} else {
+			result, err = service.AddForTenant(
+				c.Request().Context(), identity.TenantID, request.ProviderCode,
+				request.APIKey, request.DailyLimit,
+				"tenant:"+identity.TenantID, requestID(c),
+			)
+		}
 		if response := writeTenantProviderCredentialError(c, err); response != nil {
 			return response
 		}

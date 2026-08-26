@@ -130,6 +130,52 @@ func TestServiceFiltersProviderQuoteBeforeCheckoutResult(t *testing.T) {
 	}
 }
 
+func TestServiceNormalizesProviderCourierAliasBeforePolicyEvaluation(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	provider := &chainQuoteProvider{code: "partner", quotes: []ProviderQuote{
+		{
+			ProviderCode: "partner", CourierCode: "J&T Express",
+			ServiceCode: "EZ", ServiceName: "J&T EZ", Cost: 12_000,
+			VerificationStatus: "observed", FetchedAt: now,
+			ExpiresAt: now.Add(time.Hour),
+		},
+		{
+			ProviderCode: "partner", CourierCode: "J&T Express",
+			ServiceCode: "HBO", ServiceName: "J&T HEBOH", Cost: 35_000,
+			VerificationStatus: "observed", FetchedAt: now,
+			ExpiresAt: now.Add(time.Hour),
+		},
+	}}
+	repository := eligibilityRepository{policies: []ServicePolicy{
+		{CourierCode: "jnt", ServiceCode: "EZ", MinimumAcceptedWeightGrams: 1},
+		{CourierCode: "jnt", ServiceCode: "HBO", MinimumAcceptedWeightGrams: 3_000},
+	}}
+	service := NewService(
+		repository,
+		time.Second,
+		WithProviderFallback(
+			provider,
+			&providerAwareSnapshots{quotes: make(map[string][]ProviderQuote)},
+			immediateLocker{},
+			time.Second,
+		),
+	)
+
+	results, err := service.Calculate(context.Background(), Request{
+		Origin: "loc_origin", Destination: "loc_destination",
+		ActualWeightGrams: 1_000, Couriers: []string{"J&T"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Card.CourierCode != "jnt" ||
+		results[0].Card.ServiceCode != "EZ" {
+		t.Fatalf("unexpected normalized checkout services: %#v", results)
+	}
+}
+
 func TestServiceSpecificPolicyOverridesCargoDefaultAndAppliesMinimumBilling(t *testing.T) {
 	t.Parallel()
 

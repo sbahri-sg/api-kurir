@@ -861,11 +861,12 @@ paths:
     post:
       tags: [Emisell Gateway]
       operationId: addTenantProviderCredential
-      summary: Memvalidasi dan menyimpan key provider milik seller
+      summary: Memvalidasi dan menyimpan credential provider milik seller
       description: >
-        Merchant ditentukan dari X-Emisell-Merchant-ID. Validasi key memakai
-        satu hit provider lalu secret dienkripsi AES-256-GCM. Key baru
-        menggantikan key aktif lama untuk merchant dan provider yang sama. Key
+        Merchant ditentukan dari X-Emisell-Merchant-ID. Nama field mengikuti
+        credential_fields pada katalog provider. Seluruh bundle divalidasi
+        oleh adapter lalu dienkripsi AES-256-GCM. Credential baru menggantikan
+        credential aktif lama untuk merchant dan provider yang sama. Credential
         milik merchant yang sama yang pernah dinonaktifkan akan diaktifkan
         kembali tanpa membuat credential duplikat dan tanpa mengaktifkan
         provider shipping secara otomatis.
@@ -942,7 +943,9 @@ paths:
         dan valid. Maksimal satu provider efektif aktif; tenant tanpa konfigurasi
         eksplisit tidak mempunyai provider aktif dan memakai version 0. Hanya
         provider available yang dikirim; provider yang dinonaktifkan operator
-        otomatis hilang dari katalog dashboard seller.
+        otomatis hilang dari katalog dashboard seller. Dashboard merender form
+        aktivasi dari credential_fields; oauth2_client_credentials menghasilkan
+        field client_id dan client_secret.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -966,6 +969,8 @@ paths:
       description: >
         Operasi atomik dan idempotent. API Kurir memilih credential aktif dan
         valid milik merchant untuk provider tersebut secara otomatis.
+        Untuk provider yang memerlukan credential, Emisell menyimpan bundle
+        credential terlebih dahulu sebelum memanggil endpoint ini.
         expected_version mencegah dua perubahan dashboard saling menimpa.
       security:
         - serviceBearerAuth: []
@@ -1118,6 +1123,226 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/integrations/shipments:
+    post:
+      tags: [Emisell Gateway]
+      operationId: createTenantFulfillmentShipment
+      summary: Membuat booking shipment pada provider aktif merchant
+      description: >
+        Mereservasi idempotency sebelum memanggil provider. Provider dan
+        credential dipilih server-side dari konfigurasi merchant; payload PII
+        disimpan terenkripsi. Request timeout tidak diulang otomatis agar tidak
+        membuat dua AWB.
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FulfillmentIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FulfillmentCreateRequest"
+      responses:
+        "201":
+          description: Shipment berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentShipmentResponse"
+        "200":
+          description: Replay idempotent mengembalikan shipment yang sama
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentShipmentResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Idempotency conflict atau operasi masih berjalan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Provider, credential delivery, atau data shipment tidak tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Provider fulfillment tidak tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/integrations/shipments/{shipment_id}:
+    get:
+      tags: [Emisell Gateway]
+      operationId: getTenantFulfillmentShipment
+      summary: Membaca snapshot shipment merchant
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FulfillmentShipmentID"
+      responses:
+        "200":
+          description: Snapshot shipment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentShipmentResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/integrations/shipments/{shipment_id}/pickup:
+    post:
+      tags: [Emisell Gateway]
+      operationId: requestTenantFulfillmentPickup
+      summary: Menjadwalkan pickup shipment
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FulfillmentShipmentID"
+        - $ref: "#/components/parameters/FulfillmentIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FulfillmentPickupRequest"
+      responses:
+        "202":
+          description: Pickup diterima
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentShipmentResponse"
+        "200":
+          description: Replay idempotent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentShipmentResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Shipment final atau operation conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/integrations/shipments/{shipment_id}/label:
+    get:
+      tags: [Emisell Gateway]
+      operationId: getTenantFulfillmentLabel
+      summary: Mengambil label shipment secara cache-first
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FulfillmentShipmentID"
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [page_1, page_2, page_4, page_5, page_6]
+            default: page_5
+      responses:
+        "200":
+          description: Label PDF sebagai URL dan/atau base64
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentLabelResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Label belum tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/integrations/shipments/{shipment_id}/cancel:
+    post:
+      tags: [Emisell Gateway]
+      operationId: cancelTenantFulfillmentShipment
+      summary: Meminta pembatalan shipment
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FulfillmentShipmentID"
+        - $ref: "#/components/parameters/FulfillmentIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FulfillmentCancelRequest"
+      responses:
+        "202":
+          description: Pembatalan diterima
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentShipmentResponse"
+        "200":
+          description: Replay idempotent atau shipment sudah cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentShipmentResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Shipment final atau operation conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/integrations/shipments/{shipment_id}/history:
+    get:
+      tags: [Emisell Gateway]
+      operationId: getTenantFulfillmentHistory
+      summary: Membaca timeline fulfillment shipment
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FulfillmentShipmentID"
+      responses:
+        "200":
+          description: Riwayat status canonical dan provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentHistoryResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/tracking/verify:
     post:
@@ -1547,6 +1772,79 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /v1/admin/fulfillment-operations:
+    get:
+      tags: [Admin]
+      operationId: listAdminFulfillmentOperations
+      summary: Monitor lifecycle shipment fulfillment
+      description: >-
+        Endpoint internal staff untuk melihat status provider, AWB, registrasi
+        tracking otomatis, job rekonsiliasi, error terakhir, dan delivery
+        webhook tanpa membuka payload PII shipment.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          schema: {type: string}
+        - name: provider
+          in: query
+          schema: {type: string}
+        - name: status
+          in: query
+          schema: {type: string}
+        - name: queue_status
+          in: query
+          schema: {type: string, enum: [pending, running, dead, final, idle]}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: offset
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        "200":
+          description: Tabel operasional fulfillment beserta ringkasan antrean
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/admin/fulfillment-operations/{shipment_id}/reconcile:
+    post:
+      tags: [Admin]
+      operationId: reconcileAdminFulfillmentOperation
+      summary: Antrekan rekonsiliasi detail order provider
+      description: >-
+        Menambahkan job baca detail provider. Operasi ini tidak mengulang
+        create shipment sehingga tidak membuat AWB atau tagihan ganda.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: shipment_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "202":
+          description: Rekonsiliasi diantrikan
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /v1/admin/rate-snapshots:
     get:
       tags: [Admin]
@@ -1706,6 +2004,40 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Provider masih digunakan merchant aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [Admin]
+      operationId: adminDeleteShippingProvider
+      summary: Menghapus provider integrasi yang belum digunakan
+      description: >
+        Menghapus provider eksternal yang belum pernah dipublikasikan dan belum
+        dipakai merchant. Package pengujian, Partner Access Key, credential
+        Explorer, serta katalog service provider ikut dibersihkan. Provider
+        built-in, active release, riwayat published, dan data operasional tidak
+        dapat dihapus.
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+        - $ref: "#/components/parameters/AdminActor"
+      responses:
+        "204":
+          description: Provider berhasil dihapus
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Provider tidak ditemukan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Provider built-in, pernah dipublikasikan, atau masih mempunyai data operasional
           content:
             application/json:
               schema:
@@ -2059,6 +2391,275 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /partner/v1/explorer/credential:
+    get:
+      tags: [Partner Portal]
+      operationId: partnerGetExplorerCredential
+      summary: Membaca status credential resmi Visual API Explorer
+      description: Secret tidak pernah dikembalikan; response hanya berisi display key tersensor.
+      security:
+        - partnerBearerAuth: []
+      responses:
+        "200":
+          description: Status credential provider terautentikasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerExplorerCredentialStateResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [Partner Portal]
+      operationId: partnerSaveExplorerCredential
+      summary: Menyimpan atau merotasi API key resmi provider
+      description: >
+        Key dienkripsi AES-256-GCM dan hanya digunakan controlled test runner.
+        Key tidak disimpan di browser, ZIP, request log, atau response API.
+      security:
+        - partnerBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [official_api_key, auth_header]
+              properties:
+                official_api_key:
+                  type: string
+                  minLength: 8
+                  maxLength: 2048
+                  writeOnly: true
+                auth_header:
+                  type: string
+                  example: Authorization
+                auth_prefix:
+                  type: string
+                  example: Bearer
+                  maxLength: 32
+      responses:
+        "200":
+          description: Credential tersimpan atau selesai dirotasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerExplorerCredentialStateResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Partner Portal]
+      operationId: partnerDeleteExplorerCredential
+      summary: Menghapus permanen API key resmi dari Explorer
+      security:
+        - partnerBearerAuth: []
+      responses:
+        "204":
+          description: Credential dihapus
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Credential belum tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /partner/v1/explorer/credentials/{code}:
+    put:
+      tags: [Partner Portal]
+      operationId: partnerSaveExplorerCredentialProfile
+      summary: Menyimpan atau merotasi satu profil credential resmi provider
+      description: >
+        Kode credential berasal dari security scheme OpenAPI package, misalnya
+        shipping_cost dan shipping_delivery. Header serta prefix harus sama
+        dengan kontrak operation terkait.
+      security:
+        - partnerBearerAuth: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9_-]{1,47}$"
+          examples:
+            shippingCost:
+              value: shipping_cost
+            shippingDelivery:
+              value: shipping_delivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [official_api_key, auth_header]
+              properties:
+                official_api_key:
+                  type: string
+                  minLength: 8
+                  maxLength: 2048
+                  writeOnly: true
+                auth_header:
+                  type: string
+                  examples: [key, x-api-key]
+                auth_prefix:
+                  type: string
+                  maxLength: 32
+                  example: ""
+      responses:
+        "200":
+          description: Profil credential tersimpan atau selesai dirotasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerExplorerCredentialStateResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Partner Portal]
+      operationId: partnerDeleteExplorerCredentialProfile
+      summary: Menghapus permanen satu profil credential resmi
+      security:
+        - partnerBearerAuth: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9_-]{1,47}$"
+      responses:
+        "204":
+          description: Profil credential dihapus
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Profil credential belum tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /partner/v1/submissions/{id}/explorer:
+    get:
+      tags: [Partner Portal]
+      operationId: partnerGetExplorerCatalog
+      summary: Membaca endpoint Explorer dari OpenAPI package
+      description: >
+        Provider selalu berasal dari Partner Access Key. Platform terkunci,
+        sedangkan endpoint, parameter, dan contoh body dibaca dari openapi.yaml.
+      security:
+        - partnerBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      responses:
+        "200":
+          description: Katalog Visual API Explorer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerExplorerCatalogResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /partner/v1/submissions/{id}/explorer/execute:
+    post:
+      tags: [Partner Portal]
+      operationId: partnerExecuteExplorerRequest
+      summary: Menjalankan endpoint resmi read-only melalui controlled test runner
+      description: >
+        Endpoint GET/HEAD/OPTIONS, POST /rates, dan POST /tracking/waybills
+        dapat dijalankan menggunakan API key resmi provider. Endpoint transaksi
+        shipment, pickup, cancel, dan operasi mutasi lain dikunci pada MVP.
+      security:
+        - partnerBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartnerExplorerExecuteRequest"
+      responses:
+        "200":
+          description: Response provider dan validasi dasar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerExplorerExecutionResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          description: Endpoint transaksi live masih dikunci
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Credential resmi belum dihubungkan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Target diblokir kebijakan SSRF
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Batas 120 pengujian per jam tercapai
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                example: 3600
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /partner/v1/submissions/{id}/explorer/runs:
+    get:
+      tags: [Partner Portal]
+      operationId: partnerListExplorerRuns
+      summary: Membaca bukti pengujian terbaru untuk satu versi package
+      description: Preview response sudah disensor dan tidak mengandung credential.
+      security:
+        - partnerBearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ResourceID"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+      responses:
+        "200":
+          description: Riwayat pengujian milik provider terautentikasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerExplorerRunListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /v1/admin/provider-credentials:
     get:
       tags: [Admin]
@@ -2358,6 +2959,24 @@ components:
       description: Access key berformat epk_live_* yang terikat ke satu provider.
 
   parameters:
+    FulfillmentShipmentID:
+      name: shipment_id
+      in: path
+      required: true
+      description: UUID shipment internal API Kurir, selalu dibatasi oleh merchant context.
+      schema:
+        type: string
+        format: uuid
+    FulfillmentIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Key stabil untuk satu side effect dan satu payload yang identik.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._:-]+$"
     ShippingProviderCode:
       name: provider_code
       in: path
@@ -2517,6 +3136,211 @@ components:
               - $ref: "#/components/schemas/RajaOngkirErrorResponse"
 
   schemas:
+    FulfillmentAddress:
+      type: object
+      required: [name, phone, address, destination_id]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        phone: { type: string, minLength: 1, maxLength: 32 }
+        email: { type: string, format: email }
+        address: { type: string, minLength: 1, maxLength: 1000 }
+        address_note: { type: string, maxLength: 500 }
+        destination_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: ID destination native Shipping Delivery provider.
+        official_code: { type: string }
+        postal_code: { type: string }
+        latitude: { type: number, format: double }
+        longitude: { type: number, format: double }
+
+    FulfillmentItem:
+      type: object
+      required: [name, quantity, unit_value, weight_grams]
+      properties:
+        sku: { type: string }
+        name: { type: string, minLength: 1 }
+        variant: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        unit_value: { type: integer, format: int64, minimum: 0 }
+        weight_grams: { type: integer, format: int64, minimum: 1 }
+        length_cm: { type: integer, minimum: 0 }
+        width_cm: { type: integer, minimum: 0 }
+        height_cm: { type: integer, minimum: 0 }
+
+    FulfillmentPackage:
+      type: object
+      required: [weight_grams, length_cm, width_cm, height_cm, item_value, contents, items]
+      properties:
+        weight_grams: { type: integer, format: int64, minimum: 1, maximum: 1000000 }
+        length_cm: { type: integer, minimum: 1 }
+        width_cm: { type: integer, minimum: 1 }
+        height_cm: { type: integer, minimum: 1 }
+        item_value: { type: integer, format: int64, minimum: 0 }
+        contents: { type: string, minLength: 1 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/FulfillmentItem"
+
+    FulfillmentPayment:
+      type: object
+      required: [type, shipping_cost, grand_total]
+      properties:
+        type: { type: string, enum: [non_cod, cod] }
+        funding_source: { type: string }
+        shipping_cost: { type: integer, format: int64, minimum: 0 }
+        shipping_cashback: { type: integer, format: int64, minimum: 0 }
+        service_fee: { type: integer, format: int64, minimum: 0 }
+        additional_cost: { type: integer, format: int64, minimum: 0 }
+        grand_total: { type: integer, format: int64, minimum: 0 }
+        cod_value: { type: integer, format: int64, minimum: 0 }
+        insurance_value: { type: integer, format: int64, minimum: 0 }
+
+    FulfillmentCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - merchant_reference
+        - quote_id
+        - courier_code
+        - service_code
+        - delivery_mode
+        - fulfillment
+        - sender
+        - recipient
+        - package
+        - payment
+      properties:
+        provider_code: { type: string, description: Opsional; harus sama dengan provider aktif merchant. }
+        merchant_reference: { type: string, minLength: 1, maxLength: 128 }
+        quote_id: { type: string, minLength: 1, maxLength: 128 }
+        brand_name: { type: string, default: Emisell }
+        courier_code: { type: string, minLength: 1, maxLength: 32 }
+        service_code: { type: string, minLength: 1, maxLength: 64 }
+        delivery_mode: { type: string, enum: [regular, next_day, economy, cargo] }
+        fulfillment: { type: string, enum: [pickup, dropoff] }
+        sender: { $ref: "#/components/schemas/FulfillmentAddress" }
+        recipient: { $ref: "#/components/schemas/FulfillmentAddress" }
+        package: { $ref: "#/components/schemas/FulfillmentPackage" }
+        payment: { $ref: "#/components/schemas/FulfillmentPayment" }
+        notes: { type: string, maxLength: 500 }
+
+    FulfillmentPickupRequest:
+      type: object
+      additionalProperties: false
+      required: [scheduled_at, vehicle]
+      properties:
+        scheduled_at: { type: string, format: date-time }
+        vehicle: { type: string, enum: [motor, mobil, truk] }
+
+    FulfillmentCancelRequest:
+      type: object
+      additionalProperties: false
+      required: [reason_code]
+      properties:
+        reason_code: { type: string, minLength: 1, maxLength: 64 }
+        reason: { type: string, maxLength: 500 }
+
+    FulfillmentShipment:
+      type: object
+      required:
+        - shipment_id
+        - merchant_reference
+        - provider_code
+        - quote_id
+        - courier_code
+        - service_code
+        - delivery_mode
+        - fulfillment
+        - status
+        - shipping_cost
+        - currency
+        - label_available
+        - tracking_registration_status
+        - reconcile_attempt_count
+        - created_at
+        - updated_at
+      properties:
+        shipment_id: { type: string, format: uuid }
+        merchant_reference: { type: string }
+        provider_code: { type: string }
+        provider_shipment_id: { type: string }
+        quote_id: { type: string }
+        courier_code: { type: string }
+        service_code: { type: string }
+        delivery_mode: { type: string, enum: [regular, next_day, economy, cargo] }
+        fulfillment: { type: string, enum: [pickup, dropoff] }
+        awb: { type: string }
+        status:
+          type: string
+          enum: [booking_pending, booked, pickup_requested, picked_up, in_transit, out_for_delivery, delivered, cancellation_pending, cancelled, problem, booking_failed]
+        provider_status: { type: string }
+        shipping_cost: { type: integer, format: int64 }
+        currency: { type: string, example: IDR }
+        label_available: { type: boolean }
+        tracking_registration_status:
+          type: string
+          enum: [not_ready, pending, registered, failed]
+        tracking_shipment_id: { type: string, format: uuid }
+        live_tracking_url: { type: string, format: uri }
+        last_reconciled_at: { type: string, format: date-time }
+        next_reconcile_at: { type: string, format: date-time }
+        reconcile_attempt_count: { type: integer, minimum: 0 }
+        reconcile_error: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        cancelled_at: { type: string, format: date-time }
+
+    FulfillmentShipmentResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta: { $ref: "#/components/schemas/Meta" }
+        data:
+          oneOf:
+            - $ref: "#/components/schemas/FulfillmentShipment"
+            - type: object
+              required: [shipment, idempotent_replay]
+              properties:
+                shipment: { $ref: "#/components/schemas/FulfillmentShipment" }
+                idempotent_replay: { type: boolean }
+
+    FulfillmentLabelResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta: { $ref: "#/components/schemas/Meta" }
+        data:
+          type: object
+          required: [format, content_type]
+          properties:
+            format: { type: string }
+            content_type: { type: string, const: application/pdf }
+            url: { type: string }
+            base64: { type: string }
+            expires_at: { type: string, format: date-time }
+
+    FulfillmentHistoryResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta: { $ref: "#/components/schemas/Meta" }
+        data:
+          type: array
+          items:
+            type: object
+            required: [id, status, description, occurred_at]
+            properties:
+              id: { type: integer, format: int64 }
+              status: { type: string }
+              provider_status: { type: string }
+              description: { type: string }
+              occurred_at: { type: string, format: date-time }
+
     Health:
       type: object
       required: [status]
@@ -2868,6 +3692,8 @@ components:
         - integration_type
         - distribution_type
         - requires_credential
+        - credential_type
+        - credential_fields
         - available
         - installed
         - active
@@ -2896,10 +3722,17 @@ components:
           description: Menentukan apakah provider bawaan, memakai adapter API Kurir, atau memakai release partner.
         distribution_type:
           type: string
-          enum: [built_in, public, limited, private]
-          description: Mengontrol cakupan merchant yang dapat menemukan provider.
+          enum: [built_in, merchant]
+          description: Klasifikasi tetap; provider eksternal hanya didistribusikan kepada merchant Emisell terautentikasi.
         requires_credential:
           type: boolean
+        credential_type:
+          $ref: "#/components/schemas/ProviderCredentialType"
+        credential_fields:
+          type: array
+          description: Definisi form yang dirender Emisell saat seller menghubungkan provider.
+          items:
+            $ref: "#/components/schemas/ProviderCredentialField"
         available:
           type: boolean
           const: true
@@ -4138,6 +4971,8 @@ components:
         - integration_type
         - distribution_type
         - requires_credential
+        - credential_type
+        - credential_fields
         - available
         - display_order
         - installed_merchant_count
@@ -4168,9 +5003,15 @@ components:
           enum: [built_in, managed_upstream, partner_hosted]
         distribution_type:
           type: string
-          enum: [built_in, public, limited, private]
+          enum: [built_in, merchant]
         requires_credential:
           type: boolean
+        credential_type:
+          $ref: "#/components/schemas/ProviderCredentialType"
+        credential_fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderCredentialField"
         available:
           type: boolean
         display_order:
@@ -4227,10 +5068,8 @@ components:
           type: string
           enum: [managed_upstream, partner_hosted]
           default: partner_hosted
-        distribution_type:
-          type: string
-          enum: [public, limited, private]
-          default: public
+        credential_type:
+          $ref: "#/components/schemas/ProviderCredentialType"
         display_order:
           type: integer
           minimum: 1
@@ -4257,10 +5096,9 @@ components:
           type: string
           enum: [built_in, managed_upstream, partner_hosted]
           description: Opsional untuk kompatibilitas; jika kosong klasifikasi lama dipertahankan.
-        distribution_type:
-          type: string
-          enum: [built_in, public, limited, private]
-          description: Opsional untuk kompatibilitas; jika kosong klasifikasi lama dipertahankan.
+        credential_type:
+          $ref: "#/components/schemas/ProviderCredentialType"
+          description: Hanya digunakan oleh managed_upstream dan tidak dapat diubah setelah credential merchant tersedia.
         available:
           type: boolean
         display_order:
@@ -4321,8 +5159,7 @@ components:
         - provider_code
         - provider_name
         - contract_version
-        - sandbox_url
-        - production_url
+        - base_url
         - declared_capabilities
         - declared_services
       properties:
@@ -4334,10 +5171,9 @@ components:
           type: string
         contract_version:
           type: string
-        sandbox_url:
+        base_url:
           type: string
-        production_url:
-          type: string
+          description: Endpoint HTTPS aktif connector. Lingkungan lokal/production API Kurir ditentukan oleh konfigurasi gateway.
         declared_capabilities:
           type: array
           items:
@@ -4485,6 +5321,341 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PartnerSubmission"
+
+    PartnerExplorerCredential:
+      type: object
+      required: [provider_code, credential_code, display_key, auth_header, auth_prefix, created_at, updated_at]
+      properties:
+        provider_code:
+          type: string
+        credential_code:
+          type: string
+          examples: [shipping_cost, shipping_delivery]
+        display_key:
+          type: string
+          description: API key resmi yang sudah disensor.
+          example: live********AB12
+        auth_header:
+          type: string
+          example: Authorization
+        auth_prefix:
+          type: string
+          example: Bearer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PartnerExplorerCredentialState:
+      type: object
+      required: [code, label, description, auth_header, auth_prefix, configured, credential]
+      properties:
+        code:
+          type: string
+          examples: [shipping_cost, shipping_delivery]
+        label:
+          type: string
+          example: RajaOngkir Shipping Cost
+        description:
+          type: string
+        auth_header:
+          type: string
+          examples: [key, x-api-key]
+        auth_prefix:
+          type: string
+          example: ""
+        configured:
+          type: boolean
+        credential:
+          oneOf:
+            - $ref: "#/components/schemas/PartnerExplorerCredential"
+            - type: "null"
+
+    PartnerExplorerCredentialStateResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/PartnerExplorerCredentialState"
+
+    PartnerExplorerParameter:
+      type: object
+      required: [name, in, required, description, type, example]
+      properties:
+        name:
+          type: string
+        in:
+          type: string
+          enum: [path, query]
+        required:
+          type: boolean
+        description:
+          type: string
+        type:
+          type: string
+        example:
+          type: string
+
+    PartnerExplorerOperation:
+      type: object
+      required:
+        - id
+        - method
+        - path
+        - summary
+        - description
+        - capability
+        - safety
+        - base_url
+        - credential_code
+        - credential_label
+        - credential_description
+        - auth_header
+        - auth_prefix
+        - parameters
+      properties:
+        id:
+          type: string
+        method:
+          type: string
+          enum: [GET, HEAD, OPTIONS, POST, PUT, PATCH, DELETE]
+        path:
+          type: string
+        summary:
+          type: string
+        description:
+          type: string
+        capability:
+          type: string
+        safety:
+          type: string
+          enum: [read_only, transactional_locked]
+        base_url:
+          type: string
+          format: uri
+        credential_code:
+          type: string
+          description: Kosong untuk operation tanpa autentikasi.
+        credential_label:
+          type: string
+        credential_description:
+          type: string
+        auth_header:
+          type: string
+          examples: [key, x-api-key]
+        auth_prefix:
+          type: string
+        parameters:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerExplorerParameter"
+        request_example:
+          description: Contoh JSON yang diturunkan dari OpenAPI package.
+
+    PartnerExplorerCatalog:
+      type: object
+      required:
+        - submission_id
+        - provider_code
+        - provider_name
+        - version
+        - environment
+        - base_url
+        - credential
+        - credentials
+        - operations
+      properties:
+        submission_id:
+          type: string
+          format: uuid
+        provider_code:
+          type: string
+        provider_name:
+          type: string
+        version:
+          type: string
+        environment:
+          type: string
+          const: official
+        base_url:
+          type: string
+          format: uri
+        credential:
+          $ref: "#/components/schemas/PartnerExplorerCredentialState"
+          deprecated: true
+          description: Alias kompatibilitas untuk profil credential pertama.
+        credentials:
+          type: array
+          description: Profil credential yang diturunkan dari security scheme OpenAPI.
+          items:
+            $ref: "#/components/schemas/PartnerExplorerCredentialState"
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerExplorerOperation"
+
+    PartnerExplorerCatalogResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/PartnerExplorerCatalog"
+
+    PartnerExplorerExecuteRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id]
+      properties:
+        operation_id:
+          type: string
+        path_params:
+          type: object
+          additionalProperties:
+            type: string
+        query:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          description: JSON body sesuai operation OpenAPI; maksimum 64 KB.
+
+    PartnerExplorerExecution:
+      type: object
+      required:
+        - run_id
+        - operation
+        - environment
+        - response_status
+        - duration_ms
+        - success
+        - content_type
+        - response_body
+        - response_headers
+        - truncated
+        - validation
+        - executed_at
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        operation:
+          $ref: "#/components/schemas/PartnerExplorerOperation"
+        environment:
+          type: string
+          const: official
+        response_status:
+          type: integer
+          minimum: 0
+          maximum: 599
+        duration_ms:
+          type: integer
+          format: int64
+        success:
+          type: boolean
+        content_type:
+          type: string
+        response_body:
+          type: string
+          description: Response current run setelah exact credential redaction.
+        response_headers:
+          type: object
+          additionalProperties:
+            type: string
+        truncated:
+          type: boolean
+        error_code:
+          type: string
+        validation:
+          type: object
+          required: [http_passed, json_passed]
+          properties:
+            http_passed:
+              type: boolean
+            json_passed:
+              type: boolean
+        executed_at:
+          type: string
+          format: date-time
+
+    PartnerExplorerExecutionResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/PartnerExplorerExecution"
+
+    PartnerExplorerRun:
+      type: object
+      required:
+        - id
+        - submission_id
+        - provider_code
+        - operation_id
+        - method
+        - path
+        - environment
+        - response_status
+        - duration_ms
+        - outcome
+        - error_code
+        - response_preview
+        - created_by
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        submission_id:
+          type: string
+          format: uuid
+        provider_code:
+          type: string
+        operation_id:
+          type: string
+        method:
+          type: string
+        path:
+          type: string
+        environment:
+          type: string
+          const: official
+        response_status:
+          type: integer
+        duration_ms:
+          type: integer
+          format: int64
+        outcome:
+          type: string
+          enum: [passed, failed]
+        error_code:
+          type: string
+        response_preview:
+          type: string
+          description: Preview redacted maksimum 4 KB.
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    PartnerExplorerRunListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerExplorerRun"
 
     PartnerAccessKey:
       type: object
@@ -4728,21 +5899,64 @@ components:
     CreateTenantProviderCredentialRequest:
       type: object
       additionalProperties: false
-      required: [provider_code, api_key]
+      required: [provider_code]
+      oneOf:
+        - required: [api_key]
+        - required: [credentials]
       properties:
         provider_code:
           type: string
-          enum: [rajaongkir]
+          pattern: "^[a-z0-9_-]{2,48}$"
         api_key:
           type: string
           minLength: 8
           maxLength: 512
           writeOnly: true
+          description: Alias kompatibilitas untuk api_key atau shipping_api_key pada model capability_api_keys.
+        credentials:
+          type: object
+          minProperties: 1
+          maxProperties: 8
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 1024
+          writeOnly: true
+          description: Nilai dinamis yang key-nya wajib mengikuti credential_fields pada katalog provider.
         daily_limit:
           type: integer
           minimum: 1
           maximum: 100000000
           default: 50000
+
+    ProviderCredentialType:
+      type: string
+      enum: [none, api_key, capability_api_keys, bearer_token, api_key_secret, oauth2_client_credentials]
+
+    ProviderCredentialField:
+      type: object
+      required: [code, label, input_type, secret, required, placeholder, help, capabilities]
+      properties:
+        code:
+          type: string
+          enum: [api_key, shipping_api_key, delivery_api_key, token, api_secret, client_id, client_secret]
+        label:
+          type: string
+        input_type:
+          type: string
+          enum: [text, password]
+        secret:
+          type: boolean
+        required:
+          type: boolean
+        placeholder:
+          type: string
+        help:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
 
     TenantProviderCredentialResponse:
       type: object

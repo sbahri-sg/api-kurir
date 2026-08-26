@@ -1065,6 +1065,52 @@ key: {{api_key}}`,
   {
     scope: "admin",
     method: "GET",
+    path: "/v1/admin/fulfillment-operations",
+    title: "Monitor lifecycle fulfillment",
+    description:
+      "Menampilkan shipment, status provider, AWB, registrasi tracking otomatis, antrean rekonsiliasi, error terakhir, dan status pengiriman webhook dalam satu tabel operasional staff.",
+    authentication: "Bearer admin API key",
+    parameters: [
+      "search — merchant, order, provider order, courier, service, atau AWB",
+      "provider — filter provider fulfillment",
+      "status — filter status canonical shipment",
+      "queue_status — pending, running, dead, final, atau idle",
+      "limit dan offset — pagination",
+    ],
+    request: `GET {{base_url}}/v1/admin/fulfillment-operations?queue_status=pending&limit=100`,
+    response: `{
+  "data": {
+    "items": [{
+      "shipment_id": "9f02ad9e-b9fd-4a30-987a-92ae731ac063",
+      "merchant_id": "merchant_123",
+      "order_id": "ORDER-10001",
+      "provider": "rajaongkir",
+      "provider_shipment_id": "KOMXXXXXXXXXXXXXXXXX",
+      "waybill": "JY1224870535",
+      "status": "pickup_requested",
+      "tracking_registration_status": "registered",
+      "queue_status": "idle",
+      "webhook_status": "delivered"
+    }],
+    "summary": {"total": 1, "booking_pending": 0, "tracking_pending": 0, "failed": 0, "final": 0}
+  }
+}`,
+  },
+  {
+    scope: "admin",
+    method: "POST",
+    path: "/v1/admin/fulfillment-operations/{shipment_id}/reconcile",
+    title: "Antrekan rekonsiliasi shipment",
+    description:
+      "Meminta worker membaca ulang detail order provider tanpa mengulang create shipment. Aman untuk diagnosis AWB yang terlambat tersedia.",
+    authentication: "Bearer admin API key",
+    parameters: ["shipment_id — UUID internal API Kurir"],
+    request: `POST {{base_url}}/v1/admin/fulfillment-operations/{{shipment_id}}/reconcile`,
+    response: `HTTP 202 dengan {"shipment_id":"...","refresh_queued":true}`,
+  },
+  {
+    scope: "admin",
+    method: "GET",
     path: "/v1/admin/provider-credentials",
     title: "Daftar key provider",
     description:
@@ -1326,14 +1372,14 @@ Authorization: Bearer {{admin_api_key}}`,
       "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
       "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
       "built_in": false,
-      "integration_type": "managed_upstream",
-      "distribution_type": "public",
+      "integration_type": "partner_hosted",
+      "distribution_type": "merchant",
       "requires_credential": true,
       "available": true,
       "display_order": 20,
-      "active_release_id": null,
-      "active_release_version": "",
-      "release_count": 0,
+      "active_release_id": "release_uuid",
+      "active_release_version": "1.0.1",
+      "release_count": 2,
       "installed_merchant_count": 12,
       "active_merchant_count": 8,
       "credential_count": 14
@@ -1355,7 +1401,6 @@ Authorization: Bearer {{admin_api_key}}`,
       "code — kode permanen provider, huruf kecil tanpa spasi",
       "logo — URL HTTPS publik permanen",
       "integration_type — managed_upstream atau partner_hosted",
-      "distribution_type — public, limited, atau private",
       "display_order — urutan 1–9999",
     ],
     request: `POST {{base_url}}/v1/admin/shipping-providers
@@ -1369,7 +1414,6 @@ Content-Type: application/json
   "logo": "https://api-kurir.emisell.com/provider-logos/default.svg",
   "description": "Integrasi provider Mengantar untuk merchant Emisell.",
   "integration_type": "partner_hosted",
-  "distribution_type": "public",
   "display_order": 40
 }`,
     response: `HTTP 201 · provider dibuat available=false; partner-hosted menunggu release published.`,
@@ -1381,7 +1425,7 @@ Content-Type: application/json
     path: "/v1/admin/shipping-providers/{provider_code}",
     title: "Perbarui provider integrasi",
     description:
-      "Mengubah metadata, klasifikasi, distribusi, urutan, dan kesiapan provider. Jenis integrasi dikunci setelah memiliki release atau merchant aktif.",
+      "Mengubah metadata, klasifikasi, urutan, dan kesiapan provider. Distribusi ditetapkan otomatis hanya untuk merchant Emisell. Jenis integrasi dikunci setelah memiliki release atau merchant aktif.",
     authentication: "Bearer admin API key + X-Admin-Actor",
     parameters: ["provider_code — kode permanen dari master provider"],
     request: `PUT {{base_url}}/v1/admin/shipping-providers/mengantar
@@ -1394,11 +1438,25 @@ Content-Type: application/json
   "logo": "https://api-kurir.emisell.com/provider-logos/default.svg",
   "description": "Integrasi provider Mengantar yang telah lolos pengujian adapter.",
   "integration_type": "partner_hosted",
-  "distribution_type": "public",
   "available": true,
   "display_order": 40
 }`,
     response: `HTTP 200 · object provider terbaru beserta jumlah merchant dan credential.`,
+  },
+  {
+    contract: "admin",
+    scope: "admin",
+    method: "DELETE",
+    path: "/v1/admin/shipping-providers/{provider_code}",
+    title: "Hapus provider integrasi",
+    description:
+      "Melakukan purge provider eksternal yang belum pernah dipublikasikan dan belum digunakan merchant. Package pengujian, Partner Access Key, credential Explorer, dan katalog service ikut dihapus. Provider built-in, active release, riwayat published, atau data operasional ditolak dengan HTTP 409.",
+    authentication: "Bearer admin API key + X-Admin-Actor",
+    parameters: ["provider_code — kode provider eksternal yang akan dihapus"],
+    request: `DELETE {{base_url}}/v1/admin/shipping-providers/mengantar
+Authorization: Bearer {{admin_api_key}}
+X-Admin-Actor: emisell`,
+    response: `HTTP 204 · provider berhasil dihapus.`,
   },
   {
     contract: "admin",
@@ -1997,9 +2055,9 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     scope: "customer",
     method: "POST",
     path: "/api/v1/integrations/provider-credentials",
-    title: "Hubungkan key RajaOngkir seller",
+    title: "Hubungkan credential provider seller",
     description:
-      "Memvalidasi key ke provider, mengenkripsinya dengan AES-256-GCM, dan mengikat credential ke merchant dari header. Key baru otomatis menggantikan key aktif lama. Key merchant yang sama yang pernah diputuskan akan diaktifkan kembali, tetapi provider shipping tetap perlu diaktifkan secara eksplisit.",
+      "Memvalidasi credential sesuai credential_fields provider, mengenkripsi seluruh bundle dengan AES-256-GCM, dan mengikatnya ke merchant dari header. api_key lama tetap kompatibel; OAuth mengirim credentials berisi client_id dan client_secret.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
@@ -2008,9 +2066,18 @@ Content-Type: application/json
 
 {
   "provider_code": "rajaongkir",
-  "api_key": "{{seller_rajaongkir_key}}",
+  "credentials": {
+    "shipping_api_key": "{{seller_rajaongkir_shipping_key}}",
+    "delivery_api_key": "{{seller_rajaongkir_delivery_key}}"
+  },
   "daily_limit": 50000
 }`,
+    parameters: [
+      "delivery_api_key opsional selama seller hanya menggunakan cek ongkir dan tracking.",
+      "Payload lama api_key tetap diterima dan dipetakan ke shipping_api_key.",
+      `Contoh OAuth: { "provider_code": "provider-oauth", "credentials": { "client_id": "...", "client_secret": "..." } }`,
+      "Nama field wajib mengikuti credential_fields dari GET /api/v1/integrations/providers.",
+    ],
     response: `{
   "data": {
     "provider_code": "rajaongkir",
@@ -2031,7 +2098,7 @@ Content-Type: application/json
     description:
       "Menonaktifkan key aktif merchant berdasarkan provider code. Emisell tidak menyimpan credential ID.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
-    parameters: ["provider_code — saat ini rajaongkir"],
+    parameters: ["provider_code — kode provider yang memakai credential seller pada katalog merchant"],
     request: `POST {{base_url}}/api/v1/integrations/provider-credentials/rajaongkir/disable
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}`,
@@ -2044,7 +2111,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers",
     title: "Katalog provider dan extension aktif",
     description:
-      "Menampilkan provider yang eligible bagi merchant, klasifikasi integrasi/distribusi, active release partner, scope, dan provider efektif merchant. Partner-hosted tanpa release published tidak dikirim.",
+      "Menampilkan provider yang eligible beserta credential_type dan credential_fields. Emisell merender form aktivasi otomatis dari field tersebut; RajaOngkir memisahkan key shipping dan delivery, sedangkan OAuth menghasilkan Client ID dan Client secret.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/providers
 key: {{api_key}}
@@ -2063,6 +2130,8 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "integration_type": "built_in",
         "distribution_type": "built_in",
         "requires_credential": false,
+        "credential_type": "none",
+        "credential_fields": [],
         "available": true,
         "installed": true,
         "active": false,
@@ -2076,13 +2145,32 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "logo": "https://api-kurir.emisell.com/provider-logos/rajaongkir.svg",
         "description": "Integrasi RajaOngkir menggunakan API key milik seller untuk cek ongkir dan pelacakan sesuai paket akun seller.",
         "built_in": false,
-        "integration_type": "managed_upstream",
-        "distribution_type": "public",
+        "integration_type": "partner_hosted",
+        "distribution_type": "merchant",
         "requires_credential": true,
+        "credential_type": "capability_api_keys",
+        "credential_fields": [
+          {
+            "code": "shipping_api_key",
+            "label": "Shipping API key",
+            "input_type": "password",
+            "secret": true,
+            "required": true,
+            "capabilities": ["rates:read", "tracking:read"]
+          },
+          {
+            "code": "delivery_api_key",
+            "label": "Delivery API key",
+            "input_type": "password",
+            "secret": true,
+            "required": false,
+            "capabilities": ["shipments:write", "shipments:read", "pickup:write", "labels:read", "shipments:cancel"]
+          }
+        ],
         "available": true,
         "installed": true,
         "active": false,
-        "active_release_version": "",
+        "active_release_version": "1.0.1",
         "required_scopes": ["rates:read", "tracking:read"],
         "granted_scopes": []
       }
@@ -2098,7 +2186,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers/{provider_code}/activate",
     title: "Aktifkan satu provider merchant",
     description:
-      "Mengganti provider aktif secara atomik. Managed-upstream memilih key seller; partner-hosted memin release dan scope production yang aktif. expected_version mencegah perubahan paralel saling menimpa.",
+      "Mengganti provider aktif secara atomik. Bila requires_credential bernilai true, Emisell lebih dahulu merender credential_fields dan menyimpan bundle credential seller. Managed-upstream kemudian memilih credential aktif; partner-hosted memin release dan scope production yang aktif. expected_version mencegah perubahan paralel saling menimpa.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     parameters: [
       "provider_code — emisell atau provider eksternal yang available",
@@ -2351,5 +2439,187 @@ Content-Type: application/x-www-form-urlencoded
 
 awb=TEST123456789&courier=sicepat`,
     response: `Respons tetap memakai envelope kompatibel RajaOngkir V2 tanpa field tambahan. Provider aktual dan hit dapat diaudit dari ledger admin serta snapshot tracking internal.`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/integrations/shipments",
+    title: "Buat shipment fulfillment",
+    description:
+      "Membuat booking pada provider aktif merchant. API Kurir mengunci provider dan credential, mereservasi idempotency sebelum hit upstream, serta mengenkripsi alamat, telepon, dan isi paket di database.",
+    authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
+    parameters: [
+      "Idempotency-Key — wajib, unik per percobaan booking; gunakan nilai yang sama hanya untuk retry payload identik",
+      "quote_id — quote ongkir yang dipilih checkout",
+      "provider_code — opsional; bila dikirim harus sama dengan provider aktif merchant",
+      "destination_id pada sender/recipient — ID tujuan Shipping Delivery provider",
+    ],
+    request: `POST {{base_url}}/api/v1/integrations/shipments
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}
+Idempotency-Key: shipment:create:ORDER-10001
+Content-Type: application/json
+
+{
+  "merchant_reference": "ORDER-10001",
+  "quote_id": "quote-checkout-10001",
+  "courier_code": "jne",
+  "service_code": "REG",
+  "delivery_mode": "regular",
+  "fulfillment": "pickup",
+  "sender": {
+    "name": "Toko Emisell",
+    "phone": "081234567890",
+    "email": "admin@example.com",
+    "address": "Jalan Pengirim No. 1",
+    "destination_id": 5969
+  },
+  "recipient": {
+    "name": "Budi",
+    "phone": "081298765432",
+    "address": "Jalan Penerima No. 2",
+    "destination_id": 4956
+  },
+  "package": {
+    "weight_grams": 1200,
+    "length_cm": 20,
+    "width_cm": 15,
+    "height_cm": 10,
+    "item_value": 150000,
+    "contents": "Pakaian",
+    "items": [{
+      "sku": "TSHIRT-M",
+      "name": "Kaos",
+      "quantity": 1,
+      "unit_value": 150000,
+      "weight_grams": 1200
+    }]
+  },
+  "payment": {
+    "type": "non_cod",
+    "shipping_cost": 18000,
+    "grand_total": 168000
+  }
+}`,
+    response: `{
+  "meta": { "message": "Shipment created", "code": 201, "status": "success" },
+  "data": {
+    "shipment": {
+      "shipment_id": "9f02ad9e-b9fd-4a30-987a-92ae731ac063",
+      "merchant_reference": "ORDER-10001",
+      "provider_code": "rajaongkir",
+      "provider_shipment_id": "KOMXXXXXXXXXXXXXXXXX",
+      "courier_code": "jne",
+      "service_code": "REG",
+      "status": "booked",
+      "shipping_cost": 18000,
+      "currency": "IDR",
+      "tracking_registration_status": "not_ready",
+      "reconcile_attempt_count": 0,
+      "next_reconcile_at": "2026-08-26T14:15:00Z"
+    },
+    "idempotent_replay": false
+  }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/integrations/shipments/{shipment_id}",
+    title: "Baca snapshot shipment",
+    description:
+      "Membaca state lokal shipment milik merchant tanpa membuat booking atau hit tracking baru. Tenant lain selalu menerima 404.",
+    authentication: "Main Service API key + X-Emisell-Merchant-ID",
+    request: `GET {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}`,
+    response: `Data berisi shipment_id, provider_shipment_id, AWB bila sudah tersedia, status canonical, status provider, biaya, tracking_registration_status, tracking_shipment_id, live_tracking_url, jadwal rekonsiliasi, dan timestamp.`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/integrations/shipments/{shipment_id}/pickup",
+    title: "Jadwalkan pickup shipment",
+    description:
+      "Menjadwalkan pickup untuk shipment yang sudah dibuat. RajaOngkir mensyaratkan jadwal valid dan vehicle motor, mobil, atau truk.",
+    authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
+    request: `POST {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}/pickup
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}
+Idempotency-Key: shipment:pickup:ORDER-10001
+Content-Type: application/json
+
+{
+  "scheduled_at": "2026-08-27T09:00:00+07:00",
+  "vehicle": "motor"
+}`,
+    response: `HTTP 202 untuk request baru atau 200 untuk replay. Shipment berstatus pickup_requested. Ketika provider mengembalikan AWB, tracking_registration_status menjadi pending lalu worker otomatis mendaftarkannya ke pipeline tracking.`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/integrations/shipments/{shipment_id}/label",
+    title: "Ambil label shipment",
+    description:
+      "Mengambil label provider dan menyimpan hasilnya terenkripsi agar pembacaan berikutnya tidak membuat request label duplikat.",
+    authentication: "Main Service API key + X-Emisell-Merchant-ID",
+    parameters: ["format — page_1, page_2, page_4, page_5 (default), atau page_6"],
+    request: `GET {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}/label?format=page_5
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}`,
+    response: `{
+  "data": {
+    "format": "page_5",
+    "content_type": "application/pdf",
+    "url": "/storage/label-example.pdf",
+    "base64": "JVBERi0x..."
+  }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
+    path: "/api/v1/integrations/shipments/{shipment_id}/cancel",
+    title: "Batalkan shipment",
+    description:
+      "Meminta pembatalan sebelum shipment diproses kurir. Status delivered tidak dapat dibatalkan dan request wajib idempotent.",
+    authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
+    request: `POST {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}/cancel
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}
+Idempotency-Key: shipment:cancel:ORDER-10001
+Content-Type: application/json
+
+{
+  "reason_code": "customer_request",
+  "reason": "Pembeli membatalkan pesanan"
+}`,
+    response: `HTTP 202 untuk request baru. Status menjadi cancelled bila provider langsung mengonfirmasi, atau cancellation_pending untuk provider asynchronous.`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/integrations/shipments/{shipment_id}/history",
+    title: "Riwayat fulfillment shipment",
+    description:
+      "Membaca audit timeline canonical dari reservasi booking, pickup, pembatalan, dan pembaruan provider tanpa membuka payload PII terenkripsi.",
+    authentication: "Main Service API key + X-Emisell-Merchant-ID",
+    request: `GET {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}/history
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}`,
+    response: `{
+  "data": [{
+    "id": 1,
+    "status": "booking_pending",
+    "description": "Shipment reserved; booking provider is in progress.",
+    "occurred_at": "2026-08-26T14:00:00Z"
+  }]
+}`,
   },
 ];

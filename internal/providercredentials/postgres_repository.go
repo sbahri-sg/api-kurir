@@ -20,6 +20,27 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+func (r *PostgresRepository) CredentialType(
+	ctx context.Context,
+	providerCode string,
+) (string, error) {
+	var credentialType string
+	err := r.pool.QueryRow(ctx, `
+		SELECT credential_type
+		FROM shipping_integration_providers
+		WHERE code = $1
+		  AND requires_credential
+		  AND credential_type <> 'none'
+	`, providerCode).Scan(&credentialType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrUnsupportedProvider
+	}
+	if err != nil {
+		return "", fmt.Errorf("get provider credential type: %w", err)
+	}
+	return credentialType, nil
+}
+
 func (r *PostgresRepository) List(ctx context.Context) ([]Credential, error) {
 	return r.list(ctx, "", false)
 }

@@ -53,6 +53,24 @@ func (s *Service) HasActiveProvider(ctx context.Context, tenantID string) (bool,
 	return catalog.ActiveProviderCode != nil, nil
 }
 
+// ActiveProviderCode returns the merchant's explicitly selected shipping
+// integration. Fulfillment uses it to pin a booking to one provider before
+// any external side effect is executed.
+func (s *Service) ActiveProviderCode(ctx context.Context, tenantID string) (string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if !validTenantID(tenantID) {
+		return "", ErrInvalidTenant
+	}
+	catalog, err := s.repository.Catalog(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	if catalog.ActiveProviderCode == nil {
+		return "", nil
+	}
+	return strings.ToLower(strings.TrimSpace(*catalog.ActiveProviderCode)), nil
+}
+
 // AllowsPlatformCredential reports whether a merchant explicitly selected the
 // built-in Emisell integration. External/BYOK providers must always resolve a
 // credential owned by the merchant and are never allowed to borrow this pool.

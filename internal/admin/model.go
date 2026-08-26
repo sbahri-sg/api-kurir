@@ -1,6 +1,10 @@
 package admin
 
-import "time"
+import (
+	"time"
+
+	"github.com/emisell/api-kurir/internal/providercredentials"
+)
 
 var (
 	ValidPricingModels = map[string]struct{}{
@@ -75,6 +79,55 @@ type TrackingOperationPage struct {
 	Items   []TrackingOperation      `json:"items"`
 	Total   int64                    `json:"total"`
 	Summary TrackingOperationSummary `json:"summary"`
+}
+
+type FulfillmentOperationFilter struct {
+	Search      string
+	Provider    string
+	Status      string
+	QueueStatus string
+	Limit       int
+	Offset      int
+}
+
+type FulfillmentOperationSummary struct {
+	Total           int64 `json:"total"`
+	BookingPending  int64 `json:"booking_pending"`
+	TrackingPending int64 `json:"tracking_pending"`
+	Failed          int64 `json:"failed"`
+	Final           int64 `json:"final"`
+}
+
+type FulfillmentOperation struct {
+	ID                         string     `json:"shipment_id"`
+	TenantID                   string     `json:"merchant_id"`
+	MerchantReference          string     `json:"order_id"`
+	ProviderCode               string     `json:"provider"`
+	ProviderShipmentID         string     `json:"provider_shipment_id,omitempty"`
+	CourierCode                string     `json:"courier"`
+	ServiceCode                string     `json:"service"`
+	AWB                        string     `json:"waybill,omitempty"`
+	Status                     string     `json:"status"`
+	ProviderStatus             string     `json:"provider_status,omitempty"`
+	TrackingRegistrationStatus string     `json:"tracking_registration_status"`
+	TrackingStatus             string     `json:"tracking_status,omitempty"`
+	QueueStatus                string     `json:"queue_status"`
+	JobType                    string     `json:"job_type,omitempty"`
+	JobAttemptCount            int        `json:"job_attempt_count"`
+	JobMaxAttempts             int        `json:"job_max_attempts"`
+	JobAvailableAt             *time.Time `json:"job_available_at,omitempty"`
+	LastReconciledAt           *time.Time `json:"last_reconciled_at,omitempty"`
+	NextReconcileAt            *time.Time `json:"next_reconcile_at,omitempty"`
+	ReconcileError             string     `json:"reconcile_error,omitempty"`
+	WebhookStatus              string     `json:"webhook_status"`
+	CreatedAt                  time.Time  `json:"created_at"`
+	UpdatedAt                  time.Time  `json:"updated_at"`
+}
+
+type FulfillmentOperationPage struct {
+	Items   []FulfillmentOperation      `json:"items"`
+	Total   int64                       `json:"total"`
+	Summary FulfillmentOperationSummary `json:"summary"`
 }
 
 type RateSnapshot struct {
@@ -194,25 +247,27 @@ type ProviderQuota struct {
 }
 
 type ShippingProvider struct {
-	Code                   string    `json:"code"`
-	Name                   string    `json:"name"`
-	Logo                   string    `json:"logo"`
-	Description            string    `json:"description"`
-	BuiltIn                bool      `json:"built_in"`
-	IntegrationType        string    `json:"integration_type"`
-	DistributionType       string    `json:"distribution_type"`
-	RequiresCredential     bool      `json:"requires_credential"`
-	Available              bool      `json:"available"`
-	DisplayOrder           int       `json:"display_order"`
-	ActiveReleaseID        *string   `json:"active_release_id"`
-	ActiveReleaseVersion   string    `json:"active_release_version"`
-	ActiveReleaseStatus    string    `json:"active_release_status"`
-	ReleaseCount           int64     `json:"release_count"`
-	InstalledMerchantCount int64     `json:"installed_merchant_count"`
-	ActiveMerchantCount    int64     `json:"active_merchant_count"`
-	CredentialCount        int64     `json:"credential_count"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	Code                   string                                `json:"code"`
+	Name                   string                                `json:"name"`
+	Logo                   string                                `json:"logo"`
+	Description            string                                `json:"description"`
+	BuiltIn                bool                                  `json:"built_in"`
+	IntegrationType        string                                `json:"integration_type"`
+	DistributionType       string                                `json:"distribution_type"`
+	RequiresCredential     bool                                  `json:"requires_credential"`
+	CredentialType         string                                `json:"credential_type"`
+	CredentialFields       []providercredentials.FieldDefinition `json:"credential_fields"`
+	Available              bool                                  `json:"available"`
+	DisplayOrder           int                                   `json:"display_order"`
+	ActiveReleaseID        *string                               `json:"active_release_id"`
+	ActiveReleaseVersion   string                                `json:"active_release_version"`
+	ActiveReleaseStatus    string                                `json:"active_release_status"`
+	ReleaseCount           int64                                 `json:"release_count"`
+	InstalledMerchantCount int64                                 `json:"installed_merchant_count"`
+	ActiveMerchantCount    int64                                 `json:"active_merchant_count"`
+	CredentialCount        int64                                 `json:"credential_count"`
+	CreatedAt              time.Time                             `json:"created_at"`
+	UpdatedAt              time.Time                             `json:"updated_at"`
 }
 
 type ShippingProviderCreateInput struct {
@@ -222,6 +277,7 @@ type ShippingProviderCreateInput struct {
 	Description      string
 	IntegrationType  string
 	DistributionType string
+	CredentialType   string
 	DisplayOrder     int
 }
 
@@ -231,6 +287,7 @@ type ShippingProviderUpdateInput struct {
 	Description      string
 	IntegrationType  string
 	DistributionType string
+	CredentialType   string
 	Available        bool
 	DisplayOrder     int
 }

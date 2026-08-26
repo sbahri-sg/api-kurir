@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/couriers"
 	"github.com/emisell/api-kurir/internal/servicecatalog"
 )
 
@@ -66,6 +67,7 @@ type QuotaRepository interface {
 }
 
 func resultFromProviderQuote(request Request, quote ProviderQuote) Result {
+	quote.CourierCode = couriers.NormalizeCode(quote.CourierCode)
 	quote = classifyProviderQuote(quote)
 	minimum := int64(0)
 	return Result{

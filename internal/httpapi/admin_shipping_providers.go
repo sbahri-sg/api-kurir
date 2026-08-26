@@ -8,29 +8,30 @@ import (
 	"strings"
 
 	"github.com/emisell/api-kurir/internal/admin"
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/labstack/echo/v5"
 )
 
 var validShippingProviderCode = regexp.MustCompile(`^[a-z0-9_-]{2,48}$`)
 
 type createShippingProviderRequest struct {
-	Code             string `json:"code"`
-	Name             string `json:"name"`
-	Logo             string `json:"logo"`
-	Description      string `json:"description"`
-	IntegrationType  string `json:"integration_type"`
-	DistributionType string `json:"distribution_type"`
-	DisplayOrder     int    `json:"display_order"`
+	Code            string `json:"code"`
+	Name            string `json:"name"`
+	Logo            string `json:"logo"`
+	Description     string `json:"description"`
+	IntegrationType string `json:"integration_type"`
+	CredentialType  string `json:"credential_type"`
+	DisplayOrder    int    `json:"display_order"`
 }
 
 type updateShippingProviderRequest struct {
-	Name             string `json:"name"`
-	Logo             string `json:"logo"`
-	Description      string `json:"description"`
-	IntegrationType  string `json:"integration_type"`
-	DistributionType string `json:"distribution_type"`
-	Available        bool   `json:"available"`
-	DisplayOrder     int    `json:"display_order"`
+	Name            string `json:"name"`
+	Logo            string `json:"logo"`
+	Description     string `json:"description"`
+	IntegrationType string `json:"integration_type"`
+	CredentialType  string `json:"credential_type"`
+	Available       bool   `json:"available"`
+	DisplayOrder    int    `json:"display_order"`
 }
 
 func adminShippingProviderListHandler(repository admin.Repository) echo.HandlerFunc {
@@ -87,6 +88,22 @@ func adminShippingProviderUpdateHandler(repository admin.Repository) echo.Handle
 	}
 }
 
+func adminShippingProviderDeleteHandler(repository admin.Repository) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		code := strings.ToLower(strings.TrimSpace(c.Param("code")))
+		if !validShippingProviderCode.MatchString(code) {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "Kode provider tidak valid.", nil)
+		}
+		err := repository.DeleteShippingProvider(
+			c.Request().Context(), code, adminActor(c), requestID(c),
+		)
+		if response := writeAdminRepositoryError(c, err); response != nil {
+			return response
+		}
+		return c.NoContent(http.StatusNoContent)
+	}
+}
+
 func normalizeShippingProviderCreateInput(
 	request createShippingProviderRequest,
 ) (admin.ShippingProviderCreateInput, error) {
@@ -101,7 +118,13 @@ func normalizeShippingProviderCreateInput(
 		return admin.ShippingProviderCreateInput{}, err
 	}
 	integrationType, distributionType, err := normalizeProviderClassification(
-		request.IntegrationType, request.DistributionType, false,
+		request.IntegrationType, false,
+	)
+	if err != nil {
+		return admin.ShippingProviderCreateInput{}, err
+	}
+	credentialType, err := normalizeProviderCredentialType(
+		request.CredentialType, integrationType, false,
 	)
 	if err != nil {
 		return admin.ShippingProviderCreateInput{}, err
@@ -113,6 +136,7 @@ func normalizeShippingProviderCreateInput(
 		Description:      metadata.Description,
 		IntegrationType:  integrationType,
 		DistributionType: distributionType,
+		CredentialType:   credentialType,
 		DisplayOrder:     metadata.DisplayOrder,
 	}, nil
 }
@@ -127,7 +151,13 @@ func normalizeShippingProviderUpdateInput(
 		return admin.ShippingProviderUpdateInput{}, err
 	}
 	integrationType, distributionType, err := normalizeProviderClassification(
-		request.IntegrationType, request.DistributionType, true,
+		request.IntegrationType, true,
+	)
+	if err != nil {
+		return admin.ShippingProviderUpdateInput{}, err
+	}
+	credentialType, err := normalizeProviderCredentialType(
+		request.CredentialType, integrationType, true,
 	)
 	if err != nil {
 		return admin.ShippingProviderUpdateInput{}, err
@@ -138,46 +168,66 @@ func normalizeShippingProviderUpdateInput(
 		Description:      metadata.Description,
 		IntegrationType:  integrationType,
 		DistributionType: distributionType,
+		CredentialType:   credentialType,
 		Available:        request.Available,
 		DisplayOrder:     metadata.DisplayOrder,
 	}, nil
 }
 
+func normalizeProviderCredentialType(
+	credentialType string,
+	integrationType string,
+	allowEmpty bool,
+) (string, error) {
+	credentialType = strings.ToLower(strings.TrimSpace(credentialType))
+	if credentialType == "" && allowEmpty {
+		return "", nil
+	}
+	if integrationType == "built_in" {
+		if credentialType == "" || credentialType == providercredentials.CredentialTypeNone {
+			return providercredentials.CredentialTypeNone, nil
+		}
+		return "", errors.New("provider built-in tidak dapat memakai credential seller")
+	}
+	if credentialType == "" && integrationType == "partner_hosted" {
+		return providercredentials.CredentialTypeNone, nil
+	}
+	if credentialType == "" {
+		credentialType = providercredentials.CredentialTypeAPIKey
+	}
+	normalized, valid := providercredentials.NormalizeCredentialType(credentialType)
+	if !valid || (integrationType == "managed_upstream" && normalized == providercredentials.CredentialTypeNone) {
+		return "", errors.New("model credential provider tidak valid")
+	}
+	return normalized, nil
+}
+
 func normalizeProviderClassification(
 	integrationType string,
-	distributionType string,
 	allowEmpty bool,
 ) (string, string, error) {
 	integrationType = strings.ToLower(strings.TrimSpace(integrationType))
-	distributionType = strings.ToLower(strings.TrimSpace(distributionType))
 	if !allowEmpty {
 		if integrationType == "" {
 			integrationType = "partner_hosted"
-		}
-		if distributionType == "" {
-			distributionType = "public"
 		}
 	}
 	validIntegrationTypes := map[string]bool{
 		"": allowEmpty, "managed_upstream": true, "partner_hosted": true,
 	}
-	validDistributionTypes := map[string]bool{
-		"": allowEmpty, "public": true, "limited": true, "private": true,
-	}
 	if allowEmpty {
 		validIntegrationTypes["built_in"] = true
-		validDistributionTypes["built_in"] = true
 	}
 	if !validIntegrationTypes[integrationType] {
 		return "", "", errors.New("jenis integrasi wajib managed_upstream atau partner_hosted")
 	}
-	if !validDistributionTypes[distributionType] {
-		return "", "", errors.New("distribusi wajib public, limited, atau private")
+	if integrationType == "" {
+		return "", "", nil
 	}
-	if (integrationType == "built_in") != (distributionType == "built_in") {
-		return "", "", errors.New("jenis dan distribusi built-in harus digunakan bersamaan")
+	if integrationType == "built_in" {
+		return integrationType, "built_in", nil
 	}
-	return integrationType, distributionType, nil
+	return integrationType, "merchant", nil
 }
 
 func normalizeShippingProviderMetadata(

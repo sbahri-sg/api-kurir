@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -240,6 +241,7 @@ func catalogWithQuerier(
 			provider.integration_type,
 			provider.distribution_type,
 			provider.requires_credential,
+			provider.credential_type,
 			provider.available AND (
 				provider.integration_type <> 'partner_hosted'
 				OR provider.active_release_id IS NOT NULL
@@ -248,6 +250,17 @@ func catalogWithQuerier(
 			OR (
 				provider.integration_type = 'partner_hosted'
 				AND provider.active_release_id IS NOT NULL
+				AND (
+					NOT provider.requires_credential
+					OR EXISTS (
+						SELECT 1
+						FROM provider_credentials credential
+						WHERE credential.tenant_id = $1
+						  AND credential.provider_code = provider.code
+						  AND credential.active
+						  AND credential.validation_status = 'valid'
+					)
+				)
 			)
 			OR EXISTS (
 				SELECT 1
@@ -282,7 +295,7 @@ func catalogWithQuerier(
 			OR provider.active_release_id IS NOT NULL
 		  )
 		  AND (
-			provider.distribution_type IN ('built_in', 'public')
+			provider.distribution_type IN ('built_in', 'merchant')
 			OR selection.provider_code = provider.code
 			OR EXISTS (
 				SELECT 1
@@ -312,6 +325,7 @@ func catalogWithQuerier(
 			&item.IntegrationType,
 			&item.DistributionType,
 			&item.RequiresCredential,
+			&item.CredentialType,
 			&item.Available,
 			&item.Installed,
 			&item.Active,
@@ -325,6 +339,7 @@ func catalogWithQuerier(
 		}
 		result.ActiveProviderCode = activeProvider
 		result.Version = version
+		item.CredentialFields = providercredentials.FieldsForCredentialType(item.CredentialType)
 		result.Providers = append(result.Providers, item)
 	}
 	if err := rows.Err(); err != nil {

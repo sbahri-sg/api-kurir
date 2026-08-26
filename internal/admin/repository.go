@@ -15,6 +15,7 @@ type Repository interface {
 	Overview(ctx context.Context) (Overview, error)
 	ListTrackingOperations(ctx context.Context, filter TrackingOperationFilter) (TrackingOperationPage, error)
 	DeleteTrackingOperation(ctx context.Context, id, actorAlias, requestID string) error
+	ListFulfillmentOperations(ctx context.Context, filter FulfillmentOperationFilter) (FulfillmentOperationPage, error)
 	ListRateSnapshots(ctx context.Context, search string, limit, offset int) ([]RateSnapshot, error)
 	ListRateCards(ctx context.Context, search string, limit, offset int) ([]RateCard, error)
 	CreateRateCard(ctx context.Context, input RateCardInput, actorAlias, requestID string) (RateCard, error)
@@ -41,5 +42,11 @@ type Repository interface {
 		actorAlias string,
 		requestID string,
 	) (ShippingProvider, error)
+	DeleteShippingProvider(
+		ctx context.Context,
+		code string,
+		actorAlias string,
+		requestID string,
+	) error
 	Catalog(ctx context.Context) (Catalog, error)
 }

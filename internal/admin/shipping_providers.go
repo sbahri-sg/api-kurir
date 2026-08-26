@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -18,6 +19,7 @@ const shippingProviderSelect = `
 		provider.integration_type,
 		provider.distribution_type,
 		provider.requires_credential,
+		provider.credential_type,
 		provider.available,
 		provider.display_order,
 		provider.active_release_id::text,
@@ -76,6 +78,7 @@ func (r *PostgresRepository) CreateShippingProvider(
 	actorAlias string,
 	requestID string,
 ) (ShippingProvider, error) {
+	requiresCredential := input.CredentialType != providercredentials.CredentialTypeNone
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return ShippingProvider{}, fmt.Errorf("begin create shipping provider: %w", err)
@@ -86,12 +89,13 @@ func (r *PostgresRepository) CreateShippingProvider(
 		INSERT INTO shipping_integration_providers (
 			code, name, logo_url, description, built_in,
 			integration_type, distribution_type,
-			requires_credential, available, display_order
+			requires_credential, credential_type, available, display_order
 		)
-		VALUES ($1, $2, $3, $4, false, $5, $6, $7, false, $8)
+		VALUES ($1, $2, $3, $4, false, $5, $6, $7, $8, false, $9)
 	`, input.Code, input.Name, input.Logo, input.Description,
 		input.IntegrationType, input.DistributionType,
-		input.IntegrationType == "managed_upstream", input.DisplayOrder)
+		requiresCredential, input.CredentialType,
+		input.DisplayOrder)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ShippingProvider{}, ErrConflict
@@ -110,7 +114,8 @@ func (r *PostgresRepository) CreateShippingProvider(
 			"name": input.Name, "available": false,
 			"integration_type":    input.IntegrationType,
 			"distribution_type":   input.DistributionType,
-			"requires_credential": input.IntegrationType == "managed_upstream",
+			"requires_credential": requiresCredential,
+			"credential_type":     input.CredentialType,
 			"display_order":       input.DisplayOrder,
 		},
 	); err != nil {
@@ -138,6 +143,7 @@ func (r *PostgresRepository) UpdateShippingProvider(
 	var previous map[string]any
 	var previousIntegrationType string
 	var previousDistributionType string
+	var previousCredentialType string
 	var builtIn bool
 	var activeReleaseID *string
 	err = tx.QueryRow(ctx, `
@@ -149,7 +155,7 @@ func (r *PostgresRepository) UpdateShippingProvider(
 			'distribution_type', provider.distribution_type,
 			'available', provider.available,
 			'display_order', provider.display_order
-		), provider.integration_type, provider.distribution_type, provider.built_in,
+		), provider.integration_type, provider.distribution_type, provider.credential_type, provider.built_in,
 		   provider.active_release_id::text
 		FROM shipping_integration_providers provider
 		WHERE provider.code = $1
@@ -158,6 +164,7 @@ func (r *PostgresRepository) UpdateShippingProvider(
 		&previous,
 		&previousIntegrationType,
 		&previousDistributionType,
+		&previousCredentialType,
 		&builtIn,
 		&activeReleaseID,
 	)
@@ -175,6 +182,14 @@ func (r *PostgresRepository) UpdateShippingProvider(
 	`, code).Scan(&activeMerchantCount); err != nil {
 		return ShippingProvider{}, fmt.Errorf("count active provider merchants: %w", err)
 	}
+	var credentialCount int64
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*)
+		FROM provider_credentials
+		WHERE provider_code = $1
+	`, code).Scan(&credentialCount); err != nil {
+		return ShippingProvider{}, fmt.Errorf("count provider credentials: %w", err)
+	}
 	if !input.Available && activeMerchantCount > 0 {
 		return ShippingProvider{}, ErrResourceInUse
 	}
@@ -183,6 +198,20 @@ func (r *PostgresRepository) UpdateShippingProvider(
 	}
 	if input.DistributionType == "" {
 		input.DistributionType = previousDistributionType
+	}
+	if input.CredentialType == "" {
+		input.CredentialType = previousCredentialType
+	}
+	if input.IntegrationType == "built_in" {
+		input.CredentialType = providercredentials.CredentialTypeNone
+	} else if input.CredentialType == providercredentials.CredentialTypeNone {
+		if input.IntegrationType == "managed_upstream" {
+			input.CredentialType = providercredentials.CredentialTypeAPIKey
+		}
+	}
+	if input.CredentialType != previousCredentialType &&
+		(activeMerchantCount > 0 || credentialCount > 0) {
+		return ShippingProvider{}, ErrResourceInUse
 	}
 	if builtIn && (input.IntegrationType != "built_in" || input.DistributionType != "built_in") {
 		return ShippingProvider{}, ErrConflict
@@ -215,13 +244,14 @@ func (r *PostgresRepository) UpdateShippingProvider(
 		    integration_type = $5,
 		    distribution_type = $6,
 		    requires_credential = $7,
-		    available = $8,
-		    display_order = $9,
+		    credential_type = $8,
+		    available = $9,
+		    display_order = $10,
 		    updated_at = now()
 		WHERE code = $1
 	`, code, input.Name, input.Logo, input.Description, input.IntegrationType,
-		input.DistributionType, input.IntegrationType == "managed_upstream",
-		input.Available, input.DisplayOrder)
+		input.DistributionType, input.CredentialType != providercredentials.CredentialTypeNone,
+		input.CredentialType, input.Available, input.DisplayOrder)
 	if err != nil {
 		return ShippingProvider{}, fmt.Errorf("update shipping provider: %w", err)
 	}
@@ -240,6 +270,7 @@ func (r *PostgresRepository) UpdateShippingProvider(
 				"description":       input.Description,
 				"integration_type":  input.IntegrationType,
 				"distribution_type": input.DistributionType,
+				"credential_type":   input.CredentialType,
 				"available":         input.Available,
 				"display_order":     input.DisplayOrder,
 			},
@@ -251,6 +282,123 @@ func (r *PostgresRepository) UpdateShippingProvider(
 		return ShippingProvider{}, fmt.Errorf("commit update shipping provider: %w", err)
 	}
 	return r.getShippingProvider(ctx, code)
+}
+
+func (r *PostgresRepository) DeleteShippingProvider(
+	ctx context.Context,
+	code string,
+	actorAlias string,
+	requestID string,
+) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin delete shipping provider: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var builtIn bool
+	var activeReleaseID *string
+	var metadata map[string]any
+	err = tx.QueryRow(ctx, `
+		SELECT built_in, active_release_id::text, jsonb_build_object(
+			'code', code,
+			'name', name,
+			'integration_type', integration_type,
+			'distribution_type', distribution_type,
+			'available', available
+		)
+		FROM shipping_integration_providers
+		WHERE code = $1
+		FOR UPDATE
+	`, code).Scan(&builtIn, &activeReleaseID, &metadata)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock shipping provider for delete: %w", err)
+	}
+	if builtIn || activeReleaseID != nil {
+		return ErrConflict
+	}
+
+	var dependencyCount int64
+	err = tx.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM tenant_active_shipping_providers WHERE provider_code = $1)
+			+ (SELECT count(*) FROM provider_credentials WHERE provider_code = $1)
+			+ (SELECT count(*) FROM tenant_shipping_preferences WHERE provider_code = $1)
+			+ (SELECT count(*) FROM partner_integration_submissions
+			   WHERE provider_code = $1 AND status IN ('published', 'suspended', 'superseded'))
+			+ (SELECT count(*) FROM fulfillment_shipments WHERE provider_code = $1)
+			+ (SELECT count(*) FROM tracking_shipments WHERE provider_code = $1)
+			+ (SELECT count(*) FROM rate_snapshots WHERE provider_code = $1)
+			+ (SELECT count(*) FROM provider_api_calls WHERE provider_code = $1)
+			+ (SELECT count(*) FROM provider_quota_ledger WHERE provider_code = $1)
+			+ (SELECT count(*) FROM provider_location_mappings WHERE provider_code = $1)
+			+ (SELECT count(*) FROM location_postal_codes WHERE provider_code = $1)
+			+ (SELECT count(*) FROM provider_location_sync_checkpoints WHERE provider_code = $1)
+			+ (SELECT count(*) FROM courier_service_aliases WHERE provider_code = $1)
+			+ (SELECT count(*) FROM couriers
+			   WHERE provider_code = $1 OR rate_provider_code = $1 OR tracking_provider_code = $1)
+	`, code).Scan(&dependencyCount)
+	if err != nil {
+		return fmt.Errorf("count shipping provider dependencies: %w", err)
+	}
+	if dependencyCount > 0 {
+		return ErrResourceInUse
+	}
+
+	var purgedSubmissions int64
+	var purgedAccessKeys int64
+	var purgedExplorerCredentials int64
+	if err := tx.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM partner_integration_submissions WHERE provider_code = $1),
+			(SELECT count(*) FROM partner_access_keys WHERE provider_code = $1),
+			(SELECT count(*) FROM partner_explorer_credentials WHERE provider_code = $1)
+	`, code).Scan(&purgedSubmissions, &purgedAccessKeys, &purgedExplorerCredentials); err != nil {
+		return fmt.Errorf("count shipping provider onboarding artifacts: %w", err)
+	}
+
+	if err := insertAudit(
+		ctx,
+		tx,
+		actorAlias,
+		"delete",
+		"shipping_provider",
+		code,
+		requestID,
+		map[string]any{
+			"deleted":                     metadata,
+			"purged_submissions":          purgedSubmissions,
+			"purged_access_keys":          purgedAccessKeys,
+			"purged_explorer_credentials": purgedExplorerCredentials,
+		},
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM partner_access_keys WHERE provider_code = $1
+	`, code); err != nil {
+		return fmt.Errorf("purge shipping provider access keys: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM partner_integration_submissions WHERE provider_code = $1
+	`, code); err != nil {
+		return fmt.Errorf("purge shipping provider submissions: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM shipping_integration_providers WHERE code = $1
+	`, code); err != nil {
+		if isForeignKeyViolation(err) {
+			return ErrResourceInUse
+		}
+		return fmt.Errorf("delete shipping provider: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit delete shipping provider: %w", err)
+	}
+	return nil
 }
 
 func (r *PostgresRepository) getShippingProvider(
@@ -278,6 +426,7 @@ func scanShippingProvider(row rowScanner) (ShippingProvider, error) {
 		&item.IntegrationType,
 		&item.DistributionType,
 		&item.RequiresCredential,
+		&item.CredentialType,
 		&item.Available,
 		&item.DisplayOrder,
 		&item.ActiveReleaseID,
@@ -292,5 +441,6 @@ func scanShippingProvider(row rowScanner) (ShippingProvider, error) {
 	); err != nil {
 		return ShippingProvider{}, fmt.Errorf("scan admin shipping provider: %w", err)
 	}
+	item.CredentialFields = providercredentials.FieldsForCredentialType(item.CredentialType)
 	return item, nil
 }

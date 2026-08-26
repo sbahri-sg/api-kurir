@@ -93,9 +93,18 @@ RajaOngkir BYOK tidak pernah memakai credential atau saldo Biteship platform.
 | `POST /api/v1/integrations/tracking/subscriptions` | Daftarkan AWB fulfillment |
 | `GET /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Baca snapshot tanpa hit provider |
 | `DELETE /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Hentikan tracking fulfillment merchant; snapshot tetap disimpan |
+| `POST /api/v1/integrations/shipments` | Buat booking shipment secara idempotent pada provider aktif |
+| `GET /api/v1/integrations/shipments/{shipment_id}` | Baca snapshot fulfillment tanpa membuat transaksi baru |
+| `POST /api/v1/integrations/shipments/{shipment_id}/pickup` | Jadwalkan pickup secara idempotent |
+| `GET /api/v1/integrations/shipments/{shipment_id}/label` | Ambil label secara cache-first |
+| `POST /api/v1/integrations/shipments/{shipment_id}/cancel` | Minta pembatalan secara idempotent |
+| `GET /api/v1/integrations/shipments/{shipment_id}/history` | Baca timeline audit fulfillment |
 
 Semua integrasi baru menggunakan base path `/api/v1`. Alias `/v1` tetap ada
 sementara untuk kompatibilitas.
+
+Detail payload, status, proteksi PII, dan aturan retry terdapat pada
+[Emisell Fulfillment Gateway](emisell-fulfillment-gateway.md).
 
 ## Rate dan tracking
 
@@ -112,6 +121,18 @@ origin=442&destination=1354&weight=1200
 
 Setiap opsi ongkir menyertakan field `logo` yang berasal dari master ekspedisi
 API Kurir, sehingga Main Service tidak perlu menyimpan URL logo sendiri.
+
+Kode ekspedisi dari seluruh provider dinormalisasi ke kode canonical API Kurir
+sebelum quote, snapshot tracking, webhook, atau pilihan seller diteruskan ke
+Emisell. Contohnya `J&T`, `J&T Express`, dan `jnt` selalu dikembalikan sebagai
+`jnt`. Alias provider mentah tidak menjadi bagian kontrak Main Service.
+
+Quote mentah provider juga selalu melewati kebijakan berat pusat sebelum
+menjadi opsi checkout. Minimum berat diterima menentukan apakah service boleh
+ditampilkan, minimum berat tagihan hanya memengaruhi harga, dan maksimum berat
+menyembunyikan service yang tidak memenuhi syarat. Aturan service spesifik
+mengalahkan fallback grup `regular`, `next_day`, `economy`, atau `cargo` dan
+berlaku sama untuk provider built-in, BYOK, hosted, maupun fallback.
 
 Main Service tidak mengirim `courier`. API Kurir membentuk daftar kurir dari
 service yang telah disimpan merchant melalui `PUT

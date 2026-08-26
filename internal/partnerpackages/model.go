@@ -22,8 +22,7 @@ type ManifestSummary struct {
 	ProviderCode       string   `json:"provider_code"`
 	ProviderName       string   `json:"provider_name"`
 	ContractVersion    string   `json:"contract_version"`
-	SandboxURL         string   `json:"sandbox_url"`
-	ProductionURL      string   `json:"production_url"`
+	BaseURL            string   `json:"base_url"`
 	DeclaredCapability []string `json:"declared_capabilities"`
 	DeclaredServices   []string `json:"declared_services"`
 }

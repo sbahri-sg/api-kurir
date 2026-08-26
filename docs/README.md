@@ -11,6 +11,7 @@ provider yang sedang aktif atau jenis header autentikasi.
 | RajaOngkir V2 compatible | Emisell/SDK RajaOngkir | `/api/v1` | Integer snapshot RajaOngkir lokal | Stable | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Emisell Legacy | Modul region-service lama | `/regions`, `/shipping` | Integer dump region-service | Compatibility | [`openapi/public.yaml`](../openapi/public.yaml) |
 | Pilihan layanan merchant | Extension Kurir Emisell | `/api/v1/integrations/shipping-services` | `courier_code:canonical_service_code` | Stable | [`merchant-shipping-services.md`](merchant-shipping-services.md) |
+| Fulfillment merchant | Main Service Emisell | `/api/v1/integrations/shipments*` | UUID API Kurir + ID provider terpisah | Beta | [`emisell-fulfillment-gateway.md`](emisell-fulfillment-gateway.md) |
 | Provider aktif merchant | Backend Extension Kurir Emisell | `/api/v1/integrations/providers` | `merchant_id` + `provider_code` | Stable | [`merchant-shipping-providers.md`](merchant-shipping-providers.md) |
 | Canonical/Internal | Dashboard dan service internal | `/v1` | `loc_idn_*` | Internal | [Kontrak API publik](api-contract.md) |
 | Emisell Merchant Gateway | Backend Emisell | `/api/v1` | `merchant_id` + UUID credential | Internal | [Merchant Gateway & RajaOngkir BYOK](emisell-merchant-gateway.md) |
@@ -44,6 +45,11 @@ Mulai dari dokumen berikut:
 9. [Strategi provider fulfillment](fulfillment-provider-landscape.md) untuk
    booking, pickup, label, COD, saldo, fallback transaksi, dan perbandingan
    RajaOngkir, Biteship, KiriminAja, Lincah, serta Mengantar.
+10. [Model credential provider](provider-credential-models.md) untuk form
+    dinamis API key, Bearer, key-secret, dan OAuth milik seller.
+11. [Emisell Fulfillment Gateway](emisell-fulfillment-gateway.md) untuk create
+    shipment, pickup, label, cancel, registrasi tracking otomatis,
+    rekonsiliasi, webhook, dan monitor lifecycle.
 
 Postman Collection pada dashboard memakai placeholder. Isi nilai secret hanya
 pada Postman Environment lokal, bukan pada Collection atau repository.
@@ -60,10 +66,11 @@ API Kurir.
 3. [Partner Event Webhook v1](partner-webhooks-v1.md).
 4. [Keamanan dan request signing](security-and-signing.md).
 5. [Sertifikasi partner](partner-certification.md).
-6. [Partner Portal dan publikasi extension](partner-portal.md).
-7. [Partner Integration Package](partner-integration-packages.md) untuk format
+6. [Partner Visual API Explorer](partner-visual-api-explorer.md).
+7. [Partner Portal dan publikasi extension](partner-portal.md).
+8. [Partner Integration Package](partner-integration-packages.md) untuk format
    ZIP, static validation, lifecycle versi, dan console review internal.
-8. [Provider Account API](provider-account-api-v1.md) untuk aktivasi koneksi
+9. [Provider Account API](provider-account-api-v1.md) untuk aktivasi koneksi
    seller setelah partner tersedia.
 
 Status `Draft` atau `contract-first` berarti spesifikasi target belum otomatis

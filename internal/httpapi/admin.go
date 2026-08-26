@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/emisell/api-kurir/internal/admin"
+	"github.com/emisell/api-kurir/internal/fulfillment"
 	"github.com/emisell/api-kurir/internal/tracking"
 	"github.com/labstack/echo/v5"
 )
@@ -113,6 +114,52 @@ func adminTrackingOperationDeleteHandler(repository admin.Repository) echo.Handl
 			return response
 		}
 		return c.NoContent(http.StatusNoContent)
+	}
+}
+
+func adminFulfillmentOperationListHandler(repository admin.Repository) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		limit, offset, err := adminPagination(c)
+		if err != nil {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), nil)
+		}
+		result, err := repository.ListFulfillmentOperations(
+			c.Request().Context(),
+			admin.FulfillmentOperationFilter{
+				Search: c.QueryParam("search"), Provider: c.QueryParam("provider"),
+				Status: c.QueryParam("status"), QueueStatus: c.QueryParam("queue_status"),
+				Limit: limit, Offset: offset,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, adminResponse(c, result))
+	}
+}
+
+func adminFulfillmentReconcileHandler(service *fulfillment.Service) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		if service == nil {
+			return fulfillmentNotConfigured(c)
+		}
+		id := strings.TrimSpace(c.Param("id"))
+		if !validUUID.MatchString(id) {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "ID shipment tidak valid.", nil)
+		}
+		err := service.ReconcileNow(c.Request().Context(), id)
+		switch {
+		case err == nil:
+			return c.JSON(http.StatusAccepted, adminResponse(c, map[string]any{
+				"shipment_id": id, "refresh_queued": true,
+			}))
+		case errors.Is(err, fulfillment.ErrShipmentNotFound):
+			return writeError(c, http.StatusNotFound, "SHIPMENT_NOT_FOUND", "Shipment tidak ditemukan.", nil)
+		case errors.Is(err, fulfillment.ErrShipmentFinal):
+			return writeError(c, http.StatusConflict, "SHIPMENT_FINAL", "Shipment final atau belum memiliki order provider.", nil)
+		default:
+			return err
+		}
 	}
 }
 
@@ -443,7 +490,7 @@ func writeAdminRepositoryError(c *echo.Context, err error) error {
 			c,
 			http.StatusConflict,
 			"ADMIN_RESOURCE_IN_USE",
-			"Provider masih digunakan merchant aktif dan belum dapat dinonaktifkan.",
+			"Provider masih mempunyai merchant, credential seller, konfigurasi, riwayat operasional, atau release yang pernah dipublikasikan.",
 			nil,
 		)
 	case errors.Is(err, admin.ErrConflict):

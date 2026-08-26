@@ -322,6 +322,18 @@ func (r logoRepository) FindActiveCourierLogos(
 	return r.logos, nil
 }
 
+type presentationRepository struct {
+	staticRepository
+	presentations map[string]CourierPresentation
+}
+
+func (r presentationRepository) FindActiveCourierPresentations(
+	context.Context,
+	[]string,
+) (map[string]CourierPresentation, error) {
+	return r.presentations, nil
+}
+
 func TestServiceEnrichesRateWithCourierMasterLogo(t *testing.T) {
 	t.Parallel()
 
@@ -346,6 +358,64 @@ func TestServiceEnrichesRateWithCourierMasterLogo(t *testing.T) {
 	if len(results) != 1 ||
 		results[0].Card.CourierLogo != "https://api-kurir.emisell.com/courier-logos/jne.webp" {
 		t.Fatalf("unexpected enriched result: %#v", results)
+	}
+}
+
+func TestServiceUsesCourierMasterNameForProviderCheckoutResult(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	provider := &chainQuoteProvider{code: "rajaongkir", quotes: []ProviderQuote{{
+		ProviderCode: "rajaongkir", CourierCode: "jne",
+		CourierName: "Jalur Nugraha Ekakurir", ServiceCode: "REG",
+		ServiceName: "Regular Service", Cost: 15_000,
+		VerificationStatus: "observed", FetchedAt: now,
+		ExpiresAt: now.Add(time.Hour),
+	}}}
+	service := NewService(
+		presentationRepository{presentations: map[string]CourierPresentation{
+			"jne": {
+				Name: "JNE",
+				Logo: "https://api-kurir.emisell.com/courier-logos/jne.webp",
+				ServiceNames: map[string]string{
+					"REG": "JNE Regular",
+				},
+			},
+		}},
+		time.Second,
+		WithProviderFallback(
+			provider,
+			&providerAwareSnapshots{quotes: make(map[string][]ProviderQuote)},
+			immediateLocker{},
+			time.Second,
+		),
+	)
+
+	results, err := service.Calculate(context.Background(), Request{
+		Origin: "loc_origin", Destination: "loc_destination",
+		ActualWeightGrams: 1_000, Couriers: []string{"jne"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Card.CourierName != "JNE" ||
+		results[0].Card.CourierLogo == "" || results[0].Card.ServiceName != "Regular" {
+		t.Fatalf("unexpected checkout presentation: %#v", results)
+	}
+}
+
+func TestConciseServiceName(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"JNE Regular": "Regular",
+		"JNE - YES":   "YES",
+		"OKE Ekonomi": "OKE Ekonomi",
+	}
+	for input, expected := range tests {
+		if actual := conciseServiceName("JNE", input); actual != expected {
+			t.Errorf("conciseServiceName(%q)=%q want %q", input, actual, expected)
+		}
 	}
 }
 

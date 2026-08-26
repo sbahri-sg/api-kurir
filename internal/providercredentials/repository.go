@@ -13,6 +13,7 @@ var (
 )
 
 type Repository interface {
+	CredentialType(ctx context.Context, providerCode string) (string, error)
 	List(ctx context.Context) ([]Credential, error)
 	ListForTenant(ctx context.Context, tenantID string) ([]Credential, error)
 	Create(ctx context.Context, input CreateInput) (Credential, error)

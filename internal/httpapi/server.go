@@ -15,9 +15,11 @@ import (
 	"github.com/emisell/api-kurir/internal/admin"
 	"github.com/emisell/api-kurir/internal/apikeys"
 	"github.com/emisell/api-kurir/internal/couriers"
+	"github.com/emisell/api-kurir/internal/fulfillment"
 	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/merchantproviders"
 	"github.com/emisell/api-kurir/internal/merchantshipping"
+	"github.com/emisell/api-kurir/internal/partnerexplorer"
 	"github.com/emisell/api-kurir/internal/partnerpackages"
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/rates"
@@ -38,6 +40,25 @@ type Server struct {
 	Echo *echo.Echo
 }
 
+type serverConfig struct {
+	fulfillmentService       *fulfillment.Service
+	managedPartnerConnectors []partnerexplorer.ManagedConnector
+}
+
+type ServerOption func(*serverConfig)
+
+func WithFulfillmentService(service *fulfillment.Service) ServerOption {
+	return func(config *serverConfig) {
+		config.fulfillmentService = service
+	}
+}
+
+func WithManagedPartnerConnector(connector partnerexplorer.ManagedConnector) ServerOption {
+	return func(config *serverConfig) {
+		config.managedPartnerConnectors = append(config.managedPartnerConnectors, connector)
+	}
+}
+
 func New(
 	pool *pgxpool.Pool,
 	rateService *rates.Service,
@@ -51,11 +72,20 @@ func New(
 	webhookSettingsService *webhooksettings.Service,
 	merchantProviderService *merchantproviders.Service,
 	merchantShippingService *merchantshipping.Service,
+	providerCredentialCipher *providercredentials.Cipher,
 	apiKeys []string,
 	adminAPIKeys []string,
 	logger *slog.Logger,
 	appEnv string,
+	options ...ServerOption,
 ) *Server {
+	config := serverConfig{}
+	for _, option := range options {
+		if option != nil {
+			option(&config)
+		}
+	}
+	fulfillmentService := config.fulfillmentService
 	e := echo.New()
 	e.Use(middleware.Recover())
 	e.Use(securityHeadersMiddleware(appEnv))
@@ -132,6 +162,7 @@ func New(
 		apiKeys,
 		customerAPIKeyService,
 		immediateTrackingAdapter,
+		fulfillmentService,
 	)
 	// Compatibility alias for Emisell clients deployed before the API prefix
 	// was standardized. New integrations must use /api/v1/integrations.
@@ -144,6 +175,7 @@ func New(
 		apiKeys,
 		customerAPIKeyService,
 		immediateTrackingAdapter,
+		fulfillmentService,
 	)
 	if legacyRepository, ok := locationRepository.(legacyRegionStore); ok {
 		registerLegacyRegionRoutes(
@@ -158,6 +190,19 @@ func New(
 	partnerPackageService := partnerpackages.NewService(
 		partnerpackages.NewPostgresRepository(pool),
 	)
+	partnerExplorerOptions := make([]partnerexplorer.Option, 0, len(config.managedPartnerConnectors))
+	for _, connector := range config.managedPartnerConnectors {
+		partnerExplorerOptions = append(
+			partnerExplorerOptions,
+			partnerexplorer.WithManagedConnector(connector),
+		)
+	}
+	partnerExplorerService := partnerexplorer.NewService(
+		partnerexplorer.NewPostgresRepository(pool),
+		providerCredentialCipher,
+		partnerexplorer.NewHTTPExecutor(10*time.Second),
+		partnerExplorerOptions...,
+	)
 	adminGroup := e.Group("/v1/admin")
 	adminGroup.Use(apiKeyMiddleware(adminAPIKeys))
 	adminGroup.GET("/overview", adminOverviewHandler(adminRepository))
@@ -171,12 +216,21 @@ func New(
 		adminTrackingOperationListHandler(adminRepository, trackingService),
 	)
 	adminGroup.DELETE("/tracking-operations/:id", adminTrackingOperationDeleteHandler(adminRepository))
+	adminGroup.GET(
+		"/fulfillment-operations",
+		adminFulfillmentOperationListHandler(adminRepository),
+	)
+	adminGroup.POST(
+		"/fulfillment-operations/:id/reconcile",
+		adminFulfillmentReconcileHandler(fulfillmentService),
+	)
 	adminGroup.GET("/rate-snapshots", adminRateSnapshotListHandler(adminRepository))
 	adminGroup.GET("/location-mappings", adminLocationMappingListHandler(adminRepository))
 	adminGroup.GET("/provider-quotas", adminProviderQuotaListHandler(adminRepository))
 	adminGroup.GET("/shipping-providers", adminShippingProviderListHandler(adminRepository))
 	adminGroup.POST("/shipping-providers", adminShippingProviderCreateHandler(adminRepository))
 	adminGroup.PUT("/shipping-providers/:code", adminShippingProviderUpdateHandler(adminRepository))
+	adminGroup.DELETE("/shipping-providers/:code", adminShippingProviderDeleteHandler(adminRepository))
 	adminGroup.GET(
 		"/shipping-providers/:code/partner-access-keys",
 		adminPartnerAccessKeyListHandler(partnerPackageService),
@@ -205,7 +259,9 @@ func New(
 		"/partner-submissions/:id/status",
 		adminPartnerSubmissionStatusHandler(partnerPackageService),
 	)
-	registerPartnerPortalRoutes(e.Group("/partner/v1"), partnerPackageService)
+	registerPartnerPortalRoutes(
+		e.Group("/partner/v1"), partnerPackageService, partnerExplorerService,
+	)
 	adminGroup.GET("/api-keys", adminAPIKeyListHandler(customerAPIKeyService))
 	adminGroup.POST("/api-keys", adminAPIKeyCreateHandler(customerAPIKeyService))
 	adminGroup.POST("/api-keys/:id/revoke", adminAPIKeyRevokeHandler(customerAPIKeyService))
@@ -249,11 +305,17 @@ func registerTenantIntegrationRoutes(
 	trackingService *tracking.Service,
 	apiKeys []string,
 	serviceKeyAuthenticator customerKeyAuthenticator,
-	immediateTrackingAdapters ...tracking.Adapter,
+	optionalServices ...any,
 ) {
 	var immediateTrackingAdapter tracking.Adapter
-	if len(immediateTrackingAdapters) > 0 {
-		immediateTrackingAdapter = immediateTrackingAdapters[0]
+	var fulfillmentService *fulfillment.Service
+	for _, optional := range optionalServices {
+		switch service := optional.(type) {
+		case tracking.Adapter:
+			immediateTrackingAdapter = service
+		case *fulfillment.Service:
+			fulfillmentService = service
+		}
 	}
 	integrationGroup.Use(serviceAPIKeyMiddleware(apiKeys, serviceKeyAuthenticator))
 	integrationGroup.Use(merchantContextMiddleware(true))
@@ -305,6 +367,12 @@ func registerTenantIntegrationRoutes(
 		"/tracking/subscriptions/:fulfillment_id",
 		trackingSubscriptionDeleteHandler(trackingService),
 	)
+	integrationGroup.POST("/shipments", fulfillmentCreateHandler(fulfillmentService))
+	integrationGroup.GET("/shipments/:shipment_id", fulfillmentGetHandler(fulfillmentService))
+	integrationGroup.POST("/shipments/:shipment_id/pickup", fulfillmentPickupHandler(fulfillmentService))
+	integrationGroup.GET("/shipments/:shipment_id/label", fulfillmentLabelHandler(fulfillmentService))
+	integrationGroup.POST("/shipments/:shipment_id/cancel", fulfillmentCancelHandler(fulfillmentService))
+	integrationGroup.GET("/shipments/:shipment_id/history", fulfillmentHistoryHandler(fulfillmentService))
 }
 
 func registerCustomerRoutes(

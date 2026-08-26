@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,10 +14,11 @@ import (
 )
 
 var (
-	ErrUnsupportedProvider = errors.New("provider is not supported")
-	ErrInvalidSecret       = errors.New("provider API key is invalid")
-	ErrInvalidTenant       = errors.New("tenant ID is invalid")
-	ErrInvalidDailyLimit   = errors.New("provider daily limit is invalid")
+	ErrUnsupportedProvider             = errors.New("provider is not supported")
+	ErrInvalidSecret                   = errors.New("provider API key is invalid")
+	ErrInvalidTenant                   = errors.New("tenant ID is invalid")
+	ErrInvalidDailyLimit               = errors.New("provider daily limit is invalid")
+	ErrCredentialCapabilityUnavailable = errors.New("provider credential capability is unavailable")
 )
 
 var supportedProviderCodes = map[string]struct{}{
@@ -24,18 +26,37 @@ var supportedProviderCodes = map[string]struct{}{
 	"biteship":   {},
 }
 
-var tenantProviderCodes = map[string]struct{}{
-	"rajaongkir": {},
-}
-
 type Validator interface {
 	Validate(ctx context.Context, providerCode, secret string) error
+}
+
+type BundleValidator interface {
+	ValidateCredentials(
+		ctx context.Context,
+		providerCode string,
+		credentialType string,
+		values map[string]string,
+	) error
+}
+
+type encryptedCredentialBundle struct {
+	Version int               `json:"version"`
+	Type    string            `json:"type"`
+	Values  map[string]string `json:"values"`
 }
 
 type Resolver interface {
 	ResolveProviderCredential(
 		ctx context.Context,
 		providerCode string,
+	) (secret, credentialAlias string, dailyLimit int64, err error)
+}
+
+type CapabilityResolver interface {
+	ResolveProviderCredentialForCapability(
+		ctx context.Context,
+		providerCode string,
+		capability string,
 	) (secret, credentialAlias string, dailyLimit int64, err error)
 }
 
@@ -74,13 +95,24 @@ func (s *Service) AddForTenant(
 	dailyLimit int64,
 	actor, requestID string,
 ) (Credential, error) {
+	return s.AddForTenantCredentials(
+		ctx, tenantID, providerCode,
+		map[string]string{"api_key": secret},
+		dailyLimit, actor, requestID,
+	)
+}
+
+func (s *Service) AddForTenantCredentials(
+	ctx context.Context,
+	tenantID, providerCode string,
+	values map[string]string,
+	dailyLimit int64,
+	actor, requestID string,
+) (Credential, error) {
 	tenantID = strings.TrimSpace(tenantID)
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	if !validTenantID(tenantID) {
 		return Credential{}, ErrInvalidTenant
-	}
-	if _, supported := tenantProviderCodes[providerCode]; !supported {
-		return Credential{}, ErrUnsupportedProvider
 	}
 	if dailyLimit == 0 {
 		dailyLimit = DefaultDailyLimit
@@ -88,7 +120,28 @@ func (s *Service) AddForTenant(
 	if dailyLimit < 1 || dailyLimit > 100_000_000 {
 		return Credential{}, ErrInvalidDailyLimit
 	}
-	return s.add(ctx, tenantID, providerCode, secret, dailyLimit, actor, requestID)
+	credentialType, err := s.repository.CredentialType(ctx, providerCode)
+	if err != nil {
+		return Credential{}, err
+	}
+	normalized, err := NormalizeCredentialValues(credentialType, values)
+	if err != nil {
+		return Credential{}, ErrInvalidSecret
+	}
+	if err := s.validateCredentialValues(ctx, providerCode, credentialType, normalized); err != nil {
+		return Credential{}, fmt.Errorf("%w: %v", ErrInvalidSecret, err)
+	}
+	payload, err := json.Marshal(encryptedCredentialBundle{
+		Version: 1, Type: credentialType, Values: normalized,
+	})
+	if err != nil {
+		return Credential{}, err
+	}
+	displaySource := credentialDisplaySource(credentialType, normalized)
+	return s.store(
+		ctx, tenantID, providerCode, payload, displaySource,
+		dailyLimit, actor, requestID,
+	)
 }
 
 func (s *Service) add(
@@ -112,18 +165,35 @@ func (s *Service) add(
 		return Credential{}, fmt.Errorf("%w: %v", ErrInvalidSecret, err)
 	}
 
-	fingerprint := sha256.Sum256([]byte(secret))
+	return s.store(
+		ctx, tenantID, providerCode, []byte(secret), secret,
+		dailyLimit, actor, requestID,
+	)
+}
+
+func (s *Service) store(
+	ctx context.Context,
+	tenantID, providerCode string,
+	payload []byte,
+	displaySource string,
+	dailyLimit int64,
+	actor, requestID string,
+) (Credential, error) {
+	if len(payload) == 0 || len(displaySource) < 8 || len(displaySource) > 1024 {
+		return Credential{}, ErrInvalidSecret
+	}
+	fingerprint := sha256.Sum256(payload)
 	fingerprintHex := hex.EncodeToString(fingerprint[:])
 	alias := providerCode + "-" + fingerprintHex[:8]
 	prefixLength := 4
-	if len(secret)-4 < prefixLength {
-		prefixLength = len(secret) - 4
+	if len(displaySource)-4 < prefixLength {
+		prefixLength = len(displaySource) - 4
 	}
 	if prefixLength < 1 {
 		return Credential{}, ErrInvalidSecret
 	}
 	associatedData := []byte(providerCode + ":" + fingerprintHex)
-	ciphertext, err := s.cipher.Encrypt([]byte(secret), associatedData)
+	ciphertext, err := s.cipher.Encrypt(payload, associatedData)
 	if err != nil {
 		return Credential{}, err
 	}
@@ -136,8 +206,8 @@ func (s *Service) add(
 		TenantID:            tenantID,
 		ProviderCode:        providerCode,
 		CredentialAlias:     alias,
-		KeyPrefix:           secret[:prefixLength],
-		KeyLastFour:         secret[len(secret)-4:],
+		KeyPrefix:           displaySource[:prefixLength],
+		KeyLastFour:         displaySource[len(displaySource)-4:],
 		SecretCiphertext:    ciphertext,
 		SecretFingerprint:   fingerprint[:],
 		DailyLimit:          dailyLimit,
@@ -145,6 +215,44 @@ func (s *Service) add(
 		CreatedBy:           actor,
 		RequestID:           requestID,
 	})
+}
+
+func (s *Service) validateCredentialValues(
+	ctx context.Context,
+	providerCode string,
+	credentialType string,
+	values map[string]string,
+) error {
+	if validator, ok := s.validator.(BundleValidator); ok {
+		return validator.ValidateCredentials(ctx, providerCode, credentialType, values)
+	}
+	var secret string
+	switch credentialType {
+	case CredentialTypeAPIKey:
+		secret = values["api_key"]
+	case CredentialTypeCapabilityAPIKeys:
+		secret = values["shipping_api_key"]
+	case CredentialTypeBearerToken:
+		secret = values["token"]
+	default:
+		return ErrUnsupportedProvider
+	}
+	return s.validator.Validate(ctx, providerCode, secret)
+}
+
+func credentialDisplaySource(credentialType string, values map[string]string) string {
+	switch credentialType {
+	case CredentialTypeOAuth2ClientCredentials:
+		return values["client_id"]
+	case CredentialTypeAPIKeySecret:
+		return values["api_key"]
+	case CredentialTypeCapabilityAPIKeys:
+		return values["shipping_api_key"]
+	case CredentialTypeBearerToken:
+		return values["token"]
+	default:
+		return values["api_key"]
+	}
 }
 
 func providerValidationQuotaCost(providerCode string) int64 {
@@ -167,8 +275,8 @@ func (s *Service) DisableForTenantProvider(
 	if !validTenantID(tenantID) {
 		return ErrInvalidTenant
 	}
-	if _, supported := tenantProviderCodes[providerCode]; !supported {
-		return ErrUnsupportedProvider
+	if _, err := s.repository.CredentialType(ctx, providerCode); err != nil {
+		return err
 	}
 	return s.repository.DisableForTenantProvider(
 		ctx,
@@ -183,10 +291,71 @@ func (s *Service) ResolveProviderCredential(
 	ctx context.Context,
 	providerCode string,
 ) (string, string, int64, error) {
+	values, credentialType, alias, dailyLimit, err := s.ResolveProviderCredentialValues(
+		ctx, providerCode,
+	)
+	if err != nil {
+		return "", "", 0, err
+	}
+	var secret string
+	switch credentialType {
+	case CredentialTypeAPIKey:
+		secret = values["api_key"]
+	case CredentialTypeCapabilityAPIKeys:
+		secret = values["shipping_api_key"]
+	case CredentialTypeBearerToken:
+		secret = values["token"]
+	default:
+		return "", "", 0, ErrUnsupportedProvider
+	}
+	if secret == "" {
+		return "", "", 0, ErrInvalidSecret
+	}
+	return secret, alias, dailyLimit, nil
+}
+
+func (s *Service) ResolveProviderCredentialForCapability(
+	ctx context.Context,
+	providerCode string,
+	capability string,
+) (string, string, int64, error) {
+	values, credentialType, alias, dailyLimit, err := s.ResolveProviderCredentialValues(
+		ctx, providerCode,
+	)
+	if err != nil {
+		return "", "", 0, err
+	}
+	capability = strings.ToLower(strings.TrimSpace(capability))
+	var secret string
+	switch credentialType {
+	case CredentialTypeCapabilityAPIKeys:
+		switch capability {
+		case "rates:read", "tracking:read":
+			secret = values["shipping_api_key"]
+		case "shipments:write", "shipments:read", "pickup:write", "labels:read", "shipments:cancel":
+			secret = values["delivery_api_key"]
+		}
+	case CredentialTypeAPIKey:
+		if capability == "rates:read" || capability == "tracking:read" {
+			secret = values["api_key"]
+		}
+	case CredentialTypeBearerToken:
+		secret = values["token"]
+	}
+	if secret == "" {
+		return "", "", 0, ErrCredentialCapabilityUnavailable
+	}
+	return secret, alias, dailyLimit, nil
+}
+
+func (s *Service) ResolveProviderCredentialValues(
+	ctx context.Context,
+	providerCode string,
+) (map[string]string, string, string, int64, error) {
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	stored, err := s.repository.ResolveActive(ctx, providerCode)
 	if err != nil {
-		return "", "", 0, err
+		return nil, "", "", 0, err
 	}
 	fingerprintHex := hex.EncodeToString(stored.Fingerprint)
 	plaintext, err := s.cipher.Decrypt(
@@ -194,9 +363,14 @@ func (s *Service) ResolveProviderCredential(
 		[]byte(providerCode+":"+fingerprintHex),
 	)
 	if err != nil {
-		return "", "", 0, err
+		return nil, "", "", 0, err
 	}
-	return string(plaintext), stored.CredentialAlias, stored.DailyLimit, nil
+	var bundle encryptedCredentialBundle
+	if json.Unmarshal(plaintext, &bundle) == nil && bundle.Version == 1 && bundle.Type != "" {
+		return bundle.Values, bundle.Type, stored.CredentialAlias, stored.DailyLimit, nil
+	}
+	return map[string]string{"api_key": string(plaintext)}, CredentialTypeAPIKey,
+		stored.CredentialAlias, stored.DailyLimit, nil
 }
 
 // ActiveCredentialID resolves the credential selected internally for a
@@ -274,9 +448,10 @@ type PlatformCredentialAuthorizer interface {
 }
 
 type StaticCredential struct {
-	Secret          string
-	CredentialAlias string
-	DailyLimit      int64
+	Secret            string
+	CapabilitySecrets map[string]string
+	CredentialAlias   string
+	DailyLimit        int64
 }
 
 func NewStaticFallbackResolver(
@@ -334,4 +509,69 @@ func (r *StaticFallbackResolver) ResolveProviderCredential(
 		return "", "", 0, ErrNoActiveCredential
 	}
 	return fallback.Secret, fallback.CredentialAlias, fallback.DailyLimit, nil
+}
+
+func (r *StaticFallbackResolver) ResolveProviderCredentialForCapability(
+	ctx context.Context,
+	providerCode string,
+	capability string,
+) (string, string, int64, error) {
+	if primary, ok := r.primary.(CapabilityResolver); ok {
+		secret, alias, limit, err := primary.ResolveProviderCredentialForCapability(
+			ctx, providerCode, capability,
+		)
+		if err == nil {
+			return secret, alias, limit, nil
+		}
+		if !errors.Is(err, ErrNoActiveCredential) &&
+			!errors.Is(err, ErrCredentialCapabilityUnavailable) {
+			return "", "", 0, err
+		}
+		if identity, tenantRequest := tenancy.FromContext(ctx); tenantRequest {
+			if identity.ProviderCredentialID != "" || r.platformAuthorizer == nil {
+				return "", "", 0, err
+			}
+			allowed, authorizeErr := r.platformAuthorizer.AllowsPlatformCredential(ctx, identity.TenantID)
+			if authorizeErr != nil {
+				return "", "", 0, authorizeErr
+			}
+			if !allowed {
+				return "", "", 0, err
+			}
+			secret, alias, limit, platformErr := primary.ResolveProviderCredentialForCapability(
+				tenancy.WithoutIdentity(ctx), providerCode, capability,
+			)
+			if platformErr == nil {
+				return secret, alias, limit, nil
+			}
+			if !errors.Is(platformErr, ErrNoActiveCredential) &&
+				!errors.Is(platformErr, ErrCredentialCapabilityUnavailable) {
+				return "", "", 0, platformErr
+			}
+		}
+	}
+	if identity, tenantRequest := tenancy.FromContext(ctx); tenantRequest {
+		if identity.ProviderCredentialID != "" || r.platformAuthorizer == nil {
+			return "", "", 0, ErrNoActiveCredential
+		}
+		allowed, err := r.platformAuthorizer.AllowsPlatformCredential(ctx, identity.TenantID)
+		if err != nil {
+			return "", "", 0, err
+		}
+		if !allowed {
+			return "", "", 0, ErrNoActiveCredential
+		}
+	}
+	fallback, ok := r.fallbacks[providerCode]
+	if !ok {
+		return "", "", 0, ErrNoActiveCredential
+	}
+	secret := strings.TrimSpace(fallback.CapabilitySecrets[capability])
+	if secret == "" && (capability == "rates:read" || capability == "tracking:read") {
+		secret = strings.TrimSpace(fallback.Secret)
+	}
+	if secret == "" {
+		return "", "", 0, ErrCredentialCapabilityUnavailable
+	}
+	return secret, fallback.CredentialAlias, fallback.DailyLimit, nil
 }

@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -18,7 +19,13 @@ import {
 	type PartnerSubmissionStatus,
 	type PartnerAccessKey,
 	type PartnerIdentity,
+	type PartnerExplorerCatalog,
+	type PartnerExplorerCredentialState,
+	type PartnerExplorerExecution,
+	type PartnerExplorerOperation,
+	type PartnerExplorerRun,
   type ProviderCredential,
+  type ProviderCredentialType,
   type ProviderQuota,
   type ShippingProvider,
   type ShippingProviderCreateInput,
@@ -28,6 +35,8 @@ import {
   type TrackingShipment,
 	type TrackingOperation,
 	type TrackingOperationPage,
+	type FulfillmentOperation,
+	type FulfillmentOperationPage,
   type WebhookSettings,
   type WebhookTestResult,
 } from "./api";
@@ -44,6 +53,7 @@ type Tab =
   | "check-rate"
   | "tracking"
 	| "tracking-operations"
+	| "fulfillment-operations"
   | "couriers"
   | "rates"
   | "mappings"
@@ -79,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
       { value: "check-rate", label: "Cek Ongkir" },
       { value: "tracking", label: "Cek Resi" },
 	  { value: "tracking-operations", label: "Monitor Resi" },
+	  { value: "fulfillment-operations", label: "Monitor Fulfillment" },
     ],
   },
   {
@@ -652,6 +663,7 @@ function AdminDashboard() {
     "check-rate": "Cek Ongkir",
     tracking: "Cek Resi",
 	"tracking-operations": "Monitor Resi",
+	"fulfillment-operations": "Monitor Fulfillment",
     couriers: "Ekspedisi & Service",
     rates: "Snapshot Tarif",
     mappings: "Mapping Lokasi Provider",
@@ -869,6 +881,10 @@ function AdminDashboard() {
 
 		{tab === "tracking-operations" && (
 		  <TrackingOperationsTable api={api} couriers={couriers} onError={setError} />
+		)}
+
+		{tab === "fulfillment-operations" && (
+		  <FulfillmentOperationsTable api={api} onError={setError} />
 		)}
 
         {tab === "couriers" && (
@@ -1316,7 +1332,7 @@ type ProviderDraft = {
   logo: string;
   description: string;
   integration_type: "built_in" | "managed_upstream" | "partner_hosted";
-  distribution_type: "built_in" | "public" | "limited" | "private";
+  credential_type: ProviderCredentialType;
   available: boolean;
   display_order: number;
 };
@@ -1327,10 +1343,32 @@ const EMPTY_PROVIDER_DRAFT: ProviderDraft = {
   logo: "https://api-kurir.emisell.com/provider-logos/default.svg",
   description: "",
   integration_type: "partner_hosted",
-  distribution_type: "public",
+  credential_type: "none",
   available: false,
   display_order: 100,
 };
+
+function credentialTypeLabel(value: ProviderCredentialType) {
+  switch (value) {
+    case "api_key": return "API key";
+    case "capability_api_keys": return "API key per fungsi";
+    case "bearer_token": return "Bearer token";
+    case "api_key_secret": return "API key + API secret";
+    case "oauth2_client_credentials": return "OAuth client credentials";
+    default: return "Dikelola platform";
+  }
+}
+
+function credentialFieldPreview(value: ProviderCredentialType) {
+  switch (value) {
+    case "api_key": return "API key";
+    case "capability_api_keys": return "Shipping API key · Delivery API key (opsional)";
+    case "bearer_token": return "Access token";
+    case "api_key_secret": return "API key · API secret";
+    case "oauth2_client_credentials": return "Client ID · Client secret";
+    default: return "Tidak ada field credential seller";
+  }
+}
 
 function ProviderLogo({
   source,
@@ -1414,6 +1452,7 @@ function ProviderManagement({
   const [accessKeys, setAccessKeys] = useState<PartnerAccessKey[]>([]);
   const [generatedAccessSecret, setGeneratedAccessSecret] = useState("");
   const [accessLoading, setAccessLoading] = useState(false);
+  const [deletingCode, setDeletingCode] = useState<string | null>(null);
 
   function openCreate() {
     setEditingCode(null);
@@ -1428,7 +1467,7 @@ function ProviderManagement({
       logo: provider.logo,
       description: provider.description,
       integration_type: provider.integration_type,
-      distribution_type: provider.distribution_type,
+      credential_type: provider.credential_type,
       available: provider.available,
       display_order: provider.display_order,
     });
@@ -1484,6 +1523,24 @@ function ProviderManagement({
     }
   }
 
+  async function deleteProvider(provider: ShippingProvider) {
+    if (provider.built_in) return;
+    const confirmed = window.confirm(
+      `Hapus provider ${provider.name} secara permanen? ${provider.release_count > 0 ? `${provider.release_count} package pengujian, Partner Access Key, dan credential Explorer ikut dihapus. ` : ""}Tindakan ini tidak dapat dibatalkan.`,
+    );
+    if (!confirmed) return;
+    setDeletingCode(provider.code);
+    onError("");
+    try {
+      await api.deleteShippingProvider(provider.code);
+      onChange(await api.shippingProviders());
+    } catch (deleteError) {
+      onError(getErrorMessage(deleteError));
+    } finally {
+      setDeletingCode(null);
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft) return;
@@ -1496,7 +1553,7 @@ function ProviderManagement({
           logo: draft.logo.trim(),
           description: draft.description.trim(),
           integration_type: draft.integration_type,
-          distribution_type: draft.distribution_type,
+          credential_type: draft.credential_type,
           available: draft.available,
           display_order: draft.display_order,
         };
@@ -1508,7 +1565,7 @@ function ProviderManagement({
           logo: draft.logo.trim(),
           description: draft.description.trim(),
           integration_type: draft.integration_type === "built_in" ? "partner_hosted" : draft.integration_type,
-          distribution_type: draft.distribution_type === "built_in" ? "public" : draft.distribution_type,
+          credential_type: draft.credential_type,
           display_order: draft.display_order,
         };
         await api.createShippingProvider(input);
@@ -1609,8 +1666,9 @@ function ProviderManagement({
                       {provider.available ? "tersedia" : "belum tersedia"}
                     </span>
                     <small>
-                      {provider.integration_type.replaceAll("_", " ")} · {provider.distribution_type}
+                      {provider.integration_type.replaceAll("_", " ")}
                     </small>
+                    <small>Credential: {credentialTypeLabel(provider.credential_type)}</small>
                     <small>
                       {provider.active_release_version
                         ? `Release aktif v${provider.active_release_version}`
@@ -1650,6 +1708,31 @@ function ProviderManagement({
                       >
                         Edit
                       </button>
+                      {!provider.built_in && (
+                        <button
+                          className="table-action table-action-danger"
+                          disabled={
+                            deletingCode === provider.code ||
+                            provider.active_merchant_count > 0 ||
+                            provider.installed_merchant_count > 0 ||
+                            provider.credential_count > 0 ||
+                            provider.active_release_id !== null
+                          }
+                          title={
+                            provider.active_merchant_count > 0 ||
+                            provider.installed_merchant_count > 0 ||
+                            provider.credential_count > 0 ||
+                            provider.active_release_id !== null
+                              ? "Provider masih aktif atau mempunyai data merchant."
+                              : provider.release_count > 0
+                                ? "Hapus provider beserta seluruh artefak pengujian"
+                                : "Hapus provider secara permanen"
+                          }
+                          onClick={() => void deleteProvider(provider)}
+                        >
+                          {deletingCode === provider.code ? "Menghapus…" : "Hapus"}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1720,6 +1803,10 @@ function ProviderManagement({
                     setDraft({
                       ...draft,
                       integration_type: event.target.value as ProviderDraft["integration_type"],
+                      credential_type:
+                        event.target.value === "managed_upstream"
+                          ? draft.credential_type === "none" ? "api_key" : draft.credential_type
+                          : event.target.value === "built_in" ? "none" : draft.credential_type,
                     })
                   }
                 >
@@ -1730,24 +1817,32 @@ function ProviderManagement({
                 <small>Managed upstream memakai adapter API Kurir; partner-hosted memakai package tersertifikasi.</small>
               </label>
               <label>
-                Distribusi
+                Model credential seller
                 <select
-                  value={draft.distribution_type}
-                  disabled={draft.distribution_type === "built_in"}
+                  value={draft.credential_type}
+                  disabled={draft.integration_type === "built_in"}
                   onChange={(event) =>
                     setDraft({
                       ...draft,
-                      distribution_type: event.target.value as ProviderDraft["distribution_type"],
+                      credential_type: event.target.value as ProviderCredentialType,
                     })
                   }
                 >
-                  {draft.distribution_type === "built_in" && <option value="built_in">Built-in</option>}
-                  <option value="public">Public</option>
-                  <option value="limited">Limited</option>
-                  <option value="private">Private</option>
+                  <option value="none">Tidak ada credential seller</option>
+                  <option value="api_key">Satu API key</option>
+                  <option value="capability_api_keys">API key shipping + delivery</option>
+                  <option value="bearer_token">Bearer token</option>
+                  <option value="api_key_secret">API key + API secret</option>
+                  <option value="oauth2_client_credentials">OAuth client ID + client secret</option>
                 </select>
-                <small>Public tampil umum; limited/private hanya untuk merchant yang diberi akses.</small>
+                <small>Emisell merender field aktivasi merchant berdasarkan model ini.</small>
               </label>
+              {draft.integration_type !== "built_in" && draft.credential_type !== "none" && (
+                <div className="provider-key-note">
+                  <strong>Preview form merchant</strong>
+                  <span>{credentialFieldPreview(draft.credential_type)}</span>
+                </div>
+              )}
               <label className="span-two">
                 Nama provider
                 <input
@@ -2104,6 +2199,7 @@ function PartnerPortal() {
         </a>
         <nav className="partner-portal-nav" aria-label="Navigasi Partner Portal">
           <a href="#partner-package">Package</a>
+          <a href="#partner-api-explorer">API Explorer</a>
           <a href="#partner-integration-docs">Dokumentasi</a>
           <a href="/openapi/api-kurir-partner-v1.yaml" target="_blank" rel="noreferrer">
             OpenAPI
@@ -2123,8 +2219,8 @@ function PartnerPortal() {
             <p className="eyebrow">PACKAGE CERTIFICATION</p>
             <h1>Integrasi {identity.provider_name}</h1>
             <p>
-              Upload versi connector untuk scan otomatis, review keamanan,
-              sandbox, dan UAT. Seluruh submission pada halaman ini terkunci
+              Upload versi connector untuk scan otomatis, pengujian kontrak,
+              review keamanan, dan UAT. Seluruh submission pada halaman ini terkunci
               untuk provider <strong>{identity.provider_code}</strong>.
             </p>
           </div>
@@ -2182,12 +2278,19 @@ function PartnerPortal() {
             <h2>Dari scan hingga published</h2>
             <ol>
               <li><strong>Static scan</strong><span>Format ZIP, manifest, OpenAPI, dan secret diperiksa.</span></li>
-              <li><strong>Sandbox & keamanan</strong><span>Tim Emisell menguji kontrak tanpa menjalankan source di API Kurir.</span></li>
+              <li><strong>Pengujian & keamanan</strong><span>Tim Emisell menguji kontrak tanpa menjalankan source di API Kurir.</span></li>
               <li><strong>UAT</strong><span>Skenario tarif, order, pickup, dan tracking diverifikasi.</span></li>
               <li><strong>Published</strong><span>Hanya versi yang lulus dapat diaktifkan ke merchant.</span></li>
             </ol>
           </section>
         </section>
+
+        <PartnerVisualApiExplorer
+          api={api}
+          identity={identity}
+          submissions={items}
+          onError={setError}
+        />
 
         <PartnerPortalIntegrationDocumentation
           providerCode={identity.provider_code}
@@ -2247,7 +2350,7 @@ function PartnerPortal() {
                 <h3>Manifest terdeteksi</h3>
                 <dl>
                   <div><dt>Contract</dt><dd>{selected.scan_report.manifest.contract_version || "—"}</dd></div>
-                  <div><dt>Sandbox</dt><dd>{selected.scan_report.manifest.sandbox_url || "—"}</dd></div>
+                  <div><dt>Endpoint</dt><dd>{selected.scan_report.manifest.base_url || "—"}</dd></div>
                   <div><dt>Capability</dt><dd>{selected.scan_report.manifest.declared_capabilities.join(", ") || "—"}</dd></div>
                   <div><dt>Scope runtime</dt><dd>{selected.required_scopes.join(", ") || "Tidak ada"}</dd></div>
                   <div><dt>Service</dt><dd>{selected.scan_report.manifest.declared_services.join(", ") || "—"}</dd></div>
@@ -2259,6 +2362,513 @@ function PartnerPortal() {
       </section>
     </main>
   );
+}
+
+type PartnerExplorerCodeLanguage = "curl" | "typescript" | "php" | "go";
+
+function PartnerVisualApiExplorer({
+  api,
+  identity,
+  submissions,
+  onError,
+}: {
+  api: PartnerPortalApi;
+  identity: PartnerIdentity;
+  submissions: PartnerSubmission[];
+  onError: (message: string) => void;
+}) {
+  const eligibleSubmissions = useMemo(
+    () => submissions.filter((item) => item.scan_report.passed),
+    [submissions],
+  );
+  const [submissionID, setSubmissionID] = useState(eligibleSubmissions[0]?.id ?? "");
+  const [catalog, setCatalog] = useState<PartnerExplorerCatalog | null>(null);
+  const [credentials, setCredentials] = useState<PartnerExplorerCredentialState[]>([]);
+  const [credentialInputs, setCredentialInputs] = useState<Record<string, string>>({});
+  const [capability, setCapability] = useState("all");
+  const [operationID, setOperationID] = useState("");
+  const [parameterValues, setParameterValues] = useState<Record<string, string>>({});
+  const [requestBody, setRequestBody] = useState("");
+  const [result, setResult] = useState<PartnerExplorerExecution | null>(null);
+  const [runs, setRuns] = useState<PartnerExplorerRun[]>([]);
+  const [codeLanguage, setCodeLanguage] = useState<PartnerExplorerCodeLanguage>("curl");
+  const [loading, setLoading] = useState(false);
+  const [savingCredential, setSavingCredential] = useState(false);
+  const [executing, setExecuting] = useState(false);
+
+  useEffect(() => {
+    if (submissionID && eligibleSubmissions.some((item) => item.id === submissionID)) return;
+    setSubmissionID(eligibleSubmissions[0]?.id ?? "");
+  }, [eligibleSubmissions, submissionID]);
+
+  useEffect(() => {
+    if (!submissionID) {
+      setCatalog(null);
+      setRuns([]);
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    onError("");
+    void Promise.all([
+      api.explorerCatalog(submissionID, controller.signal),
+      api.explorerRuns(submissionID, controller.signal),
+    ]).then(([nextCatalog, nextRuns]) => {
+      setCatalog(nextCatalog);
+      setCredentials(nextCatalog.credentials ?? []);
+      setRuns(nextRuns);
+      setCapability("all");
+      const nextOperation =
+        nextCatalog.operations.find((operation) => operation.safety === "read_only") ??
+        nextCatalog.operations[0];
+      setOperationID(nextOperation?.id ?? "");
+      setParameterValues(parameterDefaults(nextOperation));
+      setRequestBody(formatExplorerRequestExample(nextOperation));
+      setResult(null);
+    }).catch((loadError) => {
+      if (loadError instanceof Error && loadError.name === "AbortError") return;
+      onError(getErrorMessage(loadError));
+    }).finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [api, onError, submissionID]);
+
+  const capabilities = useMemo(() => {
+    const values = new Set(catalog?.operations.map((operation) => operation.capability) ?? []);
+    return ["all", ...Array.from(values).sort()];
+  }, [catalog]);
+  const visibleOperations = useMemo(
+    () => catalog?.operations.filter(
+      (operation) => capability === "all" || operation.capability === capability,
+    ) ?? [],
+    [capability, catalog],
+  );
+  const selectedOperation =
+    catalog?.operations.find((operation) => operation.id === operationID) ?? null;
+
+  useEffect(() => {
+    if (!visibleOperations.length) {
+      setOperationID("");
+      return;
+    }
+    if (visibleOperations.some((operation) => operation.id === operationID)) return;
+    const nextOperation =
+      visibleOperations.find((operation) => operation.safety === "read_only") ??
+      visibleOperations[0];
+    setOperationID(nextOperation.id);
+    setParameterValues(parameterDefaults(nextOperation));
+    setRequestBody(formatExplorerRequestExample(nextOperation));
+    setResult(null);
+  }, [operationID, visibleOperations]);
+
+  function selectOperation(id: string) {
+    const operation = catalog?.operations.find((item) => item.id === id);
+    setOperationID(id);
+    setParameterValues(parameterDefaults(operation));
+    setRequestBody(formatExplorerRequestExample(operation));
+    setResult(null);
+  }
+
+  async function saveCredential(event: FormEvent, profile: PartnerExplorerCredentialState) {
+    event.preventDefault();
+    const officialAPIKey = credentialInputs[profile.code]?.trim() ?? "";
+    if (!officialAPIKey) return;
+    setSavingCredential(true);
+    onError("");
+    try {
+      const state = await api.saveExplorerCredentialProfile(profile.code, {
+        official_api_key: officialAPIKey,
+        auth_header: profile.auth_header,
+        auth_prefix: profile.auth_prefix,
+      });
+      const merged = { ...profile, ...state, label: profile.label, description: profile.description };
+      setCredentials((current) => current.map((item) => item.code === profile.code ? merged : item));
+      setCatalog((current) => current ? {
+        ...current,
+        credentials: current.credentials.map((item) => item.code === profile.code ? merged : item),
+      } : current);
+      setCredentialInputs((current) => ({ ...current, [profile.code]: "" }));
+    } catch (credentialError) {
+      onError(getErrorMessage(credentialError));
+    } finally {
+      setSavingCredential(false);
+    }
+  }
+
+  async function removeCredential(profile: PartnerExplorerCredentialState) {
+    if (!window.confirm(`Hapus ${profile.label} dari Explorer? Endpoint terkait tidak dapat diuji sampai key dihubungkan kembali.`)) return;
+    onError("");
+    try {
+      await api.deleteExplorerCredentialProfile(profile.code);
+      const state = { ...profile, configured: false, credential: null };
+      setCredentials((current) => current.map((item) => item.code === profile.code ? state : item));
+      setCatalog((current) => current ? {
+        ...current,
+        credentials: current.credentials.map((item) => item.code === profile.code ? state : item),
+      } : current);
+      setResult(null);
+    } catch (credentialError) {
+      onError(getErrorMessage(credentialError));
+    }
+  }
+
+  async function execute(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedOperation || !catalog || selectedOperation.safety !== "read_only") return;
+    let parsedBody: unknown = null;
+    if (requestBody.trim()) {
+      try {
+        parsedBody = JSON.parse(requestBody);
+      } catch {
+        onError("Request body wajib berupa JSON yang valid.");
+        return;
+      }
+    }
+    const pathParams: Record<string, string> = {};
+    const query: Record<string, string> = {};
+    for (const parameter of selectedOperation.parameters) {
+      const value = parameterValues[`${parameter.in}:${parameter.name}`] ?? "";
+      if (parameter.in === "path") pathParams[parameter.name] = value;
+      if (parameter.in === "query") query[parameter.name] = value;
+    }
+    setExecuting(true);
+    onError("");
+    try {
+      const execution = await api.executeExplorer(catalog.submission_id, {
+        operation_id: selectedOperation.id,
+        path_params: pathParams,
+        query,
+        body: parsedBody,
+      });
+      setResult(execution);
+      setRuns(await api.explorerRuns(catalog.submission_id));
+    } catch (executeError) {
+      onError(getErrorMessage(executeError));
+    } finally {
+      setExecuting(false);
+    }
+  }
+
+  const selectedCredential = selectedOperation?.credential_code
+    ? credentials.find((item) => item.code === selectedOperation.credential_code)
+    : undefined;
+  const selectedCredentialReady = !selectedOperation?.credential_code || selectedCredential?.configured === true;
+
+  const codeSample = catalog && selectedOperation
+    ? partnerExplorerCodeSample(
+      codeLanguage,
+      catalog,
+      selectedOperation,
+      parameterValues,
+      requestBody,
+      selectedCredential,
+    )
+    : "Pilih endpoint untuk melihat contoh request.";
+
+  return (
+    <section className="partner-api-explorer" id="partner-api-explorer">
+      <section className="panel partner-explorer-heading">
+        <div>
+          <p className="eyebrow">VISUAL API EXPLORER</p>
+          <h2>Pilih platform, endpoint, dan lihat hasilnya langsung</h2>
+          <p>
+            Request read-only dijalankan melalui test runner API Kurir menggunakan
+            API key resmi <strong>{identity.provider_name}</strong>. Key tidak pernah
+            dikirim ke browser atau ditampilkan kembali setelah tersimpan.
+          </p>
+          <p>
+            Setiap security scheme OpenAPI mendapat credential terpisah. Contohnya,
+            RajaOngkir memakai key Shipping Cost untuk rate/tracking dan key Shipping
+            Delivery untuk shipment/pickup.
+          </p>
+        </div>
+        <div className="partner-explorer-live-badge">
+          <span>OFFICIAL / LIVE</span>
+          <strong>Menggunakan quota provider</strong>
+        </div>
+      </section>
+
+      {!eligibleSubmissions.length ? (
+        <section className="panel partner-explorer-empty">
+          <strong>Upload package yang lulus validasi terlebih dahulu.</strong>
+          <p>Explorer membaca endpoint langsung dari <code>openapi.yaml</code> pada package.</p>
+        </section>
+      ) : (
+        <>
+          <section className="partner-explorer-grid">
+            <section className="partner-explorer-credential-stack">
+              {credentials.map((profile) => (
+                <form className="panel partner-explorer-credential" key={profile.code} onSubmit={(event) => void saveCredential(event, profile)}>
+                  <div className="panel-heading">
+                    <div><p className="eyebrow">OFFICIAL CREDENTIAL</p><h3>{profile.label}</h3></div>
+                    <span className={`badge ${profile.configured ? "badge-success" : "badge-warning"}`}>
+                      {profile.configured ? "Terhubung" : "Belum ada"}
+                    </span>
+                  </div>
+                  {profile.description && <p className="partner-explorer-note">{profile.description}</p>}
+                  {profile.credential && (
+                    <div className="partner-explorer-connected-key">
+                      <span>{profile.credential.auth_header}</span>
+                      <code>{profile.credential.display_key}</code>
+                      <small>Diperbarui {formatDate(profile.credential.updated_at)}</small>
+                    </div>
+                  )}
+                  <label>
+                    API key resmi
+                    <input
+                      type="password"
+                      value={credentialInputs[profile.code] ?? ""}
+                      onChange={(event) => setCredentialInputs((current) => ({ ...current, [profile.code]: event.target.value }))}
+                      placeholder={profile.configured ? "Masukkan key baru untuk rotasi" : `Masukkan ${profile.label}`}
+                      autoComplete="new-password"
+                      required={!profile.configured}
+                    />
+                  </label>
+                  <div className="partner-explorer-auth-readonly">
+                    <span>Header</span><code>{profile.auth_header}</code>
+                    <span>Prefix</span><code>{profile.auth_prefix || "tanpa prefix"}</code>
+                  </div>
+                  <p className="partner-explorer-note">
+                    Credential disimpan terenkripsi dan hanya dipakai endpoint dengan security scheme <code>{profile.code}</code>.
+                  </p>
+                  <div className="partner-explorer-actions">
+                    <button className="button button-primary" disabled={savingCredential || !(credentialInputs[profile.code]?.trim())}>
+                      {savingCredential ? "Menyimpan…" : profile.configured ? "Rotasi credential" : "Hubungkan credential"}
+                    </button>
+                    {profile.configured && (
+                      <button className="button button-danger" type="button" onClick={() => void removeCredential(profile)}>
+                        Hapus
+                      </button>
+                    )}
+                  </div>
+                </form>
+              ))}
+              {!credentials.length && (
+                <section className="panel partner-explorer-credential">
+                  <p className="eyebrow">OFFICIAL CREDENTIAL</p>
+                  <h3>Tidak diperlukan</h3>
+                  <p className="partner-explorer-note">OpenAPI package tidak mendeklarasikan security scheme pada endpoint.</p>
+                </section>
+              )}
+            </section>
+
+            <form className="panel partner-explorer-request" onSubmit={execute}>
+              <div className="partner-explorer-select-grid">
+                <label>
+                  Platform
+                  <select value={identity.provider_code} disabled>
+                    <option value={identity.provider_code}>{identity.provider_name}</option>
+                  </select>
+                </label>
+                <label>
+                  Package
+                  <select value={submissionID} onChange={(event) => setSubmissionID(event.target.value)}>
+                    {eligibleSubmissions.map((item) => (
+                      <option key={item.id} value={item.id}>v{item.version} · {PARTNER_SUBMISSION_STATUS_LABELS[item.status]}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Capability
+                  <select value={capability} onChange={(event) => setCapability(event.target.value)} disabled={loading}>
+                    {capabilities.map((item) => <option key={item} value={item}>{item === "all" ? "Semua capability" : item}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Endpoint
+                  <select value={operationID} onChange={(event) => selectOperation(event.target.value)} disabled={loading || !visibleOperations.length}>
+                    {visibleOperations.map((operation) => (
+                      <option key={operation.id} value={operation.id}>{operation.method} {operation.path}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {selectedOperation && (
+                <div className="partner-explorer-operation-summary">
+                  <span className={`method-badge method-${selectedOperation.method.toLowerCase()}`}>{selectedOperation.method}</span>
+                  <div><strong>{selectedOperation.summary}</strong><code>{selectedOperation.path}</code></div>
+                  <span className={`badge ${selectedOperation.safety === "read_only" ? "badge-success" : "badge-warning"}`}>
+                    {selectedOperation.safety === "read_only" ? "Live read-only" : "Transaksi dikunci"}
+                  </span>
+                </div>
+              )}
+
+              {!!selectedOperation?.parameters.length && (
+                <div className="partner-explorer-parameters">
+                  {selectedOperation.parameters.map((parameter) => (
+                    <label key={`${parameter.in}:${parameter.name}`}>
+                      {parameter.name} <small>{parameter.in}{parameter.required ? " · wajib" : ""}</small>
+                      <input
+                        value={parameterValues[`${parameter.in}:${parameter.name}`] ?? ""}
+                        onChange={(event) => setParameterValues((current) => ({
+                          ...current,
+                          [`${parameter.in}:${parameter.name}`]: event.target.value,
+                        }))}
+                        placeholder={parameter.example || parameter.description || parameter.type}
+                        required={parameter.required}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {selectedOperation && !["GET", "HEAD", "OPTIONS"].includes(selectedOperation.method) && (
+                <label className="partner-explorer-body">
+                  JSON request body
+                  <textarea value={requestBody} onChange={(event) => setRequestBody(event.target.value)} rows={10} spellCheck={false} />
+                </label>
+              )}
+
+              {selectedOperation?.safety === "transactional_locked" && (
+                <div className="alert alert-warning">
+                  Endpoint transaksi belum dapat dijalankan dengan key live. Admin perlu menyetujui mode transaksi pengujian terlebih dahulu.
+                </div>
+              )}
+              <button
+                className="button button-primary partner-explorer-run"
+                disabled={executing || loading || !selectedCredentialReady || selectedOperation?.safety !== "read_only"}
+              >
+                {executing ? "Menjalankan request…" : "Explore endpoint"}
+              </button>
+              <small className="partner-explorer-quota">Maksimal 120 request/jam per Partner Access Key.</small>
+            </form>
+          </section>
+
+          <section className="partner-explorer-output-grid">
+            <section className="panel partner-explorer-code">
+              <div className="partner-explorer-tabs">
+                {(["curl", "typescript", "php", "go"] as PartnerExplorerCodeLanguage[]).map((language) => (
+                  <button key={language} type="button" className={codeLanguage === language ? "active" : ""} onClick={() => setCodeLanguage(language)}>
+                    {language === "curl" ? "cURL" : language === "typescript" ? "TypeScript" : language === "php" ? "PHP" : "Go"}
+                  </button>
+                ))}
+                <button type="button" className="partner-explorer-copy" onClick={() => void navigator.clipboard.writeText(codeSample)}>Salin</button>
+              </div>
+              <pre><code>{codeSample}</code></pre>
+              <small>Credential selalu ditampilkan sebagai placeholder, tidak pernah sebagai secret asli.</small>
+            </section>
+
+            <section className="panel partner-explorer-response">
+              <div className="panel-heading">
+                <div><p className="eyebrow">RESPONSE</p><h3>{result ? `${result.response_status || "Network"} · ${result.duration_ms} ms` : "Belum ada hasil"}</h3></div>
+                {result && <span className={`badge ${result.success ? "badge-success" : "badge-danger"}`}>{result.success ? "Passed" : "Failed"}</span>}
+              </div>
+              <pre><code>{result ? prettyExplorerResponse(result.response_body) : "Jalankan endpoint untuk melihat response provider."}</code></pre>
+              {result && (
+                <div className="partner-explorer-validation">
+                  <span className={result.validation.http_passed ? "passed" : "failed"}>HTTP {result.validation.http_passed ? "valid" : "gagal"}</span>
+                  <span className={result.validation.json_passed ? "passed" : "failed"}>JSON {result.validation.json_passed ? "valid" : "gagal"}</span>
+                  {result.truncated && <span className="failed">Response dipotong</span>}
+                </div>
+              )}
+            </section>
+          </section>
+
+          <section className="panel panel-table partner-explorer-runs">
+            <div className="panel-heading panel-padding">
+              <div><p className="eyebrow">RECENT TESTS</p><h3>Bukti pengujian package</h3></div>
+              <span className="subtle">Response tersimpan dalam bentuk preview yang sudah disensor.</span>
+            </div>
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>Endpoint</th><th>Hasil</th><th>Status</th><th>Latency</th><th>Waktu</th></tr></thead>
+                <tbody>
+                  {runs.map((run) => (
+                    <tr key={run.id}>
+                      <td><strong>{run.method} {run.path}</strong><small>{run.operation_id}</small></td>
+                      <td><span className={`badge ${run.outcome === "passed" ? "badge-success" : "badge-danger"}`}>{run.outcome}</span></td>
+                      <td>{run.response_status || run.error_code || "Network error"}</td>
+                      <td>{run.duration_ms} ms</td>
+                      <td>{formatDate(run.created_at)}</td>
+                    </tr>
+                  ))}
+                  {!runs.length && <tr><td colSpan={5} className="empty-state">Belum ada endpoint yang diuji pada package ini.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      )}
+    </section>
+  );
+}
+
+function parameterDefaults(operation?: PartnerExplorerOperation) {
+  const result: Record<string, string> = {};
+  for (const parameter of operation?.parameters ?? []) {
+    result[`${parameter.in}:${parameter.name}`] = parameter.example ?? "";
+  }
+  return result;
+}
+
+function formatExplorerRequestExample(operation?: PartnerExplorerOperation) {
+  if (!operation?.request_example) return "";
+  return JSON.stringify(operation.request_example, null, 2);
+}
+
+function partnerExplorerRequestURL(
+  catalog: PartnerExplorerCatalog,
+  operation: PartnerExplorerOperation,
+  values: Record<string, string>,
+) {
+  let endpointPath = operation.path;
+  const query = new URLSearchParams();
+  for (const parameter of operation.parameters) {
+    const value = values[`${parameter.in}:${parameter.name}`] ?? "";
+    if (parameter.in === "path" && value) endpointPath = endpointPath.replace(`{${parameter.name}}`, value);
+    if (parameter.in === "query" && value) query.set(parameter.name, value);
+  }
+  const baseURL = operation.base_url || catalog.base_url;
+  return `${baseURL.replace(/\/+$/, "")}/${endpointPath.replace(/^\/+/, "")}${query.size ? `?${query}` : ""}`;
+}
+
+function partnerExplorerCodeSample(
+  language: PartnerExplorerCodeLanguage,
+  catalog: PartnerExplorerCatalog,
+  operation: PartnerExplorerOperation,
+  values: Record<string, string>,
+  body: string,
+  credential?: PartnerExplorerCredentialState,
+) {
+  const url = partnerExplorerRequestURL(catalog, operation, values);
+  if (!operation.credential_code) {
+    if (language === "curl") {
+      return `curl -X ${operation.method} ${JSON.stringify(url)} -H "Accept: application/json"`;
+    }
+    switch (language) {
+      case "typescript":
+        return `const response = await fetch(${JSON.stringify(url)}, {\n  method: ${JSON.stringify(operation.method)},\n  headers: { "Accept": "application/json" }\n});\n\nconsole.log(await response.json());`;
+      case "php":
+        return `$response = file_get_contents(${JSON.stringify(url)}, false, stream_context_create([\n  'http' => [\n    'method' => ${JSON.stringify(operation.method)},\n    'header' => "Accept: application/json"\n  ]\n]));`;
+      case "go":
+        return `req, _ := http.NewRequest(${JSON.stringify(operation.method)}, ${JSON.stringify(url)}, nil)\nreq.Header.Set("Accept", "application/json")\nresp, err := http.DefaultClient.Do(req)`;
+      default:
+        return `curl -X ${operation.method} ${JSON.stringify(url)} \\\n+  -H "Accept: application/json"`;
+    }
+  }
+  const header = operation.auth_header || credential?.credential?.auth_header || "Authorization";
+  const prefixValue = operation.auth_prefix || credential?.credential?.auth_prefix || "";
+  const prefix = prefixValue ? `${prefixValue} ` : "";
+  const auth = `${prefix}<OFFICIAL_API_KEY>`;
+  const hasBody = body.trim() && !["GET", "HEAD", "OPTIONS"].includes(operation.method);
+  switch (language) {
+    case "typescript":
+      return `const response = await fetch(${JSON.stringify(url)}, {\n  method: ${JSON.stringify(operation.method)},\n  headers: {\n    ${JSON.stringify(header)}: ${JSON.stringify(auth)},\n    "Accept": "application/json"${hasBody ? ',\n    "Content-Type": "application/json"' : ""}\n  }${hasBody ? `,\n  body: JSON.stringify(${body})` : ""}\n});\n\nconsole.log(await response.json());`;
+    case "php":
+      return `$response = file_get_contents(${JSON.stringify(url)}, false, stream_context_create([\n  'http' => [\n    'method' => ${JSON.stringify(operation.method)},\n    'header' => ${JSON.stringify(`${header}: ${auth}\\r\\nAccept: application/json${hasBody ? "\\r\\nContent-Type: application/json" : ""}`)}${hasBody ? `,\n    'content' => ${JSON.stringify(body)}` : ""}\n  ]\n]));`;
+    case "go":
+      return `payload := strings.NewReader(${JSON.stringify(hasBody ? body : "")})\nreq, _ := http.NewRequest(${JSON.stringify(operation.method)}, ${JSON.stringify(url)}, payload)\nreq.Header.Set(${JSON.stringify(header)}, ${JSON.stringify(auth)})\nreq.Header.Set("Accept", "application/json")${hasBody ? '\nreq.Header.Set("Content-Type", "application/json")' : ""}\nresp, err := http.DefaultClient.Do(req)`;
+    default:
+      return `curl -X ${operation.method} ${JSON.stringify(url)} \\\n  -H ${JSON.stringify(`${header}: ${auth}`)} \\\n  -H "Accept: application/json"${hasBody ? ` \\\n  -H "Content-Type: application/json" \\\n  --data ${JSON.stringify(body)}` : ""}`;
+  }
+}
+
+function prettyExplorerResponse(value: string) {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
 }
 
 function PartnerPortalIntegrationDocumentation({
@@ -2280,7 +2890,7 @@ function PartnerPortalIntegrationDocumentation({
           <h2>Bangun connector {providerName} untuk Emisell</h2>
           <p>
             Connector tetap berjalan pada infrastruktur partner. API Kurir akan
-            memanggil kontrak standar ini setelah package, sandbox, keamanan,
+            memanggil kontrak standar ini setelah package, pengujian, keamanan,
             dan UAT dinyatakan lulus.
           </p>
         </div>
@@ -2311,14 +2921,15 @@ function PartnerPortalIntegrationDocumentation({
       <section className="partner-integration-docs-grid">
         <article className="panel">
           <p className="eyebrow">QUICK START</p>
-          <h3>Enam langkah integrasi</h3>
+          <h3>Tujuh langkah integrasi</h3>
           <ol>
             <li>Unduh dan pelajari kontrak OpenAPI Partner API v1.</li>
             <li>Implementasikan endpoint yang dibutuhkan pada base path <code>/partner/v1</code>.</li>
-            <li>Sediakan host sandbox dan production menggunakan HTTPS publik.</li>
+            <li>Sediakan satu endpoint connector HTTPS aktif; alamat gateway API Kurir mengikuti environment.</li>
             <li>Siapkan manifest, OpenAPI implementasi, dokumentasi, dan bukti pengujian.</li>
             <li>Upload ZIP dengan nomor versi baru yang tidak pernah dipakai sebelumnya.</li>
-            <li>Perbaiki feedback sampai sandbox, security review, dan UAT lulus.</li>
+            <li>Hubungkan API key resmi lalu jalankan endpoint read-only melalui Visual API Explorer.</li>
+            <li>Perbaiki feedback sampai pengujian kontrak, security review, dan UAT lulus.</li>
           </ol>
         </article>
 
@@ -2327,9 +2938,10 @@ function PartnerPortalIntegrationDocumentation({
           <h3>Portal key bukan runtime key</h3>
           <p>
             Key <code>epk_live_*</code> hanya untuk portal dan submission milik
-            <strong> {providerCode}</strong>. Partner tidak mengisi runtime token
-            secara manual di portal. Credential server-to-server diprovisikan
-            terpisah oleh tim Emisell ketika release siap diaktifkan.
+            <strong> {providerCode}</strong>. API key resmi untuk pengujian hanya
+            dimasukkan pada Visual API Explorer, disimpan terenkripsi, dan tidak
+            menjadi runtime token production. Credential server-to-server final
+            tetap diprovisikan terpisah ketika release siap diaktifkan.
           </p>
           <pre><code>{`Authorization: Bearer <partner-runtime-token>
 X-Partner-Key-Id: pk_live_...
@@ -2363,7 +2975,7 @@ X-Request-Id: req_...`}</code></pre>
               <li><code>emisell-extension.yaml</code> berada tepat pada root ZIP.</li>
               <li><code>openapi.yaml</code> OpenAPI 3.x berada tepat pada root ZIP.</li>
               <li>Provider manifest harus <code>{providerCode}</code>.</li>
-              <li>Sandbox dan production memakai HTTPS publik.</li>
+              <li><code>connector.base_url</code> memakai satu endpoint HTTPS aktif.</li>
               <li>ZIP maksimal 25 MB, hasil ekstraksi 100 MB, dan 250 entry.</li>
               <li>Limit 10 percobaan per jam dan satu upload aktif per access key.</li>
               <li>Kuota maksimal 25 versi atau total 500 MB per provider.</li>
@@ -2378,7 +2990,8 @@ X-Request-Id: req_...`}</code></pre>
               <li><code>README.md</code> berisi setup, endpoint, dan cara pengujian.</li>
               <li><code>SECURITY.md</code> berisi kontak dan prosedur insiden.</li>
               <li><code>CHANGELOG.md</code> menjelaskan perubahan setiap versi.</li>
-              <li>Contoh request/response dan contract test sandbox.</li>
+              <li>Contoh request/response dan contract test dengan data aman.</li>
+              <li>API key resmi tersedia untuk pengujian read-only melalui Explorer.</li>
               <li>Source code dan SBOM tidak diwajibkan pada fase awal.</li>
             </ul>
           </article>
@@ -2392,6 +3005,7 @@ X-Request-Id: req_...`}</code></pre>
               <li>Data merchant, customer, alamat, nomor telepon, atau AWB asli.</li>
               <li>Binary native, symlink, path absolut, atau file hasil build yang tidak perlu.</li>
               <li>Credential runtime; credential diprovisikan terpisah setelah sertifikasi.</li>
+              <li>API key resmi di dalam ZIP; masukkan hanya melalui Visual API Explorer.</li>
               <li>Source code bersifat opsional dan tidak pernah dieksekusi API Kurir.</li>
             </ul>
           </article>
@@ -2429,8 +3043,7 @@ provider:
   name: ${providerName}
 connector:
   contract_version: v1
-  sandbox_url: https://sandbox.partner.co.id/partner/v1
-  production_url: https://api.partner.co.id/partner/v1
+  base_url: https://api.partner.co.id/partner/v1
 capabilities:
   - rates
   - shipments
@@ -2457,7 +3070,7 @@ services:
             <li>HMAC, replay protection, idempotency, retry, dan audit trail.</li>
             <li>Mapping status, service, AWB, label, pickup, dan error konsisten.</li>
             <li>Isolasi data merchant dan tidak ada credential pada log.</li>
-            <li>Contract test sandbox serta skenario kegagalan lulus.</li>
+            <li>Contract test serta skenario kegagalan lulus.</li>
           </ul>
         </article>
 
@@ -2468,7 +3081,7 @@ services:
             <li>ZIP masuk karantina dan memperoleh checksum SHA-256.</li>
             <li>Struktur arsip, secret, manifest, dan OpenAPI diperiksa otomatis.</li>
             <li>Hasil gagal mendapatkan status <strong>Perlu revisi</strong> beserta alasannya.</li>
-            <li>Hasil lulus masuk review teknis, sandbox, keamanan, dan UAT.</li>
+            <li>Hasil lulus masuk review teknis, pengujian, keamanan, dan UAT.</li>
             <li>Hanya release published yang dapat diaktifkan untuk merchant.</li>
           </ol>
         </article>
@@ -2479,7 +3092,7 @@ services:
 
 const PARTNER_SUBMISSION_STATUS_LABELS: Record<PartnerSubmissionStatus, string> = {
   technical_review: "Review teknis",
-  sandbox_testing: "Uji sandbox",
+  sandbox_testing: "Pengujian",
   security_review: "Review keamanan",
   uat: "UAT",
   approved: "Disetujui",
@@ -2534,6 +3147,7 @@ function PartnerSubmissionManagement({
   const [reviewNote, setReviewNote] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const reviewPanelRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -2546,7 +3160,7 @@ function PartnerSubmissionManagement({
       setSelectedID((current) =>
         current && result.some((item) => item.id === current)
           ? current
-          : result[0]?.id ?? "",
+          : "",
       );
     } catch (requestError) {
       if (requestError instanceof Error && requestError.name === "AbortError") return;
@@ -2618,6 +3232,18 @@ function PartnerSubmissionManagement({
     }
   }
 
+  function openReview(id: string) {
+    setSelectedID(id);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        reviewPanelRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    });
+  }
+
   const passedCount = items.filter((item) => item.scan_report.passed).length;
   const publishedCount = items.filter((item) => item.status === "published").length;
   const revisionCount = items.filter((item) => item.status === "changes_requested").length;
@@ -2677,7 +3303,16 @@ function PartnerSubmissionManagement({
                   <td><span className={`badge ${partnerStatusTone(item.status)}`}>{PARTNER_SUBMISSION_STATUS_LABELS[item.status]}</span></td>
                   <td><strong>{item.submitted_by}</strong><small>{formatDate(item.created_at)}</small></td>
                   <td><strong>{item.reviewed_by || "Belum direview"}</strong><small>{formatDate(item.updated_at)}</small></td>
-                  <td><button className="table-action" onClick={() => setSelectedID(item.id)}>Review</button></td>
+                  <td>
+                    <button
+                      className="table-action partner-package-review-trigger"
+                      onClick={() => openReview(item.id)}
+                      aria-expanded={selectedID === item.id}
+                    >
+                      {selectedID === item.id ? "Review dibuka" : "Buka review"}
+                      <small>{PARTNER_SUBMISSION_TRANSITIONS[item.status].length} aksi</small>
+                    </button>
+                  </td>
                 </tr>
               ))}
               {!items.length && <tr><td colSpan={7} className="empty-state">{loading ? "Memuat submission partner…" : "Belum ada package yang sesuai filter."}</td></tr>}
@@ -2687,15 +3322,23 @@ function PartnerSubmissionManagement({
       </section>
 
       {selected && (
-        <section className="panel partner-package-review">
+        <section className="panel partner-package-review" ref={reviewPanelRef} tabIndex={-1}>
           <div className="panel-heading">
             <div>
               <p className="eyebrow">HASIL VALIDASI</p>
               <h2>{selected.provider_name} · v{selected.version}</h2>
+              <span className={`badge ${partnerStatusTone(selected.status)}`}>
+                Status: {PARTNER_SUBMISSION_STATUS_LABELS[selected.status]}
+              </span>
             </div>
-            <button className="button button-secondary" onClick={() => void downloadArtifact()} disabled={downloading}>
-              {downloading ? "Mengunduh…" : "Unduh ZIP"}
-            </button>
+            <div className="partner-package-review-heading-actions">
+              <button className="button button-secondary" onClick={() => void downloadArtifact()} disabled={downloading}>
+                {downloading ? "Mengunduh…" : "Unduh ZIP"}
+              </button>
+              <button className="button button-quiet" onClick={() => setSelectedID("")}>
+                Tutup review
+              </button>
+            </div>
           </div>
 
           <div className="partner-package-review-grid">
@@ -2718,8 +3361,7 @@ function PartnerSubmissionManagement({
               <h3>Manifest connector</h3>
               <dl>
                 <div><dt>Contract</dt><dd>{selected.scan_report.manifest.contract_version || "—"}</dd></div>
-                <div><dt>Sandbox</dt><dd>{selected.scan_report.manifest.sandbox_url || "—"}</dd></div>
-                <div><dt>Production</dt><dd>{selected.scan_report.manifest.production_url || "—"}</dd></div>
+                <div><dt>Endpoint</dt><dd>{selected.scan_report.manifest.base_url || "—"}</dd></div>
                 <div><dt>Capability</dt><dd>{selected.scan_report.manifest.declared_capabilities.join(", ") || "—"}</dd></div>
                 <div><dt>Scope runtime</dt><dd>{selected.required_scopes.join(", ") || "Tidak ada"}</dd></div>
                 <div><dt>Service</dt><dd>{selected.scan_report.manifest.declared_services.join(", ") || "—"}</dd></div>
@@ -2754,7 +3396,7 @@ function PartnerSubmissionManagement({
               />
             </label>
             <button className="button button-primary" disabled={reviewing || !reviewStatus}>
-              {reviewing ? "Menyimpan…" : "Simpan status"}
+              {reviewing ? "Menyimpan…" : "Jalankan aksi review"}
             </button>
           </form>
         </section>
@@ -3870,6 +4512,156 @@ function TrackingOperationRow({
       onClick={onRemove}
     >{deleting ? "Menghapus…" : "Hapus permanen"}</button></td>
   </tr>;
+}
+
+function FulfillmentOperationsTable({
+	api,
+	onError,
+}: {
+	api: AdminApi;
+	onError: (message: string) => void;
+}) {
+	const [search, setSearch] = useState("");
+	const [provider, setProvider] = useState("");
+	const [status, setStatus] = useState("");
+	const [queueStatus, setQueueStatus] = useState("");
+	const [loading, setLoading] = useState(true);
+	const [refreshingID, setRefreshingID] = useState("");
+	const [page, setPage] = useState<FulfillmentOperationPage>({
+		items: [], total: 0,
+		summary: { total: 0, booking_pending: 0, tracking_pending: 0, failed: 0, final: 0 },
+	});
+
+	const load = useCallback(async (signal?: AbortSignal) => {
+		try {
+			const result = await api.fulfillmentOperations({
+				search, provider, status, queue_status: queueStatus, limit: 100,
+			}, signal);
+			setPage(result);
+		} catch (requestError) {
+			if (requestError instanceof Error && requestError.name === "AbortError") return;
+			onError(getErrorMessage(requestError));
+		} finally {
+			setLoading(false);
+		}
+	}, [api, onError, provider, queueStatus, search, status]);
+
+	const reconcile = useCallback(async (item: FulfillmentOperation) => {
+		setRefreshingID(item.shipment_id);
+		onError("");
+		try {
+			await api.reconcileFulfillment(item.shipment_id);
+			await load();
+		} catch (requestError) {
+			onError(getErrorMessage(requestError));
+		} finally {
+			setRefreshingID("");
+		}
+	}, [api, load, onError]);
+
+	useEffect(() => {
+		const controller = new AbortController();
+		setLoading(true);
+		const debounce = window.setTimeout(() => void load(controller.signal), 250);
+		const refresh = window.setInterval(() => void load(controller.signal), 15_000);
+		return () => {
+			window.clearTimeout(debounce);
+			window.clearInterval(refresh);
+			controller.abort();
+		};
+	}, [load]);
+
+	return (
+		<div className="tracking-operations-page">
+			<section className="tracking-monitor-summary">
+				<TrackingMonitorMetric label="Semua shipment" value={page.summary.total} tone="neutral" />
+				<TrackingMonitorMetric label="Booking diproses" value={page.summary.booking_pending} tone="warning" />
+				<TrackingMonitorMetric label="AWB ke tracking" value={page.summary.tracking_pending} tone="warning" />
+				<TrackingMonitorMetric label="Perlu perhatian" value={page.summary.failed} tone="danger" />
+				<TrackingMonitorMetric label="Status final" value={page.summary.final} tone="success" />
+			</section>
+
+			<section className="toolbar tracking-monitor-toolbar">
+				<input value={search} onChange={(event) => setSearch(event.target.value)}
+					placeholder="Cari merchant, order, shipment, AWB, atau provider…" />
+				<select value={provider} onChange={(event) => setProvider(event.target.value)}>
+					<option value="">Semua provider</option>
+					<option value="rajaongkir">RajaOngkir</option>
+				</select>
+				<select value={status} onChange={(event) => setStatus(event.target.value)}>
+					<option value="">Semua status</option>
+					<option value="booked">Booked</option>
+					<option value="pickup_requested">Pickup requested</option>
+					<option value="in_transit">In transit</option>
+					<option value="delivered">Delivered</option>
+					<option value="cancelled">Cancelled</option>
+					<option value="booking_failed">Booking failed</option>
+				</select>
+				<select value={queueStatus} onChange={(event) => setQueueStatus(event.target.value)}>
+					<option value="">Semua antrean</option>
+					<option value="pending">Menunggu</option>
+					<option value="running">Diproses</option>
+					<option value="dead">Gagal</option>
+					<option value="final">Final</option>
+					<option value="idle">Idle</option>
+				</select>
+				<button className="button button-secondary" onClick={() => void load()} disabled={loading}>
+					{loading ? "Memuat…" : "Muat ulang"}
+				</button>
+				<span className="subtle">Otomatis diperbarui setiap 15 detik · {formatNumber(page.total)} hasil</span>
+			</section>
+
+			<section className="panel panel-table tracking-monitor-table">
+				<div className="table-scroll">
+					<table>
+						<thead><tr>
+							<th>Shipment</th><th>Merchant / order</th><th>Provider</th><th>Pengiriman</th>
+							<th>Status</th><th>Tracking</th><th>Antrean</th><th>Webhook</th><th>Aksi</th>
+						</tr></thead>
+						<tbody>
+							{page.items.map((item) => (
+								<FulfillmentOperationRow key={item.shipment_id} item={item}
+									refreshing={refreshingID === item.shipment_id}
+									onReconcile={() => void reconcile(item)} />
+							))}
+							{!page.items.length && <tr><td colSpan={9} className="empty-state">
+								{loading ? "Memuat lifecycle fulfillment…" : "Belum ada shipment yang sesuai filter."}
+							</td></tr>}
+						</tbody>
+					</table>
+				</div>
+			</section>
+		</div>
+	);
+}
+
+function FulfillmentOperationRow({
+	item,
+	refreshing,
+	onReconcile,
+}: {
+	item: FulfillmentOperation;
+	refreshing: boolean;
+	onReconcile: () => void;
+}) {
+	const final = item.status === "delivered" || item.status === "cancelled";
+	const queueTone = item.queue_status === "running" ? "badge-success" :
+		item.queue_status === "pending" ? "badge-warning" :
+		item.queue_status === "dead" ? "badge-danger" : "";
+	const trackingTone = item.tracking_registration_status === "registered" ? "badge-success" :
+		item.tracking_registration_status === "failed" ? "badge-danger" : "badge-warning";
+	return <tr>
+		<td><strong>{item.shipment_id.slice(0, 8)}</strong><small>{item.provider_shipment_id || "Belum ada order provider"}</small></td>
+		<td><strong>{item.merchant_id}</strong><small>{item.order_id}</small></td>
+		<td><strong>{item.provider}</strong><small>{item.provider_status || "Belum direkonsiliasi"}</small></td>
+		<td><strong>{item.courier.toUpperCase()} · {item.service}</strong><small>{item.waybill || "AWB belum tersedia"}</small></td>
+		<td><span className={`badge ${final ? "badge-success" : ""}`}>{item.status.replaceAll("_", " ")}</span><small>Update {formatDate(item.updated_at)}</small></td>
+		<td><span className={`badge ${trackingTone}`}>{item.tracking_registration_status.replaceAll("_", " ")}</span><small>{item.tracking_status || "Belum ada snapshot"}</small></td>
+		<td><span className={`badge ${queueTone}`}>{item.queue_status}</span><small>{item.job_type || "tanpa job"} · {item.job_attempt_count}/{item.job_max_attempts || "—"}</small>{item.reconcile_error && <small>{item.reconcile_error}</small>}</td>
+		<td><strong>{item.webhook_status}</strong><small>Reconcile {formatDate(item.last_reconciled_at || null)}</small></td>
+		<td><button className="table-action" disabled={refreshing || final || !item.provider_shipment_id}
+			onClick={onReconcile}>{refreshing ? "Mengantre…" : "Refresh provider"}</button></td>
+	</tr>;
 }
 
 function TrackingTool({
@@ -5164,7 +5956,7 @@ function PartnerDocumentation() {
         </article>
         <article>
           <span>04 · Publish</span>
-          <h3>Sandbox & sertifikasi</h3>
+          <h3>Pengujian & sertifikasi</h3>
           <p>
             Extension baru dapat dipublikasikan setelah contract test,
             idempotency, retry, signature, isolasi tenant, dan skenario kegagalan
@@ -5184,7 +5976,7 @@ function PartnerDocumentation() {
           <li>Timestamp, nonce, replay protection, dan idempotency key.</li>
           <li>Secret terenkripsi serta tidak pernah muncul pada log atau respons.</li>
           <li>Rate limit per partner, audit trail, dan isolasi data seller.</li>
-          <li>Contract test sandbox wajib lulus sebelum status production.</li>
+          <li>Contract test wajib lulus sebelum status production.</li>
         </ul>
       </section>
 

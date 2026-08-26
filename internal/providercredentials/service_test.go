@@ -13,9 +13,20 @@ import (
 const testEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 type memoryRepository struct {
-	input    CreateInput
-	item     Credential
-	disabled bool
+	input           CreateInput
+	item            Credential
+	disabled        bool
+	credentialTypes map[string]string
+}
+
+func (r *memoryRepository) CredentialType(_ context.Context, providerCode string) (string, error) {
+	if value, exists := r.credentialTypes[providerCode]; exists {
+		return value, nil
+	}
+	if providerCode == "biteship" {
+		return "", ErrUnsupportedProvider
+	}
+	return CredentialTypeAPIKey, nil
 }
 
 func (r *memoryRepository) List(context.Context) ([]Credential, error) {
@@ -114,6 +125,23 @@ type acceptingValidator struct {
 	err   error
 }
 
+type acceptingBundleValidator struct {
+	acceptingValidator
+	credentialType string
+	values         map[string]string
+}
+
+func (v *acceptingBundleValidator) ValidateCredentials(
+	_ context.Context,
+	_ string,
+	credentialType string,
+	values map[string]string,
+) error {
+	v.credentialType = credentialType
+	v.values = values
+	return v.err
+}
+
 func (v *acceptingValidator) Validate(context.Context, string, string) error {
 	v.calls++
 	return v.err
@@ -159,6 +187,122 @@ func TestAddEncryptsProviderSecretAndResolverDecryptsIt(t *testing.T) {
 	}
 	if resolved != secret || alias != item.CredentialAlias || limit != DefaultDailyLimit {
 		t.Fatalf("unexpected resolved credential metadata")
+	}
+}
+
+func TestOAuthCredentialBundleIsEncryptedAndResolvedAsFields(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryRepository{credentialTypes: map[string]string{
+		"oauth-provider": CredentialTypeOAuth2ClientCredentials,
+	}}
+	validator := &acceptingBundleValidator{}
+	service := NewService(repository, cipher, validator)
+	created, err := service.AddForTenantCredentials(
+		context.Background(), "merchant_123", "oauth-provider",
+		map[string]string{
+			"client_id": "merchant-client-1234", "client_secret": "oauth-secret-value",
+		},
+		50_000, "tenant:merchant_123", "req_oauth",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validator.credentialType != CredentialTypeOAuth2ClientCredentials ||
+		validator.values["client_id"] != "merchant-client-1234" {
+		t.Fatalf("validator did not receive credential bundle: %#v", validator)
+	}
+	if bytes.Contains(repository.input.SecretCiphertext, []byte("oauth-secret-value")) {
+		t.Fatal("OAuth client secret was stored as plaintext")
+	}
+	if created.DisplayKey != "merc••••1234" {
+		t.Fatalf("display key=%q", created.DisplayKey)
+	}
+	values, credentialType, _, _, err := service.ResolveProviderCredentialValues(
+		context.Background(), "oauth-provider",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credentialType != CredentialTypeOAuth2ClientCredentials ||
+		values["client_secret"] != "oauth-secret-value" {
+		t.Fatalf("resolved type=%q values=%#v", credentialType, values)
+	}
+}
+
+func TestCapabilityAPIKeysResolveByOperation(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryRepository{credentialTypes: map[string]string{
+		"rajaongkir": CredentialTypeCapabilityAPIKeys,
+	}}
+	validator := &acceptingValidator{}
+	service := NewService(repository, cipher, validator)
+	_, err = service.AddForTenantCredentials(
+		context.Background(), "merchant_123", "rajaongkir",
+		map[string]string{
+			"shipping_api_key": "shipping-production-key",
+			"delivery_api_key": "delivery-production-key",
+		},
+		50_000, "tenant:merchant_123", "req_capabilities",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("shipping key validation calls=%d want 1", validator.calls)
+	}
+	shipping, _, _, err := service.ResolveProviderCredentialForCapability(
+		context.Background(), "rajaongkir", "rates:read",
+	)
+	if err != nil || shipping != "shipping-production-key" {
+		t.Fatalf("resolve shipping key=%q err=%v", shipping, err)
+	}
+	delivery, _, _, err := service.ResolveProviderCredentialForCapability(
+		context.Background(), "rajaongkir", "pickup:write",
+	)
+	if err != nil || delivery != "delivery-production-key" {
+		t.Fatalf("resolve delivery key=%q err=%v", delivery, err)
+	}
+	legacyResolverValue, _, _, err := service.ResolveProviderCredential(
+		context.Background(), "rajaongkir",
+	)
+	if err != nil || legacyResolverValue != "shipping-production-key" {
+		t.Fatalf("legacy resolver key=%q err=%v", legacyResolverValue, err)
+	}
+}
+
+func TestCapabilityAPIKeysDoNotReuseShippingKeyForDelivery(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryRepository{credentialTypes: map[string]string{
+		"rajaongkir": CredentialTypeCapabilityAPIKeys,
+	}}
+	service := NewService(repository, cipher, &acceptingValidator{})
+	_, err = service.AddForTenant(
+		context.Background(), "merchant_123", "rajaongkir",
+		"legacy-shipping-key", 50_000, "tenant:merchant_123", "req_legacy_shipping",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = service.ResolveProviderCredentialForCapability(
+		context.Background(), "rajaongkir", "shipments:write",
+	)
+	if !errors.Is(err, ErrCredentialCapabilityUnavailable) {
+		t.Fatalf("expected unavailable delivery capability, got %v", err)
 	}
 }
 
@@ -367,6 +511,34 @@ func TestStaticFallbackResolverKeepsBYOKTenantIsolated(t *testing.T) {
 	}
 }
 
+func TestStaticFallbackResolverUsesSeparateDeliveryCredentialForBuiltInTenant(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewStaticFallbackResolver(
+		capabilityResolverStub{err: ErrNoActiveCredential},
+		map[string]StaticCredential{
+			"rajaongkir": {
+				Secret: "shipping-key",
+				CapabilitySecrets: map[string]string{
+					"shipments:write": "delivery-key",
+				},
+				CredentialAlias: "platform", DailyLimit: 50_000,
+			},
+		},
+		platformAuthorizerStub{allowed: true},
+	)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant_123"})
+	secret, _, _, err := resolver.ResolveProviderCredentialForCapability(
+		ctx, "rajaongkir", "shipments:write",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret != "delivery-key" {
+		t.Fatalf("expected delivery credential, got %q", secret)
+	}
+}
+
 type platformAuthorizerStub struct {
 	allowed bool
 	err     error
@@ -396,6 +568,16 @@ type resolverStub struct {
 	alias  string
 	limit  int64
 	err    error
+}
+
+type capabilityResolverStub struct{ err error }
+
+func (c capabilityResolverStub) ResolveProviderCredential(context.Context, string) (string, string, int64, error) {
+	return "", "", 0, c.err
+}
+
+func (c capabilityResolverStub) ResolveProviderCredentialForCapability(context.Context, string, string) (string, string, int64, error) {
+	return "", "", 0, c.err
 }
 
 func (r resolverStub) ResolveProviderCredential(

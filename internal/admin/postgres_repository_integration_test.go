@@ -10,6 +10,29 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+func TestListFulfillmentOperationsIntegration(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	page, err := NewPostgresRepository(pool).ListFulfillmentOperations(ctx, FulfillmentOperationFilter{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Summary.Total < int64(len(page.Items)) {
+		t.Fatalf("summary total %d is smaller than returned items %d", page.Summary.Total, len(page.Items))
+	}
+}
+
 func TestDeleteTrackingOperationCascadesAndKeepsAudit(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {

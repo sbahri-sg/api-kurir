@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/couriers"
 	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/rates"
@@ -620,11 +621,11 @@ func attachTenantRateContext(ctx context.Context, request *rates.Request) {
 }
 
 func normalizeCourierCodes(value string) ([]string, error) {
-	parts := strings.Split(strings.ToLower(strings.TrimSpace(value)), ":")
+	parts := strings.Split(strings.TrimSpace(value), ":")
 	unique := make(map[string]struct{}, len(parts))
 	result := make([]string, 0, len(parts))
 	for _, part := range parts {
-		code := strings.TrimSpace(part)
+		code := couriers.NormalizeCode(part)
 		if !validCourierCode.MatchString(code) {
 			return nil, errors.New("courier berisi kode yang tidak valid")
 		}

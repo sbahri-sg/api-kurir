@@ -18,6 +18,48 @@ func TestNormalizeShippingProviderCreateInput(t *testing.T) {
 	if input.Code != "partner-express" || input.Name != "Partner Express" || input.DisplayOrder != 40 {
 		t.Fatalf("unexpected normalized provider: %#v", input)
 	}
+	if input.CredentialType != "none" {
+		t.Fatalf("partner-hosted credential type=%q want none", input.CredentialType)
+	}
+	if input.DistributionType != "merchant" {
+		t.Fatalf("distribution type=%q want merchant", input.DistributionType)
+	}
+}
+
+func TestNormalizeShippingProviderOAuthCredential(t *testing.T) {
+	t.Parallel()
+
+	input, err := normalizeShippingProviderCreateInput(createShippingProviderRequest{
+		Code: "oauth-courier", Name: "OAuth Courier",
+		Logo:            "https://cdn.example.com/oauth.svg",
+		Description:     "Provider OAuth untuk pengiriman merchant Emisell.",
+		IntegrationType: "managed_upstream",
+		CredentialType:  "oauth2_client_credentials", DisplayOrder: 50,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.CredentialType != "oauth2_client_credentials" {
+		t.Fatalf("credential type=%q", input.CredentialType)
+	}
+}
+
+func TestNormalizePartnerHostedCapabilityCredential(t *testing.T) {
+	t.Parallel()
+
+	input, err := normalizeShippingProviderCreateInput(createShippingProviderRequest{
+		Code: "hosted-byok", Name: "Hosted BYOK",
+		Logo:            "https://cdn.example.com/hosted.svg",
+		Description:     "Connector hosted dengan credential milik seller.",
+		IntegrationType: "partner_hosted",
+		CredentialType:  "capability_api_keys", DisplayOrder: 55,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.CredentialType != "capability_api_keys" {
+		t.Fatalf("credential type=%q", input.CredentialType)
+	}
 }
 
 func TestNormalizeShippingProviderRejectsUnsafeMetadata(t *testing.T) {

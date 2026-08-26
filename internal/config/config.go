@@ -23,6 +23,7 @@ type Config struct {
 	ShutdownTimeout     time.Duration
 	Redis               RedisConfig
 	RajaOngkir          RajaOngkirConfig
+	RajaOngkirHosted    HostedConnectorConfig
 	Biteship            BiteshipConfig
 	ProviderCredentials ProviderCredentialConfig
 	MerchantShipping    MerchantShippingConfig
@@ -40,12 +41,21 @@ type RedisConfig struct {
 type RajaOngkirConfig struct {
 	TrackingCouriers   []string
 	APIKey             string
+	DeliveryAPIKey     string
 	BaseURL            string
+	DeliveryBaseURL    string
 	Timeout            time.Duration
+	DeliveryTimeout    time.Duration
 	DailyLimit         int64
 	CredentialAlias    string
 	SnapshotTTL        time.Duration
 	MinRequestInterval time.Duration
+}
+
+type HostedConnectorConfig struct {
+	BaseURL       string
+	PublicBaseURL string
+	Timeout       time.Duration
 }
 
 type BiteshipConfig struct {
@@ -105,6 +115,14 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	rajaOngkirTimeout, err := durationEnv("RAJAONGKIR_TIMEOUT", 4*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	rajaOngkirDeliveryTimeout, err := durationEnv("RAJAONGKIR_DELIVERY_TIMEOUT", 8*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	rajaOngkirHostedTimeout, err := durationEnv("RAJAONGKIR_HOSTED_TIMEOUT", 8*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
@@ -200,12 +218,26 @@ func Load() (Config, error) {
 				"jne,sap,ninja,jnt,tiki,wahana,pos,lion,anteraja",
 			)),
 			APIKey:             strings.TrimSpace(os.Getenv("RAJAONGKIR_API_KEY")),
+			DeliveryAPIKey:     strings.TrimSpace(os.Getenv("RAJAONGKIR_DELIVERY_API_KEY")),
 			BaseURL:            envOr("RAJAONGKIR_BASE_URL", "https://rajaongkir.komerce.id/api/v1/"),
+			DeliveryBaseURL:    envOr("RAJAONGKIR_DELIVERY_BASE_URL", "https://api.collaborator.komerce.id"),
 			Timeout:            rajaOngkirTimeout,
+			DeliveryTimeout:    rajaOngkirDeliveryTimeout,
 			DailyLimit:         rajaOngkirDailyLimit,
 			CredentialAlias:    envOr("RAJAONGKIR_CREDENTIAL_ALIAS", "primary"),
 			SnapshotTTL:        rajaOngkirSnapshotTTL,
 			MinRequestInterval: rajaOngkirMinRequestInterval,
+		},
+		RajaOngkirHosted: HostedConnectorConfig{
+			BaseURL: envOr(
+				"RAJAONGKIR_HOSTED_BASE_URL",
+				"http://127.0.0.1:18080/partner/v1",
+			),
+			PublicBaseURL: envOr(
+				"RAJAONGKIR_HOSTED_PUBLIC_BASE_URL",
+				"https://api-kurir.emisell.com/connectors/rajaongkir/v1",
+			),
+			Timeout: rajaOngkirHostedTimeout,
 		},
 		Biteship: BiteshipConfig{
 			BaseURL:             envOr("BITESHIP_BASE_URL", "https://api.biteship.com/"),
@@ -272,6 +304,18 @@ func Load() (Config, error) {
 		return Config{}, errors.New(
 			"RajaOngkir timeout/snapshot TTL must be positive and request interval at least 10ms",
 		)
+	}
+	if cfg.RajaOngkirHosted.Timeout <= 0 {
+		return Config{}, errors.New("RAJAONGKIR_HOSTED_TIMEOUT must be positive")
+	}
+	hostedPublicURL, parseErr := url.ParseRequestURI(cfg.RajaOngkirHosted.PublicBaseURL)
+	if parseErr != nil || hostedPublicURL.Host == "" ||
+		(hostedPublicURL.Scheme != "http" && hostedPublicURL.Scheme != "https") ||
+		hostedPublicURL.User != nil {
+		return Config{}, errors.New("RAJAONGKIR_HOSTED_PUBLIC_BASE_URL must be a valid absolute HTTP URL")
+	}
+	if cfg.AppEnv == "production" && hostedPublicURL.Scheme != "https" {
+		return Config{}, errors.New("RAJAONGKIR_HOSTED_PUBLIC_BASE_URL must use https in production")
 	}
 	if cfg.Biteship.Timeout <= 0 || cfg.Biteship.RateSnapshotTTL <= 0 {
 		return Config{}, errors.New("Biteship timeout and rate snapshot TTL must be positive")
