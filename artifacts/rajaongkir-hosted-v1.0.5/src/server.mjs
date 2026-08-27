@@ -21,7 +21,6 @@ const DELIVERY_SANDBOX_BASE_URL = normalizedBaseURL(
 );
 const MAX_BODY_BYTES = 64 * 1024;
 const UPSTREAM_TIMEOUT_MS = integer(process.env.UPSTREAM_TIMEOUT_MS, 8000);
-const MINIMUM_RATE_WEIGHT_GRAMS = 1_000;
 const DEFAULT_COURIERS = [
   "jne", "sicepat", "ide", "sap", "jnt", "ninja", "tiki", "lion",
   "anteraja", "pos", "ncs", "rex", "rpx", "sentral", "star", "wahana", "dse",
@@ -275,7 +274,7 @@ async function rates(request, response, id, apiKey) {
     form: {
       origin,
       destination,
-      weight: String(providerRateWeight(weight)),
+      weight: String(weight),
       courier: couriers.join(":"),
       price: input?.price === "highest" ? "highest" : "lowest",
     },
@@ -303,10 +302,6 @@ async function rates(request, response, id, apiKey) {
     })
     .filter((item) => item.courier_code && item.service_code && item.price >= 0 && groups.has(item.service_group));
   reply(response, 200, { data: { quotes }, meta: sourceMeta("shipping_cost") }, id);
-}
-
-export function providerRateWeight(weight) {
-  return Math.max(Number(weight) || 0, MINIMUM_RATE_WEIGHT_GRAMS);
 }
 
 async function tracking(request, response, id, apiKey) {

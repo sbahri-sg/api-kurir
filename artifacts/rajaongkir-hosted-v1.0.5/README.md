@@ -8,6 +8,10 @@ dipublikasikan, seluruh rate, tracking, shipment, label, cancel, dan pickup
 RajaOngkir dijalankan melalui connector hosted. Credential tetap milik seller
 dan diteruskan API Kurir secara terenkripsi sesuai capability.
 
+Aturan bisnis checkout seperti minimum tagihan 1 kg, kelayakan cargo, pilihan
+service seller, dan snapshot tarif tetap diproses oleh API Kurir. Connector
+hanya menerjemahkan request yang sudah dinormalisasi ke kontrak RajaOngkir.
+
 ## Credential
 
 Connector mendukung dua credential resmi yang tidak boleh dimasukkan ke ZIP:

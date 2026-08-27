@@ -389,11 +389,7 @@ func (c *Client) calculateDomestic(
 	form := url.Values{}
 	form.Set("origin", input.Origin)
 	form.Set("destination", input.Destination)
-	providerWeight := input.WeightGrams
-	if providerWeight < rates.MinimumProviderBillableWeightGrams {
-		providerWeight = rates.MinimumProviderBillableWeightGrams
-	}
-	form.Set("weight", strconv.FormatInt(providerWeight, 10))
+	form.Set("weight", strconv.FormatInt(input.WeightGrams, 10))
 	form.Set("courier", strings.Join(input.Couriers, ":"))
 	if input.PriceFilter != "" {
 		form.Set("price", input.PriceFilter)

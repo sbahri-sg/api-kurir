@@ -4,16 +4,9 @@ import {
   canonicalCourierName,
   canonicalServiceName,
   createConnectorServer,
-  providerRateWeight,
   PROVIDER_CODE,
   serviceGroup,
 } from "../src/server.mjs";
-
-test("berat provider minimum satu kilogram", () => {
-  assert.equal(providerRateWeight(500), 1_000);
-  assert.equal(providerRateWeight(1_000), 1_000);
-  assert.equal(providerRateWeight(1_200), 1_200);
-});
 
 async function withServer(run) {
   const server = createConnectorServer();
