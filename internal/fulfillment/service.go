@@ -92,6 +92,9 @@ func (s *Service) Create(
 		if reserved.ProviderShipmentID == "" && reserved.Status == StatusBookingPending {
 			return Shipment{}, false, ErrOperationInProgress
 		}
+		if reserved.Status == StatusBookingFailed {
+			return Shipment{}, false, providerError(reserved.ProviderStatus)
+		}
 		return reserved, true, nil
 	}
 	result, err := adapter.Create(ctx, credential, request)
@@ -142,6 +145,13 @@ func (s *Service) Pickup(
 	}
 	if finalStatus(shipment.Status) {
 		return Shipment{}, false, ErrShipmentFinal
+	}
+	if shipment.ProviderShipmentID == "" || shipment.Fulfillment != "pickup" ||
+		!oneOf(shipment.Status, StatusBooked, StatusPickupRequested) {
+		return Shipment{}, false, ErrPickupNotAllowed
+	}
+	if shipment.Status == StatusPickupRequested || shipment.AWB != "" {
+		return shipment, true, nil
 	}
 	adapter, credential, err := s.adapterCredential(ctx, shipment.ProviderCode, "pickup:write")
 	if err != nil {
@@ -502,5 +512,18 @@ func providerErrorStatus(err error) string {
 		return "timeout"
 	default:
 		return "unavailable"
+	}
+}
+
+func providerError(status string) error {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "unauthorized":
+		return ErrProviderUnauthorized
+	case "rejected":
+		return ErrProviderRejected
+	case "timeout":
+		return ErrProviderTimeout
+	default:
+		return ErrProviderUnavailable
 	}
 }

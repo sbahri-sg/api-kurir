@@ -41,6 +41,8 @@ memakai `Idempotency-Key` sepanjang 8–128 karakter.
 ## Aturan idempotency
 
 - key yang sama dan payload yang sama mengembalikan hasil lama;
+- booking yang sebelumnya gagal tetap mengembalikan error provider semula dan
+  tidak pernah berubah menjadi respons sukses saat key yang sama diulang;
 - key yang sama dengan payload berbeda menghasilkan HTTP `409`;
 - `merchant_reference` tidak boleh membuat dua shipment pada merchant yang
   sama;
@@ -64,7 +66,11 @@ lain tidak boleh meminjam credential atau saldo platform.
 Adapter RajaOngkir memakai base URL Shipping Delivery
 `https://api.collaborator.komerce.id`. Sandbox harus memakai base URL dan key
 sandbox tersendiri. Endpoint internal tidak berubah ketika environment provider
-diganti.
+diganti. Main Service memilihnya melalui header
+`X-Emisell-Execution-Mode: live|sandbox` (default `live`). Credential sandbox
+disimpan sebagai record terpisah dengan `environment: sandbox` dan hanya perlu
+memuat `delivery_api_key`; Shipping Cost tetap memakai credential live karena
+rate dan tracking RajaOngkir tidak mempunyai sandbox terpisah.
 
 ## Perlindungan data
 
@@ -80,6 +86,16 @@ Status awal adalah `booking_pending`, kemudian `booked`, `pickup_requested`,
 pembatalan memakai `booking_failed`, `problem`, `cancellation_pending`, dan
 `cancelled`. Status mentah provider disimpan terpisah sebagai
 `provider_status`.
+
+Pickup hanya dapat dijadwalkan ketika booking berstatus `booked` dan
+`provider_shipment_id` sudah tersedia. Shipment `booking_pending`,
+`booking_failed`, `problem`, atau booking tanpa ID provider ditolak dengan HTTP
+`409 PICKUP_NOT_ALLOWED` tanpa memanggil provider. Request pickup yang sudah
+berstatus `pickup_requested` dibaca sebagai replay agar tidak membuat pickup
+ganda. Connector juga memeriksa hasil setiap order di dalam respons RajaOngkir.
+HTTP 2xx dari envelope tidak dianggap berhasil bila item order berstatus
+`failed`; API mengembalikan `422 PROVIDER_REJECTED`, shipment tetap `booked`,
+dan operator dapat memperbaiki jadwal atau data lalu mencoba kembali.
 
 ## Lifecycle otomatis setelah booking
 

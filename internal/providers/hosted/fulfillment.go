@@ -45,8 +45,10 @@ func (a *FulfillmentAdapter) Pickup(ctx context.Context, credential string, ship
 	}
 	var response struct {
 		Data struct {
-			PickupID string `json:"pickup_id"`
-			Status   string `json:"status"`
+			PickupID          string `json:"pickup_id"`
+			PartnerShipmentID string `json:"partner_shipment_id"`
+			WaybillNumber     string `json:"waybill_number"`
+			Status            string `json:"status"`
 		} `json:"data"`
 	}
 	if err := a.client.Do(ctx, http.MethodPost, "pickups", "x-api-key", credential, input, &response); err != nil {
@@ -54,6 +56,7 @@ func (a *FulfillmentAdapter) Pickup(ctx context.Context, credential string, ship
 	}
 	return fulfillment.ProviderPickupResult{
 		ProviderOperationID: response.Data.PickupID,
+		AWB:                 response.Data.WaybillNumber,
 		ProviderStatus:      response.Data.Status,
 		Status:              fulfillment.StatusPickupRequested,
 	}, nil

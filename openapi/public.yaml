@@ -1141,6 +1141,7 @@ paths:
           merchantContextAuth: []
       parameters:
         - $ref: "#/components/parameters/FulfillmentIdempotencyKey"
+        - $ref: "#/components/parameters/ExecutionModeHeader"
       requestBody:
         required: true
         content:
@@ -1210,6 +1211,12 @@ paths:
       tags: [Emisell Gateway]
       operationId: requestTenantFulfillmentPickup
       summary: Menjadwalkan pickup shipment
+      description: >
+        Pickup hanya diteruskan setelah booking berstatus booked dan
+        provider_shipment_id tersedia. Booking gagal atau belum selesai
+        menghasilkan 409 PICKUP_NOT_ALLOWED tanpa hit ke provider. Respons
+        envelope 2xx dari provider hanya dianggap berhasil ketika item order
+        pickup juga berstatus sukses.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1218,6 +1225,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/FulfillmentShipmentID"
         - $ref: "#/components/parameters/FulfillmentIdempotencyKey"
+        - $ref: "#/components/parameters/ExecutionModeHeader"
       requestBody:
         required: true
         content:
@@ -1240,7 +1248,13 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: Shipment final atau operation conflict
+          description: Booking belum berhasil, shipment final, atau operation conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Provider menolak order pickup meskipun envelope respons diterima
           content:
             application/json:
               schema:
@@ -2959,6 +2973,18 @@ components:
       description: Access key berformat epk_live_* yang terikat ke satu provider.
 
   parameters:
+    ExecutionModeHeader:
+      name: X-Emisell-Execution-Mode
+      in: header
+      required: false
+      description: >
+        Mode eksekusi capability provider. Default live. Sandbox memilih
+        credential dan base URL sandbox bila provider mendukungnya; rate dan
+        tracking RajaOngkir tetap live read-only sesuai capability policy.
+      schema:
+        type: string
+        enum: [live, sandbox]
+        default: live
     FulfillmentShipmentID:
       name: shipment_id
       in: path

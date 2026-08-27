@@ -169,6 +169,8 @@ func writeFulfillmentError(c *echo.Context, err error) error {
 		return writeError(c, http.StatusGatewayTimeout, "PROVIDER_TIMEOUT", "Provider tidak merespons tepat waktu; periksa status sebelum mencoba ulang.", map[string]any{"retryable": false})
 	case errors.Is(err, fulfillment.ErrProviderUnavailable):
 		return writeError(c, http.StatusServiceUnavailable, "PROVIDER_UNAVAILABLE", "Provider pengiriman sedang tidak tersedia.", map[string]any{"retryable": true})
+	case errors.Is(err, fulfillment.ErrPickupNotAllowed):
+		return writeError(c, http.StatusConflict, "PICKUP_NOT_ALLOWED", "Pickup hanya dapat dijadwalkan setelah booking provider berhasil.", nil)
 	case errors.Is(err, fulfillment.ErrShipmentFinal):
 		return writeError(c, http.StatusConflict, "SHIPMENT_FINAL", "Shipment berstatus final dan tidak dapat diubah.", nil)
 	case errors.Is(err, fulfillment.ErrLabelUnavailable):

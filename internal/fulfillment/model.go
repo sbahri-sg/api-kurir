@@ -19,6 +19,7 @@ var (
 	ErrProviderRejected      = errors.New("fulfillment provider rejected request")
 	ErrProviderUnavailable   = errors.New("fulfillment provider unavailable")
 	ErrProviderTimeout       = errors.New("fulfillment provider timeout")
+	ErrPickupNotAllowed      = errors.New("fulfillment pickup is not allowed")
 	ErrShipmentFinal         = errors.New("fulfillment shipment is final")
 	ErrLabelUnavailable      = errors.New("fulfillment label is unavailable")
 	ErrNoLifecycleJob        = errors.New("fulfillment lifecycle job is not available")

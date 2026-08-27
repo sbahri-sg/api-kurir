@@ -2080,6 +2080,7 @@ Content-Type: application/json
       `Contoh OAuth: { "provider_code": "provider-oauth", "credentials": { "client_id": "...", "client_secret": "..." } }`,
       "Nama field wajib mengikuti credential_fields dari GET /api/v1/integrations/providers.",
       "environment menerima live atau sandbox; default live. Secret kedua mode tidak pernah dicampur.",
+      `Credential fulfillment sandbox disimpan terpisah: { "provider_code": "rajaongkir", "environment": "sandbox", "credentials": { "delivery_api_key": "..." } }`,
     ],
     response: `{
   "data": {
@@ -2465,7 +2466,7 @@ awb=TEST123456789&courier=sicepat`,
     path: "/api/v1/integrations/shipments",
     title: "Buat shipment fulfillment",
     description:
-      "Membuat booking pada provider aktif merchant. API Kurir mengunci provider dan credential, mereservasi idempotency sebelum hit upstream, serta mengenkripsi alamat, telepon, dan isi paket di database.",
+      "Membuat booking pada provider aktif merchant. API Kurir mengunci provider dan credential, mereservasi idempotency sebelum hit upstream, serta mengenkripsi alamat, telepon, dan isi paket di database. Replay atas booking_failed tetap mengembalikan error provider semula, bukan sukses palsu.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
     parameters: [
       "Idempotency-Key — wajib, unik per percobaan booking; gunakan nilai yang sama hanya untuk retry payload identik",
@@ -2562,11 +2563,12 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/shipments/{shipment_id}/pickup",
     title: "Jadwalkan pickup shipment",
     description:
-      "Menjadwalkan pickup untuk shipment yang sudah dibuat. RajaOngkir mensyaratkan jadwal valid dan vehicle motor, mobil, atau truk.",
+      "Menjadwalkan pickup hanya setelah shipment berstatus booked dan provider_shipment_id tersedia. Booking yang pending atau gagal ditolak lokal dengan 409 PICKUP_NOT_ALLOWED tanpa membuang hit provider. RajaOngkir mensyaratkan jadwal valid dan vehicle motor, mobil, atau truk. Connector memeriksa status setiap order; envelope HTTP sukses dengan item failed tetap ditolak.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
     request: `POST {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}/pickup
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}
+X-Emisell-Execution-Mode: sandbox
 Idempotency-Key: shipment:pickup:ORDER-10001
 Content-Type: application/json
 
@@ -2574,7 +2576,11 @@ Content-Type: application/json
   "scheduled_at": "2026-08-27T09:00:00+07:00",
   "vehicle": "motor"
 }`,
-    response: `HTTP 202 untuk request baru atau 200 untuk replay. Shipment berstatus pickup_requested. Ketika provider mengembalikan AWB, tracking_registration_status menjadi pending lalu worker otomatis mendaftarkannya ke pipeline tracking.`,
+    response: `HTTP 202 untuk request baru atau 200 untuk replay. Shipment berstatus pickup_requested. Ketika provider mengembalikan AWB, tracking_registration_status menjadi pending lalu worker otomatis mendaftarkannya ke pipeline tracking.
+
+HTTP 409 PICKUP_NOT_ALLOWED bila booking provider belum berhasil atau provider_shipment_id belum tersedia.
+
+HTTP 422 PROVIDER_REJECTED bila provider menerima request tetapi hasil order pickup berstatus failed. Shipment tetap booked sehingga dapat dicoba ulang setelah data diperbaiki. Gunakan mode live untuk produksi; header sandbox hanya ketika credential Shipping Delivery sandbox sudah tersimpan.`,
   },
   {
     contract: "gateway",

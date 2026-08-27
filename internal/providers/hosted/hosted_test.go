@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/emisell/api-kurir/internal/fulfillment"
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tracking"
 )
@@ -170,5 +171,55 @@ func TestHostedFulfillmentAdapterUsesDeliveryCredential(t *testing.T) {
 	}
 	if result.ProviderShipmentID != "RO-1" || result.AWB != "AWB-1" || result.Status != fulfillment.StatusBooked {
 		t.Fatalf("unexpected fulfillment result: %#v", result)
+	}
+}
+
+func TestHostedPickupForwardsSandboxModeAndMapsWaybill(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/partner/v1/pickups" || request.Header.Get("x-api-key") != "delivery-key" {
+			http.Error(response, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		if request.Header.Get("X-Emisell-Execution-Mode") != providercredentials.EnvironmentSandbox {
+			http.Error(response, "sandbox mode was not forwarded", http.StatusBadRequest)
+			return
+		}
+		var input map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil || input["provider_shipment_id"] != "KOM-1" {
+			http.Error(response, "invalid payload", http.StatusUnprocessableEntity)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(response).Encode(map[string]any{
+			"data": map[string]any{
+				"pickup_id": "PICKUP-1", "partner_shipment_id": "KOM-1",
+				"waybill_number": "AWB-1", "status": "requested",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL+"/partner/v1", 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := NewFulfillmentAdapter("rajaongkir", client)
+	ctx := providercredentials.WithExecutionEnvironment(
+		context.Background(), providercredentials.EnvironmentSandbox,
+	)
+	result, err := adapter.Pickup(ctx, "delivery-key", fulfillment.Shipment{
+		ProviderShipmentID: "KOM-1",
+	}, fulfillment.PickupRequest{
+		ScheduledAt: time.Now().Add(time.Hour), Vehicle: "motor",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ProviderOperationID != "PICKUP-1" || result.AWB != "AWB-1" ||
+		result.Status != fulfillment.StatusPickupRequested {
+		t.Fatalf("unexpected pickup result: %#v", result)
 	}
 }
