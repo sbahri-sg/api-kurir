@@ -1,6 +1,10 @@
 package partnerpackages
 
-import "time"
+import (
+	"time"
+
+	"github.com/emisell/api-kurir/internal/providercredentials"
+)
 
 const (
 	MaxArtifactBytes        = 25 * 1024 * 1024
@@ -25,6 +29,9 @@ type ManifestSummary struct {
 	BaseURL            string   `json:"base_url"`
 	DeclaredCapability []string `json:"declared_capabilities"`
 	DeclaredServices   []string `json:"declared_services"`
+	CredentialFields   []providercredentials.FieldDefinition `json:"credential_fields"`
+	Environments       []providercredentials.EnvironmentDefinition `json:"environments"`
+	CapabilityPolicies []providercredentials.CapabilityEnvironmentPolicy `json:"capability_policies"`
 }
 
 type ScanReport struct {

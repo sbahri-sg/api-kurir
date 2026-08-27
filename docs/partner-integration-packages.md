@@ -37,10 +37,9 @@ sertifikasi memanggil Partner Connector melalui jaringan terkontrol.
    masuk `changes_requested` dan tetap tersimpan sebagai bukti submission.
 7. Reviewer memindahkan status melalui sandbox, security review, UAT, approved,
    dan published.
-8. Status `published` menjadikan versi tersebut **active release** provider dan
-   versi production sebelumnya otomatis menjadi `superseded`. Admin tetap
-   mengaktifkan `available` secara terpisah setelah kontrol bisnis dan
-   operasional selesai.
+8. Status `published` menjadikan versi tersebut **active release**, menyalin
+   deklarasi credential/environment ke katalog merchant, dan membuat provider
+   tersedia. Versi production sebelumnya otomatis menjadi `superseded`.
 Staff tetap memakai admin API key untuk review. Vendor hanya menerima partner
 access key yang terikat ke satu `provider_code`; admin API key dan endpoint
 `/v1/admin/*` tidak boleh diberikan kepada vendor. Access key disimpan sebagai
@@ -73,6 +72,25 @@ provider:
 connector:
   contract_version: v1
   base_url: https://api-kurir.emisell.com/connectors/mengantar/v1
+credentials:
+  fields:
+    - code: api_key
+      label: API key
+      input_type: password
+      secret: true
+      required: true
+      capabilities: [rates:read]
+      environments: [live]
+environments:
+  - code: live
+    label: Live
+    description: Operasi provider production.
+capability_policies:
+  - capability: rates
+    environment: live
+    behavior: live
+    credential_environment: live
+    billing: provider_defined
 capabilities:
   - rates
   - shipments
@@ -97,6 +115,14 @@ Capability yang diterima pada MVP adalah `rates`, `shipments`, `pickup`,
 `tracking`, dan `balance`. Group layanan yang diterima adalah `regular`,
 `next_day`, `economy`, dan `cargo`. Nilai lain menghasilkan feedback manifest
 dan status `changes_requested`.
+
+`credentials.fields` adalah sumber form aktivasi merchant. Tipe input dibatasi
+pada `text`, `password`, `select`, dan `checkbox`; package tidak dapat mengirim
+HTML atau JavaScript untuk dirender Emisell. `environments` hanya menerima
+`live` dan `sandbox`. Setiap capability wajib mempunyai policy live, sedangkan
+policy sandbox opsional sesuai dukungan provider. Behavior yang diterima ialah
+`live`, `provider_sandbox`, `simulated`, `live_read_only`, dan `unavailable`;
+billing ialah `provider_charged`, `no_charge`, atau `provider_defined`.
 
 ## 4. Kontrak OpenAPI minimum
 
@@ -170,6 +196,7 @@ Validator saat ini melakukan pemeriksaan statis berikut:
 - manifest dan OpenAPI wajib tersedia pada root;
 - provider, contract version, HTTPS URL, capability, serta path canonical
   diperiksa.
+- deklarasi credential, environment, policy capability, dan billing diperiksa;
 - percobaan upload dibatasi secara persisten per access key dan upload paralel
   pada key yang sama ditolak;
 - kuota jumlah versi dan total penyimpanan diperiksa atomik per provider.

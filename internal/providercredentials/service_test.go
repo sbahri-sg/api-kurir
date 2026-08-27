@@ -3,6 +3,8 @@ package providercredentials
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -47,6 +49,7 @@ func (r *memoryRepository) Create(_ context.Context, input CreateInput) (Credent
 	r.input = input
 	r.item = Credential{
 		ID: input.ID, TenantID: input.TenantID, ProviderCode: input.ProviderCode,
+		Environment:     input.Environment,
 		CredentialAlias: input.CredentialAlias,
 		DisplayKey:      input.KeyPrefix + "••••" + input.KeyLastFour,
 		DailyLimit:      input.DailyLimit, Active: true,
@@ -54,6 +57,27 @@ func (r *memoryRepository) Create(_ context.Context, input CreateInput) (Credent
 		CreatedAt: time.Now(),
 	}
 	return r.item, nil
+}
+
+type declarativeMemoryRepository struct {
+	memoryRepository
+	fields []FieldDefinition
+}
+
+func (r *declarativeMemoryRepository) CredentialDefinition(
+	context.Context,
+	string,
+) (string, []FieldDefinition, error) {
+	return CredentialTypeProviderDeclared, r.fields, nil
+}
+
+func (r *declarativeMemoryRepository) CredentialEnvironment(
+	_ context.Context,
+	_ string,
+	_ string,
+	executionEnvironment string,
+) (string, error) {
+	return NormalizeEnvironment(executionEnvironment), nil
 }
 
 func (r *memoryRepository) Disable(context.Context, string, string, string) error {
@@ -304,6 +328,67 @@ func TestCapabilityAPIKeysDoNotReuseShippingKeyForDelivery(t *testing.T) {
 	if !errors.Is(err, ErrCredentialCapabilityUnavailable) {
 		t.Fatalf("expected unavailable delivery capability, got %v", err)
 	}
+}
+
+func TestProviderDeclaredSandboxCredentialUsesSandboxFieldOnly(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &declarativeMemoryRepository{fields: []FieldDefinition{
+		{
+			Code: "shipping_api_key", Label: "Shipping key", InputType: "password",
+			Secret: true, Required: true, Capabilities: []string{"rates:read"},
+			Environments: []string{EnvironmentLive},
+		},
+		{
+			Code: "delivery_api_key", Label: "Delivery key", InputType: "password",
+			Secret: true, Required: true, Capabilities: []string{"shipments:write"},
+			Environments: []string{EnvironmentSandbox},
+		},
+	}}
+	service := NewService(repository, cipher, &acceptingValidator{})
+	_, err = service.AddForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "provider-hosted", EnvironmentSandbox,
+		map[string]string{"delivery_api_key": "sandbox-delivery-key"},
+		50_000, "tenant:merchant_123", "req_sandbox",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.input.Environment != EnvironmentSandbox {
+		t.Fatalf("environment=%q", repository.input.Environment)
+	}
+	if _, exists := repository.inputSecretValue(t, cipher, "shipping_api_key"); exists {
+		t.Fatal("live field must not be stored in sandbox credential")
+	}
+	if value, exists := repository.inputSecretValue(t, cipher, "delivery_api_key"); !exists || value != "sandbox-delivery-key" {
+		t.Fatalf("sandbox delivery credential missing: value=%q exists=%t", value, exists)
+	}
+}
+
+func (r *declarativeMemoryRepository) inputSecretValue(
+	t *testing.T,
+	cipher *Cipher,
+	code string,
+) (string, bool) {
+	t.Helper()
+	fingerprintHex := hex.EncodeToString(r.input.SecretFingerprint)
+	plaintext, err := cipher.Decrypt(
+		r.input.SecretCiphertext,
+		[]byte(r.input.ProviderCode+":"+fingerprintHex),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle encryptedCredentialBundle
+	if err := json.Unmarshal(plaintext, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	value, exists := bundle.Values[code]
+	return value, exists
 }
 
 func TestBiteshipCredentialValidationDoesNotConsumeTrackingQuota(t *testing.T) {

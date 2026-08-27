@@ -17,7 +17,10 @@ import (
 var etdNumbers = regexp.MustCompile(`\d+`)
 
 type RateCredentialResolver interface {
-	ResolveProviderCredential(ctx context.Context, providerCode string) (secret, alias string, dailyLimit int64, err error)
+	ResolveProviderCredentialForCapability(
+		ctx context.Context,
+		providerCode, capability string,
+	) (secret, alias string, dailyLimit int64, err error)
 }
 
 type LocationMappingResolver interface {
@@ -51,7 +54,9 @@ func NewRateProvider(
 func (p *RateProvider) Code() string { return p.providerCode }
 
 func (p *RateProvider) Quote(ctx context.Context, request rates.Request) ([]rates.ProviderQuote, error) {
-	secret, alias, limit, err := p.credentials.ResolveProviderCredential(ctx, p.providerCode)
+	secret, alias, limit, err := p.credentials.ResolveProviderCredentialForCapability(
+		ctx, p.providerCode, "rates:read",
+	)
 	if errors.Is(err, providercredentials.ErrNoActiveCredential) {
 		return nil, rates.ErrRateNotAvailable
 	}

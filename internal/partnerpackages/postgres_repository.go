@@ -239,12 +239,13 @@ func (r *PostgresRepository) UpdateStatus(
 	}
 
 	var previousStatus string
+	var scanReportJSON []byte
 	err = tx.QueryRow(ctx, `
-		SELECT status
+		SELECT status, scan_report
 		FROM partner_integration_submissions
 		WHERE id = $1::uuid
 		FOR UPDATE
-	`, id).Scan(&previousStatus)
+	`, id).Scan(&previousStatus, &scanReportJSON)
 	if errors.Is(err, pgx.ErrNoRows) || isInvalidTextRepresentation(err) {
 		return Submission{}, ErrNotFound
 	}
@@ -253,6 +254,10 @@ func (r *PostgresRepository) UpdateStatus(
 	}
 	if previousStatus != update.ExpectedStatus {
 		return Submission{}, ErrStatusConflict
+	}
+	var scanReport ScanReport
+	if err := json.Unmarshal(scanReportJSON, &scanReport); err != nil {
+		return Submission{}, fmt.Errorf("decode partner integration scan report: %w", err)
 	}
 
 	supersededSubmissionIDs := make([]string, 0)
@@ -303,13 +308,40 @@ func (r *PostgresRepository) UpdateStatus(
 	activeRelease := false
 	deactivatedMerchantCount := int64(0)
 	if update.Status == "published" {
+		credentialSchema, encodeErr := json.Marshal(scanReport.Manifest.CredentialFields)
+		if encodeErr != nil {
+			return Submission{}, fmt.Errorf("encode provider credential schema: %w", encodeErr)
+		}
+		environmentSchema, encodeErr := json.Marshal(scanReport.Manifest.Environments)
+		if encodeErr != nil {
+			return Submission{}, fmt.Errorf("encode provider environment schema: %w", encodeErr)
+		}
+		policySchema, encodeErr := json.Marshal(scanReport.Manifest.CapabilityPolicies)
+		if encodeErr != nil {
+			return Submission{}, fmt.Errorf("encode provider capability policy: %w", encodeErr)
+		}
 		result, releaseErr := tx.Exec(ctx, `
 			UPDATE shipping_integration_providers
 			SET active_release_id = $2::uuid,
+			    available = true,
+			    requires_credential = CASE
+			        WHEN jsonb_array_length($3::jsonb) > 0 THEN true
+			        ELSE requires_credential
+			    END,
+			    credential_type = CASE
+			        WHEN jsonb_array_length($3::jsonb) > 0 THEN 'provider_declared'
+			        ELSE credential_type
+			    END,
+			    credential_schema = CASE
+			        WHEN jsonb_array_length($3::jsonb) > 0 THEN $3::jsonb
+			        ELSE credential_schema
+			    END,
+			    environment_schema = $4::jsonb,
+			    capability_environment_schema = $5::jsonb,
 			    updated_at = now()
 			WHERE code = $1
 			  AND integration_type = 'partner_hosted'
-		`, providerCode, id)
+		`, providerCode, id, string(credentialSchema), string(environmentSchema), string(policySchema))
 		if releaseErr != nil {
 			return Submission{}, fmt.Errorf("activate partner integration release: %w", releaseErr)
 		}

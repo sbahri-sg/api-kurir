@@ -11,6 +11,7 @@ import (
 
 type createProviderCredentialRequest struct {
 	ProviderCode string            `json:"provider_code"`
+	Environment  string            `json:"environment,omitempty"`
 	APIKey       string            `json:"api_key"`
 	Credentials  map[string]string `json:"credentials,omitempty"`
 	DailyLimit   int64             `json:"daily_limit,omitempty"`

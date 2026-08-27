@@ -22,6 +22,14 @@ func (credentialStub) ResolveProviderCredential(
 	return "seller-key", "seller", 50_000, nil
 }
 
+func (credentialStub) ResolveProviderCredentialForCapability(
+	context.Context,
+	string,
+	string,
+) (string, string, int64, error) {
+	return "seller-key", "seller", 50_000, nil
+}
+
 type mappingStub struct{}
 
 func (mappingStub) ResolveProviderLocation(
@@ -52,6 +60,10 @@ func TestHostedRateAndTrackingAdapters(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("key") != "seller-key" {
 			http.Error(response, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if request.Header.Get("X-Emisell-Execution-Mode") != "live" {
+			http.Error(response, "missing execution mode", http.StatusBadRequest)
 			return
 		}
 		response.Header().Set("Content-Type", "application/json")

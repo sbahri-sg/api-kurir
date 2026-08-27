@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -20,6 +21,9 @@ const shippingProviderSelect = `
 		provider.distribution_type,
 		provider.requires_credential,
 		provider.credential_type,
+		provider.credential_schema,
+		provider.environment_schema,
+		provider.capability_environment_schema,
 		provider.available,
 		provider.display_order,
 		provider.active_release_id::text,
@@ -417,6 +421,7 @@ func (r *PostgresRepository) getShippingProvider(
 
 func scanShippingProvider(row rowScanner) (ShippingProvider, error) {
 	var item ShippingProvider
+	var credentialSchema, environmentSchema, policySchema []byte
 	if err := row.Scan(
 		&item.Code,
 		&item.Name,
@@ -427,6 +432,9 @@ func scanShippingProvider(row rowScanner) (ShippingProvider, error) {
 		&item.DistributionType,
 		&item.RequiresCredential,
 		&item.CredentialType,
+		&credentialSchema,
+		&environmentSchema,
+		&policySchema,
 		&item.Available,
 		&item.DisplayOrder,
 		&item.ActiveReleaseID,
@@ -441,6 +449,18 @@ func scanShippingProvider(row rowScanner) (ShippingProvider, error) {
 	); err != nil {
 		return ShippingProvider{}, fmt.Errorf("scan admin shipping provider: %w", err)
 	}
-	item.CredentialFields = providercredentials.FieldsForCredentialType(item.CredentialType)
+	item.CredentialSource = "provider_package"
+	if len(credentialSchema) == 0 || string(credentialSchema) == "[]" {
+		item.CredentialSource = "platform_default"
+		item.CredentialFields = providercredentials.FieldsForCredentialType(item.CredentialType)
+	} else if err := json.Unmarshal(credentialSchema, &item.CredentialFields); err != nil {
+		return ShippingProvider{}, fmt.Errorf("decode admin provider credential schema: %w", err)
+	}
+	if err := json.Unmarshal(environmentSchema, &item.Environments); err != nil {
+		return ShippingProvider{}, fmt.Errorf("decode admin provider environment schema: %w", err)
+	}
+	if err := json.Unmarshal(policySchema, &item.CapabilityPolicies); err != nil {
+		return ShippingProvider{}, fmt.Errorf("decode admin provider capability policy: %w", err)
+	}
 	return item, nil
 }

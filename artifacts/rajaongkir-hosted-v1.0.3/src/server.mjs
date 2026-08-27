@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
-export const VERSION = "1.0.3";
+export const VERSION = "1.0.4";
 export const PROVIDER_CODE = "rajaongkir";
 export const PROVIDER_NAME = "RajaOngkir";
 
@@ -11,11 +11,13 @@ const COST_BASE_URL = normalizedBaseURL(
   process.env.SHIPPING_COST_BASE_URL,
   "https://rajaongkir.komerce.id/api/v1/",
 );
-const DELIVERY_BASE_URL = normalizedBaseURL(
-  process.env.SHIPPING_DELIVERY_BASE_URL,
-  process.env.RAJAONGKIR_DELIVERY_ENV === "sandbox"
-    ? "https://api-sandbox.collaborator.komerce.id/"
-    : "https://api.collaborator.komerce.id/",
+const DELIVERY_LIVE_BASE_URL = normalizedBaseURL(
+	process.env.SHIPPING_DELIVERY_BASE_URL,
+	"https://api.collaborator.komerce.id/",
+);
+const DELIVERY_SANDBOX_BASE_URL = normalizedBaseURL(
+	process.env.SHIPPING_DELIVERY_SANDBOX_BASE_URL,
+	"https://api-sandbox.collaborator.komerce.id/",
 );
 const MAX_BODY_BYTES = 64 * 1024;
 const UPSTREAM_TIMEOUT_MS = integer(process.env.UPSTREAM_TIMEOUT_MS, 8000);
@@ -135,6 +137,18 @@ async function readJSON(request) {
 function header(request, name) {
   const value = request.headers[name.toLowerCase()];
   return String(Array.isArray(value) ? value[0] || "" : value || "").trim();
+}
+
+function executionMode(request) {
+	return header(request, "x-emisell-execution-mode").toLowerCase() === "sandbox"
+		? "sandbox"
+		: "live";
+}
+
+function deliveryBaseURL(request) {
+	return executionMode(request) === "sandbox"
+		? DELIVERY_SANDBOX_BASE_URL
+		: DELIVERY_LIVE_BASE_URL;
 }
 
 function uniqueStrings(value, fallback, maximum = 20) {
@@ -424,7 +438,7 @@ async function createShipment(request, response, id, apiKey) {
     fail(response, 422, "INVALID_SHIPMENT_REQUEST", "Data shipment canonical belum lengkap.", id);
     return;
   }
-  const upstream = await upstreamRequest(DELIVERY_BASE_URL, DELIVERY_PATHS.create, apiKey, {
+	const upstream = await upstreamRequest(deliveryBaseURL(request), DELIVERY_PATHS.create, apiKey, {
     method: "POST", authHeader: "x-api-key", json: payload,
   });
   if (upstream.status < 200 || upstream.status >= 300) {
@@ -444,8 +458,8 @@ async function createShipment(request, response, id, apiKey) {
   }, id);
 }
 
-async function shipmentDetail(response, id, apiKey, shipmentID) {
-  const upstream = await upstreamRequest(DELIVERY_BASE_URL, DELIVERY_PATHS.detail, apiKey, {
+async function shipmentDetail(request, response, id, apiKey, shipmentID) {
+	const upstream = await upstreamRequest(deliveryBaseURL(request), DELIVERY_PATHS.detail, apiKey, {
     method: "GET", authHeader: "x-api-key", query: { order_no: shipmentID },
   });
   if (upstream.status < 200 || upstream.status >= 300) {
@@ -468,8 +482,8 @@ async function shipmentDetail(response, id, apiKey, shipmentID) {
   }, id);
 }
 
-async function cancelShipment(response, id, apiKey, shipmentID) {
-  const upstream = await upstreamRequest(DELIVERY_BASE_URL, DELIVERY_PATHS.cancel, apiKey, {
+async function cancelShipment(request, response, id, apiKey, shipmentID) {
+	const upstream = await upstreamRequest(deliveryBaseURL(request), DELIVERY_PATHS.cancel, apiKey, {
     method: "PUT", authHeader: "x-api-key", json: { order_no: shipmentID },
   });
   if (upstream.status < 200 || upstream.status >= 300) {
@@ -482,10 +496,10 @@ async function cancelShipment(response, id, apiKey, shipmentID) {
   }, id);
 }
 
-async function shipmentLabel(response, id, apiKey, shipmentID, format) {
+async function shipmentLabel(request, response, id, apiKey, shipmentID, format) {
   const pages = new Set(["page_1", "page_2", "page_4", "page_5", "page_6"]);
   const page = pages.has(format) ? format : "page_5";
-  const upstream = await upstreamRequest(DELIVERY_BASE_URL, DELIVERY_PATHS.label, apiKey, {
+	const upstream = await upstreamRequest(deliveryBaseURL(request), DELIVERY_PATHS.label, apiKey, {
     method: "POST", authHeader: "x-api-key", query: { page, order_no: shipmentID },
   });
   if (upstream.status < 200 || upstream.status >= 300) {
@@ -511,7 +525,7 @@ async function pickup(request, response, id, apiKey) {
     fail(response, 422, "INVALID_PICKUP_REQUEST", "Jadwal pickup atau provider_shipment_id tidak valid.", id);
     return;
   }
-  const upstream = await upstreamRequest(DELIVERY_BASE_URL, DELIVERY_PATHS.pickup, apiKey, {
+	const upstream = await upstreamRequest(deliveryBaseURL(request), DELIVERY_PATHS.pickup, apiKey, {
     method: "POST", authHeader: "x-api-key", json: payload,
   });
   if (upstream.status < 200 || upstream.status >= 300) {
@@ -548,7 +562,8 @@ export function createConnectorServer() {
           provider_code: PROVIDER_CODE,
           provider_name: PROVIDER_NAME,
           contract_version: "v1",
-          capabilities: { rates: true, shipments: true, pickup: true, tracking: true },
+		  capabilities: { rates: true, shipments: true, pickup: true, tracking: true },
+		  environments: ["live", "sandbox"],
         }, id);
         return;
       }
@@ -583,15 +598,15 @@ export function createConnectorServer() {
         const key = requireKey(request, response, id, "x-api-key", "RAJAONGKIR_DELIVERY_KEY_REQUIRED");
         if (!key) return;
         if (request.method === "GET" && dynamic.action === "detail") {
-          await shipmentDetail(response, id, key, dynamic.shipmentID);
+		  await shipmentDetail(request, response, id, key, dynamic.shipmentID);
           return;
         }
         if (request.method === "POST" && dynamic.action === "cancel") {
-          await cancelShipment(response, id, key, dynamic.shipmentID);
+		  await cancelShipment(request, response, id, key, dynamic.shipmentID);
           return;
         }
         if (request.method === "GET" && dynamic.action === "label") {
-          await shipmentLabel(response, id, key, dynamic.shipmentID, url.searchParams.get("format"));
+		  await shipmentLabel(request, response, id, key, dynamic.shipmentID, url.searchParams.get("format"));
           return;
         }
       }

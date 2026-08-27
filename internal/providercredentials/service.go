@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/emisell/api-kurir/internal/tenancy"
@@ -109,8 +110,26 @@ func (s *Service) AddForTenantCredentials(
 	dailyLimit int64,
 	actor, requestID string,
 ) (Credential, error) {
+	return s.AddForTenantEnvironmentCredentials(
+		ctx, tenantID, providerCode, EnvironmentLive, values,
+		dailyLimit, actor, requestID,
+	)
+}
+
+func (s *Service) AddForTenantEnvironmentCredentials(
+	ctx context.Context,
+	tenantID, providerCode, environment string,
+	values map[string]string,
+	dailyLimit int64,
+	actor, requestID string,
+) (Credential, error) {
 	tenantID = strings.TrimSpace(tenantID)
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
+	var validEnvironment bool
+	environment, validEnvironment = NormalizeEnvironmentStrict(environment)
+	if !validEnvironment {
+		return Credential{}, ErrEnvironmentUnavailable
+	}
 	if !validTenantID(tenantID) {
 		return Credential{}, ErrInvalidTenant
 	}
@@ -120,15 +139,22 @@ func (s *Service) AddForTenantCredentials(
 	if dailyLimit < 1 || dailyLimit > 100_000_000 {
 		return Credential{}, ErrInvalidDailyLimit
 	}
-	credentialType, err := s.repository.CredentialType(ctx, providerCode)
+	credentialType, fields, err := s.credentialDefinition(ctx, providerCode)
 	if err != nil {
 		return Credential{}, err
 	}
-	normalized, err := NormalizeCredentialValues(credentialType, values)
+	if credentialType == CredentialTypeCapabilityAPIKeys {
+		values = normalizeLegacyShippingAPIKey(values)
+		if values == nil {
+			return Credential{}, ErrInvalidSecret
+		}
+	}
+	normalized, err := NormalizeCredentialValuesForFields(fields, environment, values)
 	if err != nil {
 		return Credential{}, ErrInvalidSecret
 	}
-	if err := s.validateCredentialValues(ctx, providerCode, credentialType, normalized); err != nil {
+	validationContext := WithExecutionEnvironment(ctx, environment)
+	if err := s.validateCredentialValues(validationContext, providerCode, credentialType, normalized); err != nil {
 		return Credential{}, fmt.Errorf("%w: %v", ErrInvalidSecret, err)
 	}
 	payload, err := json.Marshal(encryptedCredentialBundle{
@@ -137,11 +163,25 @@ func (s *Service) AddForTenantCredentials(
 	if err != nil {
 		return Credential{}, err
 	}
-	displaySource := credentialDisplaySource(credentialType, normalized)
+	displaySource := credentialDisplaySource(credentialType, fields, normalized)
 	return s.store(
-		ctx, tenantID, providerCode, payload, displaySource,
+		ctx, tenantID, providerCode, environment, payload, displaySource,
 		dailyLimit, actor, requestID,
 	)
+}
+
+func (s *Service) credentialDefinition(
+	ctx context.Context,
+	providerCode string,
+) (string, []FieldDefinition, error) {
+	if repository, ok := s.repository.(SchemaRepository); ok {
+		return repository.CredentialDefinition(ctx, providerCode)
+	}
+	credentialType, err := s.repository.CredentialType(ctx, providerCode)
+	if err != nil {
+		return "", nil, err
+	}
+	return credentialType, FieldsForCredentialType(credentialType), nil
 }
 
 func (s *Service) add(
@@ -166,14 +206,14 @@ func (s *Service) add(
 	}
 
 	return s.store(
-		ctx, tenantID, providerCode, []byte(secret), secret,
+		ctx, tenantID, providerCode, EnvironmentLive, []byte(secret), secret,
 		dailyLimit, actor, requestID,
 	)
 }
 
 func (s *Service) store(
 	ctx context.Context,
-	tenantID, providerCode string,
+	tenantID, providerCode, environment string,
 	payload []byte,
 	displaySource string,
 	dailyLimit int64,
@@ -184,7 +224,7 @@ func (s *Service) store(
 	}
 	fingerprint := sha256.Sum256(payload)
 	fingerprintHex := hex.EncodeToString(fingerprint[:])
-	alias := providerCode + "-" + fingerprintHex[:8]
+	alias := providerCode + "-" + environment + "-" + fingerprintHex[:8]
 	prefixLength := 4
 	if len(displaySource)-4 < prefixLength {
 		prefixLength = len(displaySource) - 4
@@ -205,6 +245,7 @@ func (s *Service) store(
 		ID:                  id,
 		TenantID:            tenantID,
 		ProviderCode:        providerCode,
+		Environment:         environment,
 		CredentialAlias:     alias,
 		KeyPrefix:           displaySource[:prefixLength],
 		KeyLastFour:         displaySource[len(displaySource)-4:],
@@ -223,6 +264,17 @@ func (s *Service) validateCredentialValues(
 	credentialType string,
 	values map[string]string,
 ) error {
+	if credentialType == CredentialTypeProviderDeclared {
+		// Provider packages own the safe field declaration. Known providers may
+		// still validate a read credential immediately; other credentials are
+		// verified by their first connector capability call.
+		if providerCode == "rajaongkir" {
+			if secret := values["shipping_api_key"]; secret != "" {
+				return s.validator.Validate(ctx, providerCode, secret)
+			}
+		}
+		return nil
+	}
 	if validator, ok := s.validator.(BundleValidator); ok {
 		return validator.ValidateCredentials(ctx, providerCode, credentialType, values)
 	}
@@ -232,6 +284,12 @@ func (s *Service) validateCredentialValues(
 		secret = values["api_key"]
 	case CredentialTypeCapabilityAPIKeys:
 		secret = values["shipping_api_key"]
+		if secret == "" && values["delivery_api_key"] != "" {
+			// Shipping Delivery credentials cannot be validated through the
+			// Shipping Cost catalog endpoint. They are exercised by the first
+			// sandbox/live fulfillment request instead.
+			return nil
+		}
 	case CredentialTypeBearerToken:
 		secret = values["token"]
 	default:
@@ -240,7 +298,11 @@ func (s *Service) validateCredentialValues(
 	return s.validator.Validate(ctx, providerCode, secret)
 }
 
-func credentialDisplaySource(credentialType string, values map[string]string) string {
+func credentialDisplaySource(
+	credentialType string,
+	fields []FieldDefinition,
+	values map[string]string,
+) string {
 	switch credentialType {
 	case CredentialTypeOAuth2ClientCredentials:
 		return values["client_id"]
@@ -251,7 +313,25 @@ func credentialDisplaySource(credentialType string, values map[string]string) st
 	case CredentialTypeBearerToken:
 		return values["token"]
 	default:
-		return values["api_key"]
+		if value := values["api_key"]; value != "" {
+			return value
+		}
+		for _, field := range fields {
+			if !field.Secret && values[field.Code] != "" {
+				return values[field.Code]
+			}
+		}
+		codes := make([]string, 0, len(values))
+		for code := range values {
+			codes = append(codes, code)
+		}
+		sort.Strings(codes)
+		for _, code := range codes {
+			if values[code] != "" {
+				return values[code]
+			}
+		}
+		return ""
 	}
 }
 
@@ -319,13 +399,23 @@ func (s *Service) ResolveProviderCredentialForCapability(
 	providerCode string,
 	capability string,
 ) (string, string, int64, error) {
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
+	capability = strings.ToLower(strings.TrimSpace(capability))
+	if repository, ok := s.repository.(SchemaRepository); ok {
+		credentialEnvironment, resolveErr := repository.CredentialEnvironment(
+			ctx, providerCode, capability, ExecutionEnvironment(ctx),
+		)
+		if resolveErr != nil {
+			return "", "", 0, resolveErr
+		}
+		ctx = WithExecutionEnvironment(ctx, credentialEnvironment)
+	}
 	values, credentialType, alias, dailyLimit, err := s.ResolveProviderCredentialValues(
 		ctx, providerCode,
 	)
 	if err != nil {
 		return "", "", 0, err
 	}
-	capability = strings.ToLower(strings.TrimSpace(capability))
 	var secret string
 	switch credentialType {
 	case CredentialTypeCapabilityAPIKeys:
@@ -341,6 +431,19 @@ func (s *Service) ResolveProviderCredentialForCapability(
 		}
 	case CredentialTypeBearerToken:
 		secret = values["token"]
+	case CredentialTypeProviderDeclared:
+		_, fields, definitionErr := s.credentialDefinition(ctx, providerCode)
+		if definitionErr != nil {
+			return "", "", 0, definitionErr
+		}
+		for _, field := range FieldsForEnvironment(fields, ExecutionEnvironment(ctx)) {
+			if len(field.Capabilities) == 0 || containsString(field.Capabilities, capability) {
+				if value := values[field.Code]; value != "" {
+					secret = value
+					break
+				}
+			}
+		}
 	}
 	if secret == "" {
 		return "", "", 0, ErrCredentialCapabilityUnavailable

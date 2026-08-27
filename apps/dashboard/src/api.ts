@@ -311,6 +311,9 @@ export type ShippingProvider = {
   requires_credential: boolean;
   credential_type: ProviderCredentialType;
   credential_fields: ProviderCredentialField[];
+  credential_source: "platform_default" | "provider_package";
+  environments: ProviderEnvironment[];
+  capability_policies: ProviderCapabilityPolicy[];
   available: boolean;
   display_order: number;
   active_release_id: string | null;
@@ -330,17 +333,34 @@ export type ProviderCredentialType =
   | "capability_api_keys"
   | "bearer_token"
   | "api_key_secret"
-  | "oauth2_client_credentials";
+  | "oauth2_client_credentials"
+  | "provider_declared";
+
+export type ProviderEnvironment = {
+  code: "live" | "sandbox";
+  label: string;
+  description: string;
+};
+
+export type ProviderCapabilityPolicy = {
+  capability: string;
+  environment: "live" | "sandbox";
+  behavior: "live" | "provider_sandbox" | "simulated" | "live_read_only" | "unavailable";
+  credential_environment: "live" | "sandbox" | "";
+  billing: "provider_charged" | "no_charge" | "provider_defined";
+};
 
 export type ProviderCredentialField = {
   code: string;
   label: string;
-  input_type: "text" | "password";
+  input_type: "text" | "password" | "select" | "checkbox";
   secret: boolean;
   required: boolean;
   placeholder: string;
   help: string;
   capabilities: string[];
+  environments: ("live" | "sandbox")[];
+  options?: { value: string; label: string }[];
 };
 
 export type ShippingProviderCreateInput = {
@@ -381,6 +401,9 @@ export type PartnerPackageScanReport = {
     base_url: string;
     declared_capabilities: string[];
     declared_services: string[];
+    credential_fields: ProviderCredentialField[];
+    environments: ProviderEnvironment[];
+    capability_policies: ProviderCapabilityPolicy[];
   };
   required_openapi_paths: string[];
 };
@@ -539,6 +562,7 @@ export type ProviderCredential = {
   id: string;
   tenant_id?: string;
   provider_code: string;
+  environment: "live" | "sandbox";
   credential_alias: string;
   display_key: string;
   daily_limit: number;

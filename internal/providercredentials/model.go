@@ -8,6 +8,7 @@ type Credential struct {
 	ID               string     `json:"id"`
 	TenantID         string     `json:"tenant_id,omitempty"`
 	ProviderCode     string     `json:"provider_code"`
+	Environment      string     `json:"environment"`
 	CredentialAlias  string     `json:"credential_alias"`
 	DisplayKey       string     `json:"display_key"`
 	DailyLimit       int64      `json:"daily_limit"`
@@ -29,6 +30,7 @@ type CreateInput struct {
 	ID                  string
 	TenantID            string
 	ProviderCode        string
+	Environment         string
 	CredentialAlias     string
 	KeyPrefix           string
 	KeyLastFour         string

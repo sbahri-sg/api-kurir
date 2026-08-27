@@ -247,27 +247,30 @@ type ProviderQuota struct {
 }
 
 type ShippingProvider struct {
-	Code                   string                                `json:"code"`
-	Name                   string                                `json:"name"`
-	Logo                   string                                `json:"logo"`
-	Description            string                                `json:"description"`
-	BuiltIn                bool                                  `json:"built_in"`
-	IntegrationType        string                                `json:"integration_type"`
-	DistributionType       string                                `json:"distribution_type"`
-	RequiresCredential     bool                                  `json:"requires_credential"`
-	CredentialType         string                                `json:"credential_type"`
-	CredentialFields       []providercredentials.FieldDefinition `json:"credential_fields"`
-	Available              bool                                  `json:"available"`
-	DisplayOrder           int                                   `json:"display_order"`
-	ActiveReleaseID        *string                               `json:"active_release_id"`
-	ActiveReleaseVersion   string                                `json:"active_release_version"`
-	ActiveReleaseStatus    string                                `json:"active_release_status"`
-	ReleaseCount           int64                                 `json:"release_count"`
-	InstalledMerchantCount int64                                 `json:"installed_merchant_count"`
-	ActiveMerchantCount    int64                                 `json:"active_merchant_count"`
-	CredentialCount        int64                                 `json:"credential_count"`
-	CreatedAt              time.Time                             `json:"created_at"`
-	UpdatedAt              time.Time                             `json:"updated_at"`
+	Code                   string                                            `json:"code"`
+	Name                   string                                            `json:"name"`
+	Logo                   string                                            `json:"logo"`
+	Description            string                                            `json:"description"`
+	BuiltIn                bool                                              `json:"built_in"`
+	IntegrationType        string                                            `json:"integration_type"`
+	DistributionType       string                                            `json:"distribution_type"`
+	RequiresCredential     bool                                              `json:"requires_credential"`
+	CredentialType         string                                            `json:"credential_type"`
+	CredentialFields       []providercredentials.FieldDefinition             `json:"credential_fields"`
+	CredentialSource       string                                            `json:"credential_source"`
+	Environments           []providercredentials.EnvironmentDefinition       `json:"environments"`
+	CapabilityPolicies     []providercredentials.CapabilityEnvironmentPolicy `json:"capability_policies"`
+	Available              bool                                              `json:"available"`
+	DisplayOrder           int                                               `json:"display_order"`
+	ActiveReleaseID        *string                                           `json:"active_release_id"`
+	ActiveReleaseVersion   string                                            `json:"active_release_version"`
+	ActiveReleaseStatus    string                                            `json:"active_release_status"`
+	ReleaseCount           int64                                             `json:"release_count"`
+	InstalledMerchantCount int64                                             `json:"installed_merchant_count"`
+	ActiveMerchantCount    int64                                             `json:"active_merchant_count"`
+	CredentialCount        int64                                             `json:"credential_count"`
+	CreatedAt              time.Time                                         `json:"created_at"`
+	UpdatedAt              time.Time                                         `json:"updated_at"`
 }
 
 type ShippingProviderCreateInput struct {

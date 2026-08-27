@@ -64,4 +64,9 @@ func TestRajaOngkirHostedArtifactPassesPackageValidator(t *testing.T) {
 	if report.Manifest.ProviderCode != "rajaongkir" {
 		t.Fatalf("provider code=%q", report.Manifest.ProviderCode)
 	}
+	if len(report.Manifest.CredentialFields) != 2 ||
+		len(report.Manifest.Environments) != 2 ||
+		len(report.Manifest.CapabilityPolicies) != 8 {
+		t.Fatalf("credential/environment contract incomplete: %#v", report.Manifest)
+	}
 }

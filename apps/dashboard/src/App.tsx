@@ -1063,7 +1063,7 @@ function AdminDashboard() {
                         <td>
                           <strong>{credential.provider_code}</strong>
                           <small className="api-key-mask">
-                            {credential.display_key} ·{" "}
+                            {credential.environment} · {credential.display_key} ·{" "}
                             {credential.credential_alias}
                           </small>
                         </td>
@@ -1355,6 +1355,7 @@ function credentialTypeLabel(value: ProviderCredentialType) {
     case "bearer_token": return "Bearer token";
     case "api_key_secret": return "API key + API secret";
     case "oauth2_client_credentials": return "OAuth client credentials";
+    case "provider_declared": return "Dideklarasikan package provider";
     default: return "Dikelola platform";
   }
 }
@@ -1366,6 +1367,7 @@ function credentialFieldPreview(value: ProviderCredentialType) {
     case "bearer_token": return "Access token";
     case "api_key_secret": return "API key · API secret";
     case "oauth2_client_credentials": return "Client ID · Client secret";
+    case "provider_declared": return "Field mengikuti manifest release provider";
     default: return "Tidak ada field credential seller";
   }
 }
@@ -1798,7 +1800,7 @@ function ProviderManagement({
                 Jenis integrasi
                 <select
                   value={draft.integration_type}
-                  disabled={draft.integration_type === "built_in"}
+                  disabled={draft.integration_type === "built_in" || draft.credential_type === "provider_declared"}
                   onChange={(event) =>
                     setDraft({
                       ...draft,
@@ -1834,8 +1836,13 @@ function ProviderManagement({
                   <option value="bearer_token">Bearer token</option>
                   <option value="api_key_secret">API key + API secret</option>
                   <option value="oauth2_client_credentials">OAuth client ID + client secret</option>
+                  <option value="provider_declared">Dideklarasikan package provider</option>
                 </select>
-                <small>Emisell merender field aktivasi merchant berdasarkan model ini.</small>
+                <small>
+                  {draft.credential_type === "provider_declared"
+                    ? "Field dikunci oleh manifest release provider yang dipublikasikan."
+                    : "Emisell merender field aktivasi merchant berdasarkan model ini."}
+                </small>
               </label>
               {draft.integration_type !== "built_in" && draft.credential_type !== "none" && (
                 <div className="provider-key-note">
@@ -2940,15 +2947,17 @@ function PartnerPortalIntegrationDocumentation({
             Key <code>epk_live_*</code> hanya untuk portal dan submission milik
             <strong> {providerCode}</strong>. API key resmi untuk pengujian hanya
             dimasukkan pada Visual API Explorer, disimpan terenkripsi, dan tidak
-            menjadi runtime token production. Credential server-to-server final
-            tetap diprovisikan terpisah ketika release siap diaktifkan.
+            menjadi runtime token production. Saat merchant menginstal provider,
+            Emisell merender form credential dari manifest dan API Kurir meneruskan
+            secret ke connector sesuai capability tanpa membukanya ke browser.
           </p>
-          <pre><code>{`Authorization: Bearer <partner-runtime-token>
-X-Partner-Key-Id: pk_live_...
+          <pre><code>{`X-Emisell-Execution-Mode: live | sandbox
+<header credential sesuai deklarasi package>
 X-Request-Id: req_...`}</code></pre>
           <p>
-            Semua request POST memakai HMAC-SHA256, timestamp, nonce, dan
-            <code> Idempotency-Key</code> sesuai spesifikasi OpenAPI.
+            API Kurir menentukan credential live/sandbox dan endpoint runtime.
+            Provider tidak boleh meminta Emisell menyimpan URL upstream atau
+            membuat form khusus per provider.
           </p>
         </article>
       </section>
@@ -2976,6 +2985,8 @@ X-Request-Id: req_...`}</code></pre>
               <li><code>openapi.yaml</code> OpenAPI 3.x berada tepat pada root ZIP.</li>
               <li>Provider manifest harus <code>{providerCode}</code>.</li>
               <li><code>connector.base_url</code> memakai satu endpoint HTTPS aktif.</li>
+			  <li>Form credential dideklarasikan pada <code>credentials.fields</code>.</li>
+			  <li>Mode live/sandbox dideklarasikan per capability, bukan diasumsikan global.</li>
               <li>ZIP maksimal 25 MB, hasil ekstraksi 100 MB, dan 250 entry.</li>
               <li>Limit 10 percobaan per jam dan satu upload aktif per access key.</li>
               <li>Kuota maksimal 25 versi atau total 500 MB per provider.</li>
@@ -3044,6 +3055,25 @@ provider:
 connector:
   contract_version: v1
   base_url: https://api-kurir.emisell.com/connectors/${providerCode}/v1
+credentials:
+  fields:
+    - code: api_key
+      label: API key
+      input_type: password
+      secret: true
+      required: true
+      capabilities: [rates:read]
+      environments: [live]
+environments:
+  - code: live
+    label: Live
+    description: Operasi provider production.
+capability_policies:
+  - capability: rates
+    environment: live
+    behavior: live
+    credential_environment: live
+    billing: provider_defined
 capabilities:
   - rates
   - shipments
@@ -3059,6 +3089,9 @@ services:
             bukan versi package. Base URL menunjuk ke connector hosted API Kurir.
             Deklarasikan hanya capability dan service yang benar-benar tersedia;
             endpoint wajib akan diperiksa otomatis berdasarkan capability tersebut.
+            API Kurir hanya menerima input <code>text</code>, <code>password</code>,
+            <code>select</code>, dan <code>checkbox</code>; HTML atau JavaScript provider
+            tidak pernah dirender di dashboard Emisell.
           </p>
         </article>
       </section>

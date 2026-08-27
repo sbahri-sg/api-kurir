@@ -13,6 +13,7 @@ import (
 
 type tenantProviderCredentialResponse struct {
 	ProviderCode     string     `json:"provider_code"`
+	Environment      string     `json:"environment"`
 	CredentialAlias  string     `json:"credential_alias"`
 	DisplayKey       string     `json:"display_key"`
 	DailyLimit       int64      `json:"daily_limit"`
@@ -27,6 +28,7 @@ type tenantProviderCredentialResponse struct {
 func tenantProviderCredential(item providercredentials.Credential) tenantProviderCredentialResponse {
 	return tenantProviderCredentialResponse{
 		ProviderCode:     item.ProviderCode,
+		Environment:      item.Environment,
 		CredentialAlias:  item.CredentialAlias,
 		DisplayKey:       item.DisplayKey,
 		DailyLimit:       item.DailyLimit,
@@ -71,15 +73,16 @@ func tenantProviderCredentialCreateHandler(
 			if strings.TrimSpace(request.APIKey) != "" {
 				return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "Gunakan credentials atau api_key, bukan keduanya.", nil)
 			}
-			result, err = service.AddForTenantCredentials(
+			result, err = service.AddForTenantEnvironmentCredentials(
 				c.Request().Context(), identity.TenantID, request.ProviderCode,
-				request.Credentials, request.DailyLimit,
+				request.Environment, request.Credentials, request.DailyLimit,
 				"tenant:"+identity.TenantID, requestID(c),
 			)
 		} else {
-			result, err = service.AddForTenant(
+			result, err = service.AddForTenantEnvironmentCredentials(
 				c.Request().Context(), identity.TenantID, request.ProviderCode,
-				request.APIKey, request.DailyLimit,
+				request.Environment, map[string]string{"api_key": request.APIKey},
+				request.DailyLimit,
 				"tenant:"+identity.TenantID, requestID(c),
 			)
 		}
@@ -149,6 +152,14 @@ func writeTenantProviderCredentialError(c *echo.Context, err error) error {
 			http.StatusBadRequest,
 			"INVALID_DAILY_LIMIT",
 			"daily_limit harus antara 1 dan 100.000.000 hit.",
+			nil,
+		)
+	case errors.Is(err, providercredentials.ErrEnvironmentUnavailable):
+		return writeError(
+			c,
+			http.StatusUnprocessableEntity,
+			"PROVIDER_ENVIRONMENT_UNAVAILABLE",
+			"Mode live/sandbox tidak tersedia untuk credential provider ini.",
 			nil,
 		)
 	case errors.Is(err, providercredentials.ErrDuplicate):

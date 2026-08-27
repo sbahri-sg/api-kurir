@@ -2032,7 +2032,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/provider-credentials",
     title: "Daftar credential provider milik merchant",
     description:
-      "Mengembalikan metadata key provider milik merchant tanpa secret, UUID internal, atau tenant_id.",
+      "Mengembalikan metadata key live/sandbox milik merchant tanpa secret, UUID internal, atau tenant_id.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
@@ -2041,6 +2041,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
   "data": [
     {
       "provider_code": "rajaongkir",
+      "environment": "live",
       "display_key": "demo••••1234",
       "daily_limit": 50000,
       "active": true,
@@ -2057,7 +2058,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/provider-credentials",
     title: "Hubungkan credential provider seller",
     description:
-      "Memvalidasi credential sesuai credential_fields provider, mengenkripsi seluruh bundle dengan AES-256-GCM, dan mengikatnya ke merchant dari header. api_key lama tetap kompatibel; OAuth mengirim credentials berisi client_id dan client_secret.",
+      "Memvalidasi credential sesuai credential_fields dan environment provider, mengenkripsi seluruh bundle dengan AES-256-GCM, dan mengikatnya ke merchant. api_key lama tetap kompatibel pada mode live.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `POST {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
@@ -2066,6 +2067,7 @@ Content-Type: application/json
 
 {
   "provider_code": "rajaongkir",
+  "environment": "live",
   "credentials": {
     "shipping_api_key": "{{seller_rajaongkir_shipping_key}}",
     "delivery_api_key": "{{seller_rajaongkir_delivery_key}}"
@@ -2077,10 +2079,12 @@ Content-Type: application/json
       "Payload lama api_key tetap diterima dan dipetakan ke shipping_api_key.",
       `Contoh OAuth: { "provider_code": "provider-oauth", "credentials": { "client_id": "...", "client_secret": "..." } }`,
       "Nama field wajib mengikuti credential_fields dari GET /api/v1/integrations/providers.",
+      "environment menerima live atau sandbox; default live. Secret kedua mode tidak pernah dicampur.",
     ],
     response: `{
   "data": {
     "provider_code": "rajaongkir",
+    "environment": "live",
     "display_key": "demo••••1234",
     "daily_limit": 50000,
     "active": true,
@@ -2111,7 +2115,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers",
     title: "Katalog provider dan extension aktif",
     description:
-      "Menampilkan provider yang eligible beserta credential_type dan credential_fields. Emisell merender form aktivasi otomatis dari field tersebut; RajaOngkir memisahkan key shipping dan delivery, sedangkan OAuth menghasilkan Client ID dan Client secret.",
+      "Menampilkan provider eligible beserta field credential, environment, dan policy capability dari release. Emisell merender form tanpa implementasi khusus per provider.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/providers
 key: {{api_key}}
@@ -2132,6 +2136,9 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "requires_credential": false,
         "credential_type": "none",
         "credential_fields": [],
+        "credential_source": "platform_default",
+        "environments": [{"code":"live","label":"Live","description":"Operasi production."}],
+        "capability_policies": [],
         "available": true,
         "installed": true,
         "active": false,
@@ -2148,7 +2155,8 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "integration_type": "partner_hosted",
         "distribution_type": "merchant",
         "requires_credential": true,
-        "credential_type": "capability_api_keys",
+        "credential_type": "provider_declared",
+        "credential_source": "provider_package",
         "credential_fields": [
           {
             "code": "shipping_api_key",
@@ -2156,7 +2164,8 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
             "input_type": "password",
             "secret": true,
             "required": true,
-            "capabilities": ["rates:read", "tracking:read"]
+            "capabilities": ["rates:read", "tracking:read"],
+            "environments": ["live"]
           },
           {
             "code": "delivery_api_key",
@@ -2164,8 +2173,17 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
             "input_type": "password",
             "secret": true,
             "required": false,
-            "capabilities": ["shipments:write", "shipments:read", "pickup:write", "labels:read", "shipments:cancel"]
+            "capabilities": ["shipments:write", "shipments:read", "pickup:write", "labels:read", "shipments:cancel"],
+            "environments": ["live", "sandbox"]
           }
+        ],
+        "environments": [
+          {"code":"live","label":"Live","description":"Operasi production."},
+          {"code":"sandbox","label":"Sandbox","description":"Pengujian fulfillment."}
+        ],
+        "capability_policies": [
+          {"capability":"rates","environment":"sandbox","behavior":"live_read_only","credential_environment":"live","billing":"provider_charged"},
+          {"capability":"shipments","environment":"sandbox","behavior":"provider_sandbox","credential_environment":"sandbox","billing":"provider_defined"}
         ],
         "available": true,
         "installed": true,

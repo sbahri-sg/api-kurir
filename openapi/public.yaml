@@ -3694,6 +3694,9 @@ components:
         - requires_credential
         - credential_type
         - credential_fields
+        - credential_source
+        - environments
+        - capability_policies
         - available
         - installed
         - active
@@ -3733,6 +3736,17 @@ components:
           description: Definisi form yang dirender Emisell saat seller menghubungkan provider.
           items:
             $ref: "#/components/schemas/ProviderCredentialField"
+        credential_source:
+          type: string
+          enum: [platform_default, provider_package]
+        environments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderEnvironment"
+        capability_policies:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderCapabilityPolicy"
         available:
           type: boolean
           const: true
@@ -4973,6 +4987,9 @@ components:
         - requires_credential
         - credential_type
         - credential_fields
+        - credential_source
+        - environments
+        - capability_policies
         - available
         - display_order
         - installed_merchant_count
@@ -5012,6 +5029,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProviderCredentialField"
+        credential_source:
+          type: string
+          enum: [platform_default, provider_package]
+        environments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderEnvironment"
+        capability_policies:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderCapabilityPolicy"
         available:
           type: boolean
         display_order:
@@ -5162,6 +5190,9 @@ components:
         - base_url
         - declared_capabilities
         - declared_services
+        - credential_fields
+        - environments
+        - capability_policies
       properties:
         schema_version:
           type: string
@@ -5182,6 +5213,18 @@ components:
           type: array
           items:
             type: string
+        credential_fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderCredentialField"
+        environments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderEnvironment"
+        capability_policies:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderCapabilityPolicy"
 
     PartnerPackageScanReport:
       type: object
@@ -5813,6 +5856,7 @@ components:
       required:
         - id
         - provider_code
+        - environment
         - credential_alias
         - display_key
         - daily_limit
@@ -5831,6 +5875,9 @@ components:
           type: string
           enum: [rajaongkir, biteship]
           description: Biteship hanya digunakan sebagai fallback internal tarif dan tracking Emisell Kurir.
+        environment:
+          type: string
+          enum: [live, sandbox]
         credential_alias:
           type: string
         display_key:
@@ -5860,6 +5907,7 @@ components:
       type: object
       required:
         - provider_code
+        - environment
         - credential_alias
         - display_key
         - daily_limit
@@ -5870,7 +5918,10 @@ components:
       properties:
         provider_code:
           type: string
-          enum: [rajaongkir]
+          pattern: "^[a-z0-9_-]{2,48}$"
+        environment:
+          type: string
+          enum: [live, sandbox]
         credential_alias:
           type: string
         display_key:
@@ -5907,6 +5958,11 @@ components:
         provider_code:
           type: string
           pattern: "^[a-z0-9_-]{2,48}$"
+        environment:
+          type: string
+          enum: [live, sandbox]
+          default: live
+          description: Credential live dan sandbox disimpan terpisah.
         api_key:
           type: string
           minLength: 8
@@ -5931,20 +5987,20 @@ components:
 
     ProviderCredentialType:
       type: string
-      enum: [none, api_key, capability_api_keys, bearer_token, api_key_secret, oauth2_client_credentials]
+      enum: [none, api_key, capability_api_keys, bearer_token, api_key_secret, oauth2_client_credentials, provider_declared]
 
     ProviderCredentialField:
       type: object
-      required: [code, label, input_type, secret, required, placeholder, help, capabilities]
+      required: [code, label, input_type, secret, required, placeholder, help, capabilities, environments]
       properties:
         code:
           type: string
-          enum: [api_key, shipping_api_key, delivery_api_key, token, api_secret, client_id, client_secret]
+          pattern: "^[a-z][a-z0-9_]{1,63}$"
         label:
           type: string
         input_type:
           type: string
-          enum: [text, password]
+          enum: [text, password, select, checkbox]
         secret:
           type: boolean
         required:
@@ -5957,6 +6013,51 @@ components:
           type: array
           items:
             type: string
+        environments:
+          type: array
+          items:
+            type: string
+            enum: [live, sandbox]
+        options:
+          type: array
+          items:
+            type: object
+            required: [value, label]
+            properties:
+              value: {type: string}
+              label: {type: string}
+
+    ProviderEnvironment:
+      type: object
+      required: [code, label, description]
+      properties:
+        code:
+          type: string
+          enum: [live, sandbox]
+        label:
+          type: string
+        description:
+          type: string
+
+    ProviderCapabilityPolicy:
+      type: object
+      required: [capability, environment, behavior, credential_environment, billing]
+      properties:
+        capability:
+          type: string
+          enum: [rates, tracking, shipments, pickup, balance]
+        environment:
+          type: string
+          enum: [live, sandbox]
+        behavior:
+          type: string
+          enum: [live, provider_sandbox, simulated, live_read_only, unavailable]
+        credential_environment:
+          type: string
+          enum: [live, sandbox, ""]
+        billing:
+          type: string
+          enum: [provider_charged, no_charge, provider_defined]
 
     TenantProviderCredentialResponse:
       type: object

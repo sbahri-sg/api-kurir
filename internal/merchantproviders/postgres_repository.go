@@ -2,6 +2,7 @@ package merchantproviders
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -116,6 +117,7 @@ func (r *PostgresRepository) Activate(
 			FROM provider_credentials
 			WHERE tenant_id = $1
 			  AND provider_code = $2
+			  AND environment_code = 'live'
 			  AND active
 			  AND validation_status = 'valid'
 			ORDER BY created_at DESC
@@ -242,6 +244,9 @@ func catalogWithQuerier(
 			provider.distribution_type,
 			provider.requires_credential,
 			provider.credential_type,
+			provider.credential_schema,
+			provider.environment_schema,
+			provider.capability_environment_schema,
 			provider.available AND (
 				provider.integration_type <> 'partner_hosted'
 				OR provider.active_release_id IS NOT NULL
@@ -257,6 +262,7 @@ func catalogWithQuerier(
 						FROM provider_credentials credential
 						WHERE credential.tenant_id = $1
 						  AND credential.provider_code = provider.code
+						  AND credential.environment_code = 'live'
 						  AND credential.active
 						  AND credential.validation_status = 'valid'
 					)
@@ -267,6 +273,7 @@ func catalogWithQuerier(
 				FROM provider_credentials credential
 				WHERE credential.tenant_id = $1
 				  AND credential.provider_code = provider.code
+				  AND credential.environment_code = 'live'
 				  AND credential.active
 				  AND credential.validation_status = 'valid'
 			) AS installed,
@@ -302,6 +309,7 @@ func catalogWithQuerier(
 				FROM provider_credentials credential
 				WHERE credential.tenant_id = $1
 				  AND credential.provider_code = provider.code
+				  AND credential.environment_code = 'live'
 				  AND credential.active
 				  AND credential.validation_status = 'valid'
 			)
@@ -316,6 +324,7 @@ func catalogWithQuerier(
 		var item Provider
 		var activeProvider *string
 		var version int64
+		var credentialSchema, environmentSchema, policySchema []byte
 		if err := rows.Scan(
 			&item.Code,
 			&item.Name,
@@ -326,6 +335,9 @@ func catalogWithQuerier(
 			&item.DistributionType,
 			&item.RequiresCredential,
 			&item.CredentialType,
+			&credentialSchema,
+			&environmentSchema,
+			&policySchema,
 			&item.Available,
 			&item.Installed,
 			&item.Active,
@@ -339,7 +351,26 @@ func catalogWithQuerier(
 		}
 		result.ActiveProviderCode = activeProvider
 		result.Version = version
-		item.CredentialFields = providercredentials.FieldsForCredentialType(item.CredentialType)
+		item.CredentialSource = "provider_package"
+		if len(credentialSchema) == 0 || string(credentialSchema) == "[]" {
+			item.CredentialSource = "platform_default"
+			item.CredentialFields = providercredentials.FieldsForCredentialType(item.CredentialType)
+		} else if err := json.Unmarshal(credentialSchema, &item.CredentialFields); err != nil {
+			return Catalog{}, fmt.Errorf("decode provider credential schema: %w", err)
+		}
+		if err := json.Unmarshal(environmentSchema, &item.Environments); err != nil {
+			return Catalog{}, fmt.Errorf("decode provider environment schema: %w", err)
+		}
+		if len(item.Environments) == 0 {
+			item.Environments = []providercredentials.EnvironmentDefinition{{
+				Code:        providercredentials.EnvironmentLive,
+				Label:       "Live",
+				Description: "Operasi provider production.",
+			}}
+		}
+		if err := json.Unmarshal(policySchema, &item.CapabilityPolicies); err != nil {
+			return Catalog{}, fmt.Errorf("decode provider capability policy: %w", err)
+		}
 		result.Providers = append(result.Providers, item)
 	}
 	if err := rows.Err(); err != nil {

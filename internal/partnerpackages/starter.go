@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,6 +26,24 @@ func StarterPackage(providerCode, providerName string) (Artifact, error) {
 	manifest.Connector.BaseURL = hostedBaseURL
 	manifest.Capabilities = []string{"rates"}
 	manifest.Services = []string{"regular"}
+	manifest.Environments = []providercredentials.EnvironmentDefinition{{
+		Code: providercredentials.EnvironmentLive,
+		Label: "Live",
+		Description: "Operasi provider production.",
+	}}
+	manifest.Credentials.Fields = []providercredentials.FieldDefinition{{
+		Code: "api_key", Label: "API key", InputType: "password",
+		Secret: true, Required: true,
+		Placeholder: "Masukkan API key provider",
+		Help: "Credential resmi milik merchant yang diterbitkan provider.",
+		Capabilities: []string{"rates:read"},
+		Environments: []string{providercredentials.EnvironmentLive},
+	}}
+	manifest.CapabilityPolicies = []providercredentials.CapabilityEnvironmentPolicy{{
+		Capability: "rates", Environment: providercredentials.EnvironmentLive,
+		Behavior: "live", CredentialEnvironment: providercredentials.EnvironmentLive,
+		Billing: "provider_defined",
+	}}
 	manifestPayload, err := yaml.Marshal(manifest)
 	if err != nil {
 		return Artifact{}, fmt.Errorf("encode starter manifest: %w", err)

@@ -319,6 +319,7 @@ func registerTenantIntegrationRoutes(
 	}
 	integrationGroup.Use(serviceAPIKeyMiddleware(apiKeys, serviceKeyAuthenticator))
 	integrationGroup.Use(merchantContextMiddleware(true))
+	integrationGroup.Use(providerExecutionEnvironmentMiddleware())
 	integrationGroup.GET(
 		"/provider-credentials",
 		tenantProviderCredentialListHandler(providerCredentialService),
@@ -388,6 +389,7 @@ func registerCustomerRoutes(
 ) {
 	group.Use(customerAPIKeyMiddleware(apiKeys, customerAPIKeyService))
 	group.Use(merchantContextMiddleware(false))
+	group.Use(providerExecutionEnvironmentMiddleware())
 	group.GET("/destination/domestic-destination", locationSearchHandler(locationRepository))
 	group.GET(
 		"/destination/province",

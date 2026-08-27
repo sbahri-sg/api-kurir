@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/emisell/api-kurir/internal/providercredentials"
 )
 
 const maxResponseBytes = 4 << 20
@@ -67,6 +69,10 @@ func (c *Client) Do(
 		return err
 	}
 	request.Header.Set("Accept", "application/json")
+	request.Header.Set(
+		"X-Emisell-Execution-Mode",
+		providercredentials.ExecutionEnvironment(ctx),
+	)
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}

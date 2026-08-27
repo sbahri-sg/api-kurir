@@ -3,7 +3,7 @@
 Connector resmi yang dikelola dan di-host oleh API Kurir untuk menerjemahkan
 RajaOngkir Shipping Cost dan Shipping Delivery ke kontrak Partner API Kurir v1.
 
-Package versi `1.0.3` ini memakai kode canonical `rajaongkir`. Setelah release connector
+Package versi `1.0.4` ini memakai kode canonical `rajaongkir`. Setelah release connector
 dipublikasikan, seluruh rate, tracking, shipment, label, cancel, dan pickup
 RajaOngkir dijalankan melalui connector hosted. Credential tetap milik seller
 dan diteruskan API Kurir secara terenkripsi sesuai capability.
@@ -40,10 +40,16 @@ npm test
 npm start
 ```
 
-Port default adalah `8080`. Gunakan `RAJAONGKIR_DELIVERY_ENV=sandbox` untuk
-mengarahkan Shipping Delivery ke sandbox. Base URL dapat dioverride hanya pada
-environment deployment melalui `SHIPPING_COST_BASE_URL` dan
-`SHIPPING_DELIVERY_BASE_URL`.
+Port default adalah `8080`. API Kurir mengirim header
+`X-Emisell-Execution-Mode: live|sandbox` pada setiap request connector.
+Shipping Cost tetap live pada kedua mode, sedangkan Shipping Delivery otomatis
+memilih production atau sandbox. Base URL hanya dapat dioverride dari deployment
+melalui `SHIPPING_COST_BASE_URL`, `SHIPPING_DELIVERY_BASE_URL`, dan
+`SHIPPING_DELIVERY_SANDBOX_BASE_URL`.
+
+Manifest mendeklarasikan form credential, environment, perilaku capability, dan
+billing. Emisell hanya merender deklarasi aman tersebut; URL upstream dan secret
+tidak pernah dikirim ke browser.
 
 ## Deploy hosted
 

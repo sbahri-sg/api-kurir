@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: RajaOngkir Hosted Connector
-  version: 1.0.3
+  version: 1.0.4
   description: >-
     Connector yang di-host API Kurir untuk menormalisasi RajaOngkir Shipping
     Cost dan Shipping Delivery ke Partner API Kurir v1.
@@ -57,6 +57,8 @@ paths:
       tags: [Rates]
       summary: Ambil ongkir RajaOngkir
       description: Operasi read-only yang memakai quota Shipping Cost.
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
       security:
         - shipping_cost: []
       requestBody:
@@ -88,6 +90,8 @@ paths:
       tags: [Tracking]
       summary: Lacak AWB melalui RajaOngkir
       description: Operasi read-only yang memakai quota Shipping Cost.
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
       security:
         - shipping_cost: []
       requestBody:
@@ -116,7 +120,9 @@ paths:
       operationId: createShipment
       tags: [Shipments]
       summary: Membuat order Shipping Delivery
-      description: Transaksi live; Visual API Explorer mengunci operasi ini.
+      description: Memakai Shipping Delivery live atau sandbox sesuai execution mode.
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
       security:
         - shipping_delivery: []
       requestBody:
@@ -144,6 +150,7 @@ paths:
         - shipping_delivery: []
       parameters:
         - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/ExecutionMode"
       responses:
         "200":
           description: Detail shipment
@@ -164,6 +171,7 @@ paths:
         - shipping_delivery: []
       parameters:
         - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/ExecutionMode"
       responses:
         "200":
           description: Shipment dibatalkan
@@ -184,6 +192,7 @@ paths:
         - shipping_delivery: []
       parameters:
         - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/ExecutionMode"
         - name: format
           in: query
           required: false
@@ -206,9 +215,11 @@ paths:
       operationId: requestPickup
       tags: [Pickup]
       summary: Meminta pickup Shipping Delivery
-      description: Transaksi live; Visual API Explorer mengunci operasi ini.
+      description: Memakai Shipping Delivery live atau sandbox sesuai execution mode.
       security:
         - shipping_delivery: []
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
       requestBody:
         required: true
         content:
@@ -242,6 +253,15 @@ components:
       x-emisell-credential-code: shipping_delivery
       x-emisell-label: RajaOngkir Shipping Delivery
   parameters:
+    ExecutionMode:
+      name: X-Emisell-Execution-Mode
+      in: header
+      required: false
+      description: Live adalah default; sandbox hanya digunakan sesuai capability policy manifest.
+      schema:
+        type: string
+        enum: [live, sandbox]
+        default: live
     PartnerShipmentID:
       name: partner_shipment_id
       in: path
@@ -268,11 +288,14 @@ components:
         upstream: { type: string, example: rajaongkir }
     CapabilitiesResponse:
       type: object
-      required: [provider_code, provider_name, contract_version, capabilities]
+      required: [provider_code, provider_name, contract_version, capabilities, environments]
       properties:
         provider_code: { type: string, example: rajaongkir }
         provider_name: { type: string, example: RajaOngkir }
         contract_version: { type: string, example: v1 }
+        environments:
+          type: array
+          items: { type: string, enum: [live, sandbox] }
         capabilities:
           type: object
           additionalProperties: { type: boolean }

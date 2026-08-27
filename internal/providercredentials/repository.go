@@ -10,6 +10,7 @@ var (
 	ErrNoActiveCredential      = errors.New("no active provider credential")
 	ErrAllCredentialsExhausted = errors.New("all provider credentials exhausted")
 	ErrDuplicate               = errors.New("provider credential already exists")
+	ErrEnvironmentUnavailable  = errors.New("provider environment is unavailable")
 )
 
 type Repository interface {
@@ -24,4 +25,17 @@ type Repository interface {
 	) error
 	ActiveCredentialID(ctx context.Context, tenantID, providerCode string) (string, error)
 	ResolveActive(ctx context.Context, providerCode string) (StoredCredential, error)
+}
+
+type SchemaRepository interface {
+	CredentialDefinition(
+		ctx context.Context,
+		providerCode string,
+	) (credentialType string, fields []FieldDefinition, err error)
+	CredentialEnvironment(
+		ctx context.Context,
+		providerCode string,
+		capability string,
+		executionEnvironment string,
+	) (string, error)
 }

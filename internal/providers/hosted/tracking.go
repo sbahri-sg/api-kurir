@@ -55,7 +55,9 @@ func (a *TrackingAdapter) Track(ctx context.Context, request tracking.Request) (
 	if !containsCourier(a.couriers, request.CourierCode) {
 		return tracking.Result{}, tracking.ErrUnsupportedCourier
 	}
-	secret, alias, limit, err := a.credentials.ResolveProviderCredential(ctx, a.providerCode)
+	secret, alias, limit, err := a.credentials.ResolveProviderCredentialForCapability(
+		ctx, a.providerCode, "tracking:read",
+	)
 	if errors.Is(err, providercredentials.ErrNoActiveCredential) {
 		return tracking.Result{}, tracking.ErrProviderUnavailable
 	}

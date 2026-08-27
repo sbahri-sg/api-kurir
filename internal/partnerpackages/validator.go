@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,6 +40,14 @@ var allowedServiceGroups = map[string]struct{}{
 	"regular": {}, "next_day": {}, "economy": {}, "cargo": {},
 }
 
+var allowedCapabilityBehaviors = map[string]struct{}{
+	"live": {}, "provider_sandbox": {}, "simulated": {}, "live_read_only": {}, "unavailable": {},
+}
+
+var allowedBillingBehaviors = map[string]struct{}{
+	"provider_charged": {}, "no_charge": {}, "provider_defined": {},
+}
+
 type integrationManifest struct {
 	SchemaVersion string `yaml:"schema_version"`
 	Provider      struct {
@@ -51,6 +60,11 @@ type integrationManifest struct {
 	} `yaml:"connector"`
 	Capabilities []string `yaml:"capabilities"`
 	Services     []string `yaml:"services"`
+	Credentials struct {
+		Fields []providercredentials.FieldDefinition `yaml:"fields"`
+	} `yaml:"credentials,omitempty"`
+	Environments       []providercredentials.EnvironmentDefinition       `yaml:"environments,omitempty"`
+	CapabilityPolicies []providercredentials.CapabilityEnvironmentPolicy `yaml:"capability_policies,omitempty"`
 }
 
 func ValidateArchive(payload []byte, providerCode string) ScanReport {
@@ -223,6 +237,22 @@ func validateManifest(payload []byte, providerCode string) (ManifestSummary, err
 	if err := validateManifestValues("service", services, allowedServiceGroups); err != nil {
 		return ManifestSummary{}, err
 	}
+	environments, err := normalizeEnvironments(manifest.Environments)
+	if err != nil {
+		return ManifestSummary{}, err
+	}
+	credentialFields := providercredentials.NormalizeFieldDefinitions(manifest.Credentials.Fields)
+	if err := providercredentials.ValidateFieldDefinitions(credentialFields, environments); err != nil {
+		return ManifestSummary{}, fmt.Errorf("credential schema tidak valid: %w", err)
+	}
+	capabilityPolicies, err := normalizeCapabilityPolicies(
+		manifest.CapabilityPolicies,
+		capabilities,
+		environments,
+	)
+	if err != nil {
+		return ManifestSummary{}, err
+	}
 	return ManifestSummary{
 		SchemaVersion:      manifest.SchemaVersion,
 		ProviderCode:       manifest.Provider.Code,
@@ -231,7 +261,125 @@ func validateManifest(payload []byte, providerCode string) (ManifestSummary, err
 		BaseURL:            baseURL,
 		DeclaredCapability: capabilities,
 		DeclaredServices:   services,
+		CredentialFields:   credentialFields,
+		Environments:       environments,
+		CapabilityPolicies: capabilityPolicies,
 	}, nil
+}
+
+func normalizeEnvironments(
+	values []providercredentials.EnvironmentDefinition,
+) ([]providercredentials.EnvironmentDefinition, error) {
+	if len(values) == 0 {
+		return []providercredentials.EnvironmentDefinition{{
+			Code: providercredentials.EnvironmentLive,
+			Label: "Live",
+			Description: "Operasi provider production.",
+		}}, nil
+	}
+	result := make([]providercredentials.EnvironmentDefinition, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value.Code = strings.ToLower(strings.TrimSpace(value.Code))
+		value.Label = strings.TrimSpace(value.Label)
+		value.Description = strings.TrimSpace(value.Description)
+		if value.Code != providercredentials.EnvironmentLive &&
+			value.Code != providercredentials.EnvironmentSandbox {
+			return nil, errors.New("environment hanya boleh live atau sandbox")
+		}
+		if value.Label == "" || len(value.Label) > 80 || len(value.Description) > 300 {
+			return nil, errors.New("label atau deskripsi environment tidak valid")
+		}
+		if _, exists := seen[value.Code]; exists {
+			return nil, errors.New("environment tidak boleh duplikat")
+		}
+		seen[value.Code] = struct{}{}
+		result = append(result, value)
+	}
+	if _, exists := seen[providercredentials.EnvironmentLive]; !exists {
+		return nil, errors.New("environment live wajib dideklarasikan")
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Code < result[j].Code })
+	return result, nil
+}
+
+func normalizeCapabilityPolicies(
+	values []providercredentials.CapabilityEnvironmentPolicy,
+	capabilities []string,
+	environments []providercredentials.EnvironmentDefinition,
+) ([]providercredentials.CapabilityEnvironmentPolicy, error) {
+	declaredCapabilities := make(map[string]struct{}, len(capabilities))
+	for _, capability := range capabilities {
+		declaredCapabilities[capability] = struct{}{}
+	}
+	declaredEnvironments := make(map[string]struct{}, len(environments))
+	for _, environment := range environments {
+		declaredEnvironments[environment.Code] = struct{}{}
+	}
+	if len(values) == 0 {
+		values = make([]providercredentials.CapabilityEnvironmentPolicy, 0, len(capabilities))
+		for _, capability := range capabilities {
+			values = append(values, providercredentials.CapabilityEnvironmentPolicy{
+				Capability: capability,
+				Environment: providercredentials.EnvironmentLive,
+				Behavior: "live",
+				CredentialEnvironment: providercredentials.EnvironmentLive,
+				Billing: "provider_defined",
+			})
+		}
+	}
+	result := make([]providercredentials.CapabilityEnvironmentPolicy, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	liveCapabilities := make(map[string]struct{}, len(capabilities))
+	for _, value := range values {
+		value.Capability = strings.ToLower(strings.TrimSpace(value.Capability))
+		value.Environment = strings.ToLower(strings.TrimSpace(value.Environment))
+		value.Behavior = strings.ToLower(strings.TrimSpace(value.Behavior))
+		value.CredentialEnvironment = strings.ToLower(strings.TrimSpace(value.CredentialEnvironment))
+		value.Billing = strings.ToLower(strings.TrimSpace(value.Billing))
+		if _, exists := declaredCapabilities[value.Capability]; !exists {
+			return nil, fmt.Errorf("capability policy tidak dideklarasikan: %s", value.Capability)
+		}
+		if _, exists := declaredEnvironments[value.Environment]; !exists {
+			return nil, fmt.Errorf("environment policy tidak dideklarasikan: %s", value.Environment)
+		}
+		if _, exists := allowedCapabilityBehaviors[value.Behavior]; !exists {
+			return nil, fmt.Errorf("behavior capability tidak didukung: %s", value.Behavior)
+		}
+		if _, exists := allowedBillingBehaviors[value.Billing]; !exists {
+			return nil, fmt.Errorf("billing capability tidak didukung: %s", value.Billing)
+		}
+		if value.Behavior == "unavailable" {
+			value.CredentialEnvironment = ""
+		} else if _, exists := declaredEnvironments[value.CredentialEnvironment]; !exists {
+			return nil, errors.New("credential_environment wajib mengacu ke environment yang dideklarasikan")
+		}
+		if value.Behavior == "live_read_only" &&
+			value.Capability != "rates" && value.Capability != "tracking" && value.Capability != "balance" {
+			return nil, errors.New("live_read_only hanya boleh dipakai capability baca")
+		}
+		key := value.Capability + ":" + value.Environment
+		if _, exists := seen[key]; exists {
+			return nil, errors.New("capability policy tidak boleh duplikat")
+		}
+		seen[key] = struct{}{}
+		if value.Environment == providercredentials.EnvironmentLive && value.Behavior != "unavailable" {
+			liveCapabilities[value.Capability] = struct{}{}
+		}
+		result = append(result, value)
+	}
+	for _, capability := range capabilities {
+		if _, exists := liveCapabilities[capability]; !exists {
+			return nil, fmt.Errorf("capability %s wajib mempunyai policy live", capability)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Capability != result[j].Capability {
+			return result[i].Capability < result[j].Capability
+		}
+		return result[i].Environment < result[j].Environment
+	})
+	return result, nil
 }
 
 func validateManifestValues(
