@@ -152,14 +152,16 @@ func (s *memorySnapshots) SaveProviderQuotes(
 }
 
 type quoteProvider struct {
-	calls atomic.Int64
+	calls      atomic.Int64
+	lastWeight atomic.Int64
 }
 
 func (p *quoteProvider) Code() string            { return "rajaongkir" }
 func (p *quoteProvider) CredentialAlias() string { return "test" }
 func (p *quoteProvider) DailyLimit() int64       { return 50_000 }
-func (p *quoteProvider) Quote(context.Context, Request) ([]ProviderQuote, error) {
+func (p *quoteProvider) Quote(_ context.Context, request Request) ([]ProviderQuote, error) {
 	p.calls.Add(1)
+	p.lastWeight.Store(request.ActualWeightGrams)
 	now := time.Now().UTC()
 	return []ProviderQuote{{
 		ProviderCode:       "rajaongkir",
@@ -172,6 +174,52 @@ func (p *quoteProvider) Quote(context.Context, Request) ([]ProviderQuote, error)
 		FetchedAt:          now,
 		ExpiresAt:          now.Add(time.Hour),
 	}}, nil
+}
+
+func TestServiceBillsSubKilogramProviderQuoteAsOneKilogram(t *testing.T) {
+	t.Parallel()
+
+	provider := &quoteProvider{}
+	service := NewService(
+		emptyRepository{},
+		time.Second,
+		WithProviderFallback(
+			provider,
+			&memorySnapshots{},
+			immediateLocker{},
+			time.Second,
+		),
+	)
+
+	results, err := service.Calculate(context.Background(), Request{
+		Origin:            "loc_origin",
+		Destination:       "loc_destination",
+		ActualWeightGrams: 500,
+		Couriers:          []string{"jne"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.lastWeight.Load() != MinimumProviderBillableWeightGrams {
+		t.Fatalf(
+			"provider weight: got %d want %d",
+			provider.lastWeight.Load(),
+			MinimumProviderBillableWeightGrams,
+		)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results: got %d want 1", len(results))
+	}
+	if results[0].Weight.ActualGrams != 500 {
+		t.Fatalf("actual weight: got %d want 500", results[0].Weight.ActualGrams)
+	}
+	if results[0].Weight.BillingGrams != MinimumProviderBillableWeightGrams {
+		t.Fatalf(
+			"billing weight: got %d want %d",
+			results[0].Weight.BillingGrams,
+			MinimumProviderBillableWeightGrams,
+		)
+	}
 }
 
 type credentialSelectorStub struct {

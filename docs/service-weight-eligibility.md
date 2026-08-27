@@ -35,7 +35,9 @@ Contoh layanan cargo dengan minimum diterima 3 kg dan minimum tagihan 5 kg:
 
 Untuk parcel reguler, paket 800 gram tetap dapat diterima sementara minimum
 tagihannya 1.000 gram. Karena itu minimum tagihan tidak boleh dipakai untuk
-menyembunyikan layanan.
+menyembunyikan layanan. Saat exact quote diperlukan, API Kurir tetap menyimpan
+800 gram sebagai berat aktual dan mengirim 1.000 gram sebagai berat tagih
+minimum ke provider. Filter cargo tetap mengevaluasi berat aktual.
 
 ## Prioritas policy
 

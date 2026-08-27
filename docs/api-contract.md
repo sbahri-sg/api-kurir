@@ -432,6 +432,9 @@ Catatan:
 - Emisell mengirim berat final/chargeable tanpa pembulatan provider. API Kurir
   menerapkan minimum penerimaan, minimum tagihan, maksimum, dan profile
   pembulatan service; tidak ada toleransi 300 gram global.
+- Berat parcel 1-999 gram tetap eligible dan dinormalisasi menjadi minimum
+  tagihan provider 1.000 gram. Berat aktual tidak ditimpa sehingga filter
+  minimum cargo tetap bekerja pada nilai yang dikirim Emisell.
 - Layanan yang tidak memenuhi policy berat tidak dimasukkan ke `data`. Jika
   seluruh layanan gagal, response menjadi `RATE_NOT_AVAILABLE`.
 - Layanan dengan aturan `needs_contract_confirmation` tidak ditampilkan

@@ -554,7 +554,12 @@ func (s *Service) fetchProviderQuotes(
 			quotes = fresh
 			return nil
 		}
-		fresh, err = provider.Quote(lockCtx, request)
+		providerRequest := request
+		providerRequest.ActualWeightGrams = max(
+			providerRequest.ActualWeightGrams,
+			MinimumProviderBillableWeightGrams,
+		)
+		fresh, err = provider.Quote(lockCtx, providerRequest)
 		if err != nil {
 			return err
 		}

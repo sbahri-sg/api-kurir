@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: RajaOngkir Hosted Connector
-  version: 1.0.4
+  version: 1.0.5
   description: >-
     Connector yang di-host API Kurir untuk menormalisasi RajaOngkir Shipping
     Cost dan Shipping Delivery ke Partner API Kurir v1.

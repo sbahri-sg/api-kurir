@@ -691,7 +691,7 @@ key: {{api_key}}`,
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint sub-district atau domestic-destination",
-      "weight — berat final/chargeable dari Emisell dalam gram; layanan di luar batas berat otomatis tidak dikembalikan",
+      "weight — berat aktual dari Emisell dalam gram; 1-999 gram ditagihkan minimum 1 kg, sedangkan layanan di luar batas penerimaan tetap tidak dikembalikan",
       "courier — kode kurir dipisahkan titik dua",
       "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
       "include_group — true menambahkan canonical_service, service_group, dan service_type; default false mempertahankan struktur utama RajaOngkir V2 dengan tambahan logo",
@@ -733,7 +733,7 @@ origin=4911&destination=25976&weight=1000&courier=jne&price=lowest&include_group
     authentication: "Header key atau Bearer customer API key",
     parameters: [
       "origin dan destination — ID integer hasil endpoint district",
-      "weight — berat final/chargeable dari Emisell dalam gram; layanan di luar batas berat otomatis tidak dikembalikan",
+      "weight — berat aktual dari Emisell dalam gram; 1-999 gram ditagihkan minimum 1 kg, sedangkan layanan di luar batas penerimaan tetap tidak dikembalikan",
       "courier — kode kurir dipisahkan titik dua",
       "price — lowest mengurutkan semua layanan termurah ke termahal; highest membalik urutan; tidak membatasi jumlah hasil",
       "include_group — true menambahkan canonical_service, service_group, dan service_type; default false mempertahankan struktur utama RajaOngkir V2 dengan tambahan logo",

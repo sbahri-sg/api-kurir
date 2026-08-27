@@ -183,7 +183,7 @@ func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
 		if hasProviderQuote && request.Dimensions != nil {
 			warnings = append(
 				warnings,
-				"dimensi disimpan pada fingerprint tetapi tidak dikirim ke endpoint rate RajaOngkir V2; weight harus sudah aman sebagai berat provider",
+				"dimensi disimpan pada fingerprint tetapi tidak dikirim ke endpoint rate provider; berat di bawah 1 kg dinormalisasi menjadi minimum tagihan 1 kg",
 			)
 		}
 

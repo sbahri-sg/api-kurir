@@ -92,6 +92,49 @@ func TestCalculateDomestic(t *testing.T) {
 	}
 }
 
+func TestCalculateDomesticNormalizesSubKilogramWeight(t *testing.T) {
+	t.Parallel()
+
+	httpClient := &http.Client{
+		Timeout: time.Second,
+		Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			form, err := url.ParseQuery(string(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if form.Get("weight") != "1000" {
+				t.Fatalf("provider weight: got %s want 1000", form.Get("weight"))
+			}
+			return jsonResponse(http.StatusOK, `{
+				"meta":{"message":"success","code":200,"status":"success"},
+				"data":[]
+			}`), nil
+		}),
+	}
+
+	client, err := NewClient(
+		"https://provider.test/api/v1/",
+		"test-secret",
+		httpClient,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.CalculateDomestic(context.Background(), DomesticCostRequest{
+		Origin:      "100",
+		Destination: "200",
+		WeightGrams: 500,
+		Couriers:    []string{"jne"},
+	})
+	if !errors.Is(err, rates.ErrRateNotAvailable) {
+		t.Fatalf("error: got %v want ErrRateNotAvailable", err)
+	}
+}
+
 func TestCalculateDistrictDomesticUsesDistrictEndpoint(t *testing.T) {
 	t.Parallel()
 

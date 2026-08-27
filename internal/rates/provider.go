@@ -18,6 +18,8 @@ var (
 	ErrProviderLocationMapping = errors.New("provider location mapping not found")
 )
 
+const MinimumProviderBillableWeightGrams int64 = 1_000
+
 type ProviderQuote struct {
 	ProviderCode            string
 	CourierCode             string
@@ -69,7 +71,10 @@ type QuotaRepository interface {
 func resultFromProviderQuote(request Request, quote ProviderQuote) Result {
 	quote.CourierCode = couriers.NormalizeCode(quote.CourierCode)
 	quote = classifyProviderQuote(quote)
-	minimum := int64(0)
+	billingWeight := max(
+		request.ActualWeightGrams,
+		MinimumProviderBillableWeightGrams,
+	)
 	return Result{
 		Card: RateCard{
 			CourierCode:          quote.CourierCode,
@@ -91,12 +96,13 @@ func resultFromProviderQuote(request Request, quote ProviderQuote) Result {
 			ExpiresAt:            &quote.ExpiresAt,
 		},
 		Weight: WeightBreakdown{
-			ActualGrams:     request.ActualWeightGrams,
-			ChargeableGrams: request.ActualWeightGrams,
-			RoundedGrams:    request.ActualWeightGrams,
-			BillingGrams:    request.ActualWeightGrams,
-			MinimumGrams:    minimum,
-			RoundingProfile: "provider-quote-not-disclosed",
+			ActualGrams:          request.ActualWeightGrams,
+			ChargeableGrams:      request.ActualWeightGrams,
+			RoundedGrams:         billingWeight,
+			BillingGrams:         billingWeight,
+			MinimumGrams:         MinimumProviderBillableWeightGrams,
+			MinimumBillableGrams: MinimumProviderBillableWeightGrams,
+			RoundingProfile:      "provider-minimum-1kg",
 		},
 		Cost: CostBreakdown{
 			Shipping: quote.Cost,

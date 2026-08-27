@@ -3,7 +3,7 @@
 Connector resmi yang dikelola dan di-host oleh API Kurir untuk menerjemahkan
 RajaOngkir Shipping Cost dan Shipping Delivery ke kontrak Partner API Kurir v1.
 
-Package versi `1.0.4` ini memakai kode canonical `rajaongkir`. Setelah release connector
+Package versi `1.0.5` ini memakai kode canonical `rajaongkir`. Setelah release connector
 dipublikasikan, seluruh rate, tracking, shipment, label, cancel, dan pickup
 RajaOngkir dijalankan melalui connector hosted. Credential tetap milik seller
 dan diteruskan API Kurir secara terenkripsi sesuai capability.
