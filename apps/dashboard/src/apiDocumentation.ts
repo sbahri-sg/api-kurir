@@ -2489,13 +2489,16 @@ awb=TEST123456789&courier=sicepat`,
     authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
     parameters: [
       "Idempotency-Key — wajib, unik per percobaan booking; gunakan nilai yang sama hanya untuk retry payload identik",
+      "X-Emisell-Execution-Mode — kirim sandbox untuk memakai delivery_api_key sandbox; jika header tidak dikirim, API selalu memilih live",
       "quote_id — quote ongkir yang dipilih checkout",
+      "service_code dan payment.shipping_cost — wajib berasal dari quote provider pada rute, berat, dan layanan yang sama; jangan memakai nilai manual",
       "provider_code — opsional; bila dikirim harus sama dengan provider aktif merchant",
       "destination_id pada sender/recipient — ID tujuan Shipping Delivery provider",
     ],
     request: `POST {{base_url}}/api/v1/integrations/shipments
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}
+X-Emisell-Execution-Mode: sandbox
 Idempotency-Key: shipment:create:ORDER-10001
 Content-Type: application/json
 
@@ -2503,7 +2506,7 @@ Content-Type: application/json
   "merchant_reference": "ORDER-10001",
   "quote_id": "quote-checkout-10001",
   "courier_code": "jne",
-  "service_code": "REG",
+  "service_code": "JNEFlat",
   "delivery_mode": "regular",
   "fulfillment": "pickup",
   "sender": {
@@ -2536,8 +2539,10 @@ Content-Type: application/json
   },
   "payment": {
     "type": "non_cod",
-    "shipping_cost": 18000,
-    "grand_total": 168000
+    "shipping_cost": 10500,
+    "shipping_cashback": 0,
+    "service_fee": 0,
+    "grand_total": 160500
   }
 }`,
     response: `{
@@ -2549,9 +2554,9 @@ Content-Type: application/json
       "provider_code": "rajaongkir",
       "provider_shipment_id": "KOMXXXXXXXXXXXXXXXXX",
       "courier_code": "jne",
-      "service_code": "REG",
+      "service_code": "JNEFlat",
       "status": "booked",
-      "shipping_cost": 18000,
+      "shipping_cost": 10500,
       "currency": "IDR",
       "tracking_registration_status": "not_ready",
       "reconcile_attempt_count": 0,

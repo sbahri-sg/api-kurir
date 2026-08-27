@@ -87,6 +87,17 @@ menyediakan credential untuk request dengan
 `X-Emisell-Execution-Mode: sandbox`. API sengaja tidak menyalin secret live ke
 sandbox maupun sebaliknya.
 
+Header environment wajib diteruskan kembali pada setiap operasi fulfillment.
+Menyimpan credential dengan `environment: sandbox` tidak otomatis mengubah mode
+request berikutnya. Tanpa `X-Emisell-Execution-Mode: sandbox`, create shipment,
+pickup, cancel, detail, dan label tetap berjalan sebagai `live`.
+
+`service_code`, `shipping_cost`, serta komponen total pada create shipment harus
+berasal dari hasil quote provider untuk rute, berat, dan layanan yang sama.
+Contohnya, nilai `REG` dan harga manual tidak boleh menggantikan service
+`JNEFlat` yang dikembalikan kalkulasi sandbox. Ketidaksesuaian ini diteruskan
+sebagai `422 PROVIDER_REJECTED`, bukan error credential.
+
 ## Perlindungan data
 
 Alamat, telepon, email, detail barang, dan label disimpan dengan AES-256-GCM

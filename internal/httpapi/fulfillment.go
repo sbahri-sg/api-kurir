@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/emisell/api-kurir/internal/fulfillment"
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/labstack/echo/v5"
 )
 
@@ -160,7 +161,17 @@ func writeFulfillmentError(c *echo.Context, err error) error {
 	case errors.Is(err, fulfillment.ErrProviderUnsupported):
 		return writeError(c, http.StatusUnprocessableEntity, "FULFILLMENT_PROVIDER_UNSUPPORTED", "Provider aktif belum mendukung fulfillment melalui API Kurir.", nil)
 	case errors.Is(err, fulfillment.ErrCredentialUnavailable):
-		return writeError(c, http.StatusUnprocessableEntity, "DELIVERY_CREDENTIAL_REQUIRED", "Credential provider belum memiliki akses Shipping Delivery.", nil)
+		environment := providercredentials.ExecutionEnvironment(c.Request().Context())
+		return writeError(
+			c,
+			http.StatusUnprocessableEntity,
+			"DELIVERY_CREDENTIAL_REQUIRED",
+			"Credential Shipping Delivery untuk mode "+environment+" belum tersedia.",
+			map[string]any{
+				"environment":         environment,
+				"required_credential": "delivery_api_key",
+			},
+		)
 	case errors.Is(err, fulfillment.ErrProviderUnauthorized):
 		return writeError(c, http.StatusBadGateway, "PROVIDER_UNAUTHORIZED", "Credential Shipping Delivery ditolak provider.", nil)
 	case errors.Is(err, fulfillment.ErrProviderRejected):

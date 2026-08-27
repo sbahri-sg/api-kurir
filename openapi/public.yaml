@@ -1154,7 +1154,9 @@ paths:
         Mereservasi idempotency sebelum memanggil provider. Provider dan
         credential dipilih server-side dari konfigurasi merchant; payload PII
         disimpan terenkripsi. Request timeout tidak diulang otomatis agar tidak
-        membuat dua AWB.
+        membuat dua AWB. Credential sandbox hanya dipilih bila header
+        X-Emisell-Execution-Mode bernilai sandbox. Service code dan biaya wajib
+        berasal dari quote provider untuk rute, berat, dan layanan yang sama.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -3002,6 +3004,8 @@ components:
         Mode eksekusi capability provider. Default live. Sandbox memilih
         credential dan base URL sandbox bila provider mendukungnya; rate dan
         tracking RajaOngkir tetap live read-only sesuai capability policy.
+        Menyimpan credential sandbox tidak mengubah default ini; setiap request
+        fulfillment sandbox wajib mengirim header dengan nilai sandbox.
       schema:
         type: string
         enum: [live, sandbox]

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/emisell/api-kurir/internal/fulfillment"
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/tenancy"
 	"github.com/labstack/echo/v5"
 )
@@ -34,6 +35,41 @@ func TestPickupNotAllowedErrorResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	if payload.Error.Code != "PICKUP_NOT_ALLOWED" {
+		t.Fatalf("unexpected response: %s", response.Body.String())
+	}
+}
+
+func TestDeliveryCredentialRequiredReportsExecutionEnvironment(t *testing.T) {
+	t.Parallel()
+	e := echo.New()
+	e.GET("/", func(c *echo.Context) error {
+		request := c.Request().WithContext(providercredentials.WithExecutionEnvironment(
+			c.Request().Context(), providercredentials.EnvironmentSandbox,
+		))
+		c.SetRequest(request)
+		return writeFulfillmentError(c, fulfillment.ErrCredentialUnavailable)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Error.Code != "DELIVERY_CREDENTIAL_REQUIRED" ||
+		payload.Error.Message != "Credential Shipping Delivery untuk mode sandbox belum tersedia." ||
+		payload.Error.Details["environment"] != "sandbox" ||
+		payload.Error.Details["required_credential"] != "delivery_api_key" {
 		t.Fatalf("unexpected response: %s", response.Body.String())
 	}
 }
