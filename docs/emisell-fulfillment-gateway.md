@@ -100,6 +100,61 @@ diambil kembali dari snapshot `fq_` oleh API Kurir. Kode native seperti
 `JNEFlat` tidak dikirim ke Emisell; response memakai kode canonical `svc_...`
 dan label `Regular`, `Next Day`, `Economy`, atau `Cargo`.
 
+## Kontrak payload shipment
+
+Create shipment hanya menerima satu bentuk payload paket yang mengikuti data
+order Emisell. Field lama `item_value`, `contents`, `sku`, `unit_value`,
+dimensi per item, `funding_source`, dan `shipping_cashback` sudah dihapus dan
+akan menghasilkan `400 INVALID_REQUEST` bila masih dikirim.
+
+```json
+{
+  "package": {
+    "weight_grams": 1350,
+    "length_cm": 20,
+    "width_cm": 15,
+    "height_cm": 10,
+    "items": [
+      {
+        "name": "Kaos",
+        "variant": "M",
+        "quantity": 1,
+        "unit_price": 150000,
+        "subtotal": 130000,
+        "weight_grams": 1200
+      }
+    ]
+  },
+  "payment": {
+    "type": "non_cod",
+    "items_subtotal": 130000,
+    "order_discount": 0,
+    "tax_amount": 0,
+    "shipping_cost": 18000,
+    "shipping_discount": 5000,
+    "additional_cost": 0,
+    "grand_total": 143000
+  }
+}
+```
+
+`subtotal` item adalah total baris setelah diskon produk. API memverifikasi
+`items_subtotal` sama dengan jumlah seluruh subtotal item, berat paket tidak
+lebih kecil daripada jumlah berat item, dan menghitung:
+
+```text
+grand_total = items_subtotal - order_discount + tax_amount
+            + shipping_cost - shipping_discount
+            + additional_cost + penyesuaian biaya/diskon provider dari quote
+```
+
+Nilai barang untuk mencocokkan quote dihitung oleh API Kurir sebagai
+`items_subtotal - order_discount + tax_amount`; Main Service tidak lagi
+mengirim `item_value` pada create shipment. `item_value` tetap digunakan hanya
+pada request shipping quote. Selisih nominal menghasilkan
+`422 AMOUNT_MISMATCH` sebelum hit provider sehingga tidak dapat membuat AWB
+dengan total yang salah.
+
 Endpoint `/api/v1/calculate/district/domestic-cost` menggunakan produk
 RajaOngkir Shipping Cost. Responsnya tetap sah untuk cek ongkir dan checkout
 tanpa fulfillment, tetapi tidak menjadi sumber booking Shipping Delivery.
@@ -107,8 +162,7 @@ Quote terkunci pada merchant, provider, environment, credential, origin,
 destination, berat, dimensi, nilai barang, jenis pembayaran, service, harga,
 dan waktu berlaku. Perubahan menghasilkan `409 QUOTE_MISMATCH`; quote
 kedaluwarsa menghasilkan `409 QUOTE_EXPIRED`; pemakaian kedua menghasilkan
-`409 QUOTE_ALREADY_USED`. Quote legacy tanpa prefix `fq_` tetap diterima selama
-masa transisi agar integrasi Emisell yang sudah berjalan tidak terputus.
+`409 QUOTE_ALREADY_USED`.
 
 RajaOngkir Hosted mengambil quote dari `/tariff/api/v1/calculate` Shipping
 Delivery. Provider partner lain menggunakan operasi quote fulfillment pada

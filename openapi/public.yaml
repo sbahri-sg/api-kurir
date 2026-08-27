@@ -1208,8 +1208,8 @@ paths:
         /api/v1/integrations/shipping-quotes. API Kurir mengambil service native
         dan seluruh komponen biaya dari snapshot server-side; perubahan rute,
         paket, provider, mode, credential, service, atau harga ditolak sebelum
-        provider dipanggil. Quote legacy tanpa prefix fq_ masih diterima selama
-        masa transisi dan akan dihapus setelah Emisell bermigrasi.
+        provider dipanggil. Nominal barang dihitung dari rincian item, diskon,
+        dan pajak; field shipment lama tidak diterima.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1253,9 +1253,9 @@ paths:
         "422":
           description: >
             Credential Shipping Delivery pada environment request belum ada,
-            atau provider menolak service, harga, total, rute, maupun data
-            shipment. Ambil ulang quote fulfillment sebelum membuat percobaan
-            baru.
+            rincian nominal tidak konsisten (AMOUNT_MISMATCH), atau provider
+            menolak service, harga, total, rute, maupun data shipment. Ambil
+            ulang quote fulfillment sebelum membuat percobaan baru.
           content:
             application/json:
               schema:
@@ -3268,28 +3268,29 @@ components:
 
     FulfillmentItem:
       type: object
-      required: [name, quantity, unit_value, weight_grams]
+      additionalProperties: false
+      required: [name, quantity, unit_price, subtotal, weight_grams]
       properties:
-        sku: { type: string }
         name: { type: string, minLength: 1 }
         variant: { type: string }
         quantity: { type: integer, minimum: 1 }
-        unit_value: { type: integer, format: int64, minimum: 0 }
+        unit_price: { type: integer, format: int64, minimum: 0 }
+        subtotal:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total baris setelah diskon produk; tidak boleh melebihi unit_price × quantity.
         weight_grams: { type: integer, format: int64, minimum: 1 }
-        length_cm: { type: integer, minimum: 0 }
-        width_cm: { type: integer, minimum: 0 }
-        height_cm: { type: integer, minimum: 0 }
 
     FulfillmentPackage:
       type: object
-      required: [weight_grams, length_cm, width_cm, height_cm, item_value, contents, items]
+      additionalProperties: false
+      required: [weight_grams, length_cm, width_cm, height_cm, items]
       properties:
         weight_grams: { type: integer, format: int64, minimum: 1, maximum: 1000000 }
         length_cm: { type: integer, minimum: 1 }
         width_cm: { type: integer, minimum: 1 }
         height_cm: { type: integer, minimum: 1 }
-        item_value: { type: integer, format: int64, minimum: 0 }
-        contents: { type: string, minLength: 1 }
         items:
           type: array
           minItems: 1
@@ -3299,15 +3300,33 @@ components:
 
     FulfillmentPayment:
       type: object
-      required: [type, shipping_cost, grand_total]
+      additionalProperties: false
+      required:
+        - type
+        - items_subtotal
+        - order_discount
+        - tax_amount
+        - shipping_cost
+        - shipping_discount
+        - additional_cost
+        - grand_total
       properties:
         type: { type: string, enum: [non_cod, cod] }
-        funding_source: { type: string }
+        items_subtotal:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Harus sama dengan jumlah subtotal seluruh item.
+        order_discount: { type: integer, format: int64, minimum: 0 }
+        tax_amount: { type: integer, format: int64, minimum: 0 }
         shipping_cost: { type: integer, format: int64, minimum: 0 }
-        shipping_cashback: { type: integer, format: int64, minimum: 0 }
-        service_fee: { type: integer, format: int64, minimum: 0 }
+        shipping_discount: { type: integer, format: int64, minimum: 0 }
         additional_cost: { type: integer, format: int64, minimum: 0 }
-        grand_total: { type: integer, format: int64, minimum: 0 }
+        grand_total:
+          type: integer
+          format: int64
+          minimum: 0
+          description: items_subtotal - order_discount + tax_amount + shipping_cost - shipping_discount + additional_cost + penyesuaian biaya/diskon provider dari quote.
         cod_value: { type: integer, format: int64, minimum: 0 }
         insurance_value: { type: integer, format: int64, minimum: 0 }
 
@@ -3330,10 +3349,6 @@ components:
         width_cm: { type: integer, minimum: 1 }
         height_cm: { type: integer, minimum: 1 }
         item_value: { type: integer, format: int64, minimum: 0 }
-        contents: { type: string }
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/FulfillmentItem" }
 
     FulfillmentQuoteRequest:
       type: object

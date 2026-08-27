@@ -42,22 +42,12 @@ func (a *FulfillmentAdapter) Create(
 ) (fulfillment.ProviderCreateResult, error) {
 	items := make([]map[string]any, 0, len(request.Package.Items))
 	for _, item := range request.Package.Items {
-		length, width, height := item.LengthCM, item.WidthCM, item.HeightCM
-		if length == 0 {
-			length = request.Package.LengthCM
-		}
-		if width == 0 {
-			width = request.Package.WidthCM
-		}
-		if height == 0 {
-			height = request.Package.HeightCM
-		}
 		items = append(items, map[string]any{
 			"product_name": item.Name, "product_variant_name": item.Variant,
-			"product_price": item.UnitValue, "product_weight": item.WeightGrams,
-			"product_width": width, "product_height": height,
-			"product_length": length, "qty": item.Quantity,
-			"subtotal": item.UnitValue * int64(item.Quantity),
+			"product_price": item.UnitPrice, "product_weight": item.WeightGrams,
+			"product_width": request.Package.WidthCM, "product_height": request.Package.HeightCM,
+			"product_length": request.Package.LengthCM, "qty": item.Quantity,
+			"subtotal": item.Subtotal,
 		})
 	}
 	paymentMethod := "BANK TRANSFER"
@@ -77,9 +67,9 @@ func (a *FulfillmentAdapter) Create(
 		"shipping":                strings.ToUpper(request.CourierCode),
 		"shipping_type":           request.ServiceCode, "payment_method": paymentMethod,
 		"shipping_cost":     request.Payment.ShippingCost,
-		"shipping_cashback": request.Payment.ShippingCashback,
+		"shipping_cashback": request.Payment.ShippingDiscount + request.Payment.ProviderShippingDiscount,
 		"service_fee":       request.Payment.ServiceFee,
-		"additional_cost":   request.Payment.AdditionalCost,
+		"additional_cost":   request.Payment.AdditionalCost + request.Payment.ProviderAdditionalCost,
 		"grand_total":       request.Payment.GrandTotal,
 		"cod_value":         request.Payment.CODValue,
 		"insurance_value":   request.Payment.InsuranceValue,

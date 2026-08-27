@@ -74,6 +74,37 @@ func TestDeliveryCredentialRequiredReportsExecutionEnvironment(t *testing.T) {
 	}
 }
 
+func TestAmountMismatchErrorResponse(t *testing.T) {
+	t.Parallel()
+	e := echo.New()
+	e.GET("/", func(c *echo.Context) error {
+		return writeFulfillmentError(c, fulfillment.ErrAmountMismatch)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"code":"AMOUNT_MISMATCH"`)) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestFulfillmentCreateRejectsRemovedLegacyFields(t *testing.T) {
+	t.Parallel()
+	e := echo.New()
+	e.POST("/", fulfillmentCreateHandler(fulfillment.NewService(nil, nil, nil)))
+	request := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{
+		"merchant_reference":"ORDER-1","quote_id":"quote-1","package":{"item_value":100000}
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest ||
+		!bytes.Contains(response.Body.Bytes(), []byte(`"code":"INVALID_REQUEST"`)) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestFulfillmentHandlerStopsAfterErrorResponse(t *testing.T) {
 	t.Parallel()
 	e := echo.New()

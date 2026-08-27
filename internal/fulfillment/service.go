@@ -20,6 +20,8 @@ import (
 var idempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{8,128}$`)
 var shipmentIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
 
+const maxFulfillmentAmount int64 = 1_000_000_000_000_000
+
 type Service struct {
 	repository  Repository
 	catalog     ProviderCatalog
@@ -484,13 +486,10 @@ func normalizeCreateRequest(request CreateRequest) CreateRequest {
 	request.Fulfillment = strings.ToLower(strings.TrimSpace(request.Fulfillment))
 	request.Sender = normalizeAddress(request.Sender)
 	request.Recipient = normalizeAddress(request.Recipient)
-	request.Package.Contents = strings.TrimSpace(request.Package.Contents)
 	request.Payment.Type = strings.ToLower(strings.TrimSpace(request.Payment.Type))
-	request.Payment.FundingSource = strings.ToLower(strings.TrimSpace(request.Payment.FundingSource))
 	request.Notes = strings.TrimSpace(request.Notes)
 	for index := range request.Package.Items {
 		request.Package.Items[index].Name = strings.TrimSpace(request.Package.Items[index].Name)
-		request.Package.Items[index].SKU = strings.TrimSpace(request.Package.Items[index].SKU)
 		request.Package.Items[index].Variant = strings.TrimSpace(request.Package.Items[index].Variant)
 	}
 	return request
@@ -502,7 +501,6 @@ func normalizeQuoteRequest(request QuoteRequest) QuoteRequest {
 	if request.PaymentType == "" {
 		request.PaymentType = "non_cod"
 	}
-	request.Package.Contents = strings.TrimSpace(request.Package.Contents)
 	request.CourierCodes = normalizeStringList(request.CourierCodes, true)
 	request.ServiceGroups = normalizeStringList(request.ServiceGroups, false)
 	if len(request.ServiceGroups) == 0 {
@@ -575,11 +573,24 @@ func quoteBindingFromCreate(request CreateRequest) quoteBinding {
 		DestinationDestinationID: request.Recipient.DestinationID,
 		WeightGrams:              request.Package.WeightGrams, LengthCM: request.Package.LengthCM,
 		WidthCM: request.Package.WidthCM, HeightCM: request.Package.HeightCM,
-		ItemValue: request.Package.ItemValue, PaymentType: request.Payment.Type,
+		ItemValue: merchandiseValue(request.Payment), PaymentType: request.Payment.Type,
 	}
 }
 
 func applyLockedQuote(request *CreateRequest, quote Quote) error {
+	for _, amount := range []int64{
+		request.Payment.ItemsSubtotal, request.Payment.OrderDiscount, request.Payment.TaxAmount,
+		request.Payment.ShippingCost, request.Payment.ShippingDiscount,
+		request.Payment.AdditionalCost, request.Payment.GrandTotal, request.Payment.CODValue,
+		request.Payment.InsuranceValue,
+	} {
+		if amount < 0 || amount > maxFulfillmentAmount {
+			return ErrInvalidRequest
+		}
+	}
+	if request.Payment.OrderDiscount > request.Payment.ItemsSubtotal {
+		return ErrAmountMismatch
+	}
 	_, bindingHash, err := requestPayload(quoteBindingFromCreate(*request))
 	if err != nil {
 		return err
@@ -590,7 +601,8 @@ func applyLockedQuote(request *CreateRequest, quote Quote) error {
 		(request.ServiceCode != "" && request.ServiceCode != quote.ServiceCode) ||
 		(request.DeliveryMode != "" && request.DeliveryMode != quote.DeliveryMode) ||
 		(request.Payment.ShippingCost != 0 && request.Payment.ShippingCost != quote.ShippingCost) ||
-		(request.Payment.GrandTotal != 0 && request.Payment.GrandTotal != quote.GrandTotal) {
+		(request.Payment.GrandTotal != 0 &&
+			request.Payment.GrandTotal != quote.GrandTotal-request.Payment.ShippingDiscount+request.Payment.AdditionalCost) {
 		return ErrQuoteMismatch
 	}
 	request.ProviderCode = quote.ProviderCode
@@ -598,11 +610,15 @@ func applyLockedQuote(request *CreateRequest, quote Quote) error {
 	request.ServiceCode = quote.ServiceCode
 	request.DeliveryMode = quote.DeliveryMode
 	request.Payment.ShippingCost = quote.ShippingCost
-	request.Payment.ShippingCashback = quote.ShippingCashback
+	request.Payment.ProviderShippingDiscount = quote.ShippingCashback
 	request.Payment.ServiceFee = quote.ServiceFee
-	request.Payment.AdditionalCost = quote.AdditionalCost
-	request.Payment.GrandTotal = quote.GrandTotal
-	request.Payment.CODValue = quote.CODValue
+	request.Payment.ProviderAdditionalCost = quote.AdditionalCost
+	request.Payment.GrandTotal = quote.GrandTotal - request.Payment.ShippingDiscount + request.Payment.AdditionalCost
+	if request.Payment.Type == "cod" {
+		request.Payment.CODValue = request.Payment.GrandTotal
+	} else {
+		request.Payment.CODValue = 0
+	}
 	request.Payment.InsuranceValue = quote.InsuranceValue
 	return nil
 }
@@ -692,21 +708,73 @@ func validateCreateRequest(request CreateRequest) error {
 	}
 	if request.Package.WeightGrams < 1 || request.Package.WeightGrams > 1_000_000 ||
 		request.Package.LengthCM < 1 || request.Package.WidthCM < 1 || request.Package.HeightCM < 1 ||
-		request.Package.ItemValue < 0 || request.Package.Contents == "" ||
 		len(request.Package.Items) == 0 || len(request.Package.Items) > 100 {
 		return ErrInvalidRequest
 	}
+	var itemsSubtotal int64
+	var itemsWeight int64
 	for _, item := range request.Package.Items {
-		if item.Name == "" || item.Quantity < 1 || item.UnitValue < 0 || item.WeightGrams < 1 {
+		if item.Name == "" || item.Quantity < 1 || item.UnitPrice < 0 ||
+			item.UnitPrice > maxFulfillmentAmount || item.Subtotal < 0 ||
+			item.Subtotal > maxFulfillmentAmount || item.WeightGrams < 1 {
 			return ErrInvalidRequest
 		}
+		quantity := int64(item.Quantity)
+		if item.UnitPrice > 0 && quantity > (1<<63-1)/item.UnitPrice {
+			return ErrInvalidRequest
+		}
+		if item.WeightGrams > (1<<63-1)/quantity {
+			return ErrInvalidRequest
+		}
+		if item.Subtotal > item.UnitPrice*quantity || itemsSubtotal > (1<<63-1)-item.Subtotal {
+			return ErrAmountMismatch
+		}
+		itemsSubtotal += item.Subtotal
+		itemWeight := item.WeightGrams * quantity
+		if itemsWeight > (1<<63-1)-itemWeight {
+			return ErrInvalidRequest
+		}
+		itemsWeight += itemWeight
 	}
 	if !oneOf(request.Payment.Type, "non_cod", "cod") ||
-		request.Payment.ShippingCost < 0 || request.Payment.GrandTotal < 0 ||
+		request.Payment.ItemsSubtotal < 0 || request.Payment.OrderDiscount < 0 ||
+		request.Payment.TaxAmount < 0 || request.Payment.ShippingCost < 0 ||
+		request.Payment.ShippingDiscount < 0 || request.Payment.ServiceFee < 0 ||
+		request.Payment.AdditionalCost < 0 || request.Payment.ProviderShippingDiscount < 0 ||
+		request.Payment.ProviderAdditionalCost < 0 || request.Payment.GrandTotal < 0 ||
+		request.Payment.CODValue < 0 || request.Payment.InsuranceValue < 0 ||
 		(request.Payment.Type == "cod" && request.Payment.CODValue != request.Payment.GrandTotal) {
 		return ErrInvalidRequest
 	}
+	for _, amount := range []int64{
+		request.Payment.ItemsSubtotal, request.Payment.OrderDiscount, request.Payment.TaxAmount,
+		request.Payment.ShippingCost, request.Payment.ShippingDiscount, request.Payment.ServiceFee,
+		request.Payment.AdditionalCost, request.Payment.ProviderShippingDiscount,
+		request.Payment.ProviderAdditionalCost, request.Payment.GrandTotal, request.Payment.CODValue,
+		request.Payment.InsuranceValue,
+	} {
+		if amount > maxFulfillmentAmount {
+			return ErrInvalidRequest
+		}
+	}
+	if itemsWeight > request.Package.WeightGrams ||
+		itemsSubtotal != request.Payment.ItemsSubtotal ||
+		request.Payment.OrderDiscount > request.Payment.ItemsSubtotal ||
+		request.Payment.ShippingDiscount+request.Payment.ProviderShippingDiscount > request.Payment.ShippingCost ||
+		request.Payment.GrandTotal != paymentGrandTotal(request.Payment) {
+		return ErrAmountMismatch
+	}
 	return nil
+}
+
+func merchandiseValue(payment Payment) int64 {
+	return payment.ItemsSubtotal - payment.OrderDiscount + payment.TaxAmount
+}
+
+func paymentGrandTotal(payment Payment) int64 {
+	return merchandiseValue(payment) + payment.ShippingCost - payment.ShippingDiscount -
+		payment.ProviderShippingDiscount + payment.ServiceFee + payment.AdditionalCost +
+		payment.ProviderAdditionalCost
 }
 
 func validAddress(address Address) bool {

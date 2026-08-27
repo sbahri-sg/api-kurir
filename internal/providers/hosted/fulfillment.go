@@ -71,7 +71,7 @@ func (a *FulfillmentAdapter) Quote(ctx context.Context, credential string, reque
 
 func (a *FulfillmentAdapter) Create(ctx context.Context, credential string, request fulfillment.CreateRequest) (fulfillment.ProviderCreateResult, error) {
 	var response shipmentResponse
-	if err := a.client.Do(ctx, http.MethodPost, "shipments", "x-api-key", credential, request, &response); err != nil {
+	if err := a.client.Do(ctx, http.MethodPost, "shipments", "x-api-key", credential, hostedCreateRequest(request), &response); err != nil {
 		return fulfillment.ProviderCreateResult{}, mapFulfillmentError(err)
 	}
 	if response.Data.PartnerShipmentID == "" {
@@ -83,6 +83,27 @@ func (a *FulfillmentAdapter) Create(ctx context.Context, credential string, requ
 		ProviderStatus:     response.Data.Status,
 		Status:             fulfillment.StatusBooked,
 	}, nil
+}
+
+func hostedCreateRequest(request fulfillment.CreateRequest) map[string]any {
+	return map[string]any{
+		"provider_code": request.ProviderCode, "merchant_reference": request.MerchantReference,
+		"quote_id": request.QuoteID, "brand_name": request.BrandName,
+		"courier_code": request.CourierCode, "service_code": request.ServiceCode,
+		"delivery_mode": request.DeliveryMode, "fulfillment": request.Fulfillment,
+		"sender": request.Sender, "recipient": request.Recipient, "package": request.Package,
+		"payment": map[string]any{
+			"type": request.Payment.Type, "items_subtotal": request.Payment.ItemsSubtotal,
+			"order_discount": request.Payment.OrderDiscount, "tax_amount": request.Payment.TaxAmount,
+			"shipping_cost":     request.Payment.ShippingCost,
+			"shipping_discount": request.Payment.ShippingDiscount + request.Payment.ProviderShippingDiscount,
+			"service_fee":       request.Payment.ServiceFee,
+			"additional_cost":   request.Payment.AdditionalCost + request.Payment.ProviderAdditionalCost,
+			"grand_total":       request.Payment.GrandTotal, "cod_value": request.Payment.CODValue,
+			"insurance_value": request.Payment.InsuranceValue,
+		},
+		"notes": request.Notes,
+	}
 }
 
 func (a *FulfillmentAdapter) Pickup(ctx context.Context, credential string, shipment fulfillment.Shipment, request fulfillment.PickupRequest) (fulfillment.ProviderPickupResult, error) {

@@ -24,6 +24,12 @@ func TestFulfillmentAdapterCreateMapsCanonicalRequest(t *testing.T) {
 		if payload["shipping"] != "JNE" || payload["shipping_type"] != "REG" || payload["shipper_destination_id"].(float64) != 5969 {
 			t.Fatalf("unexpected payload: %#v", payload)
 		}
+		items := payload["order_details"].([]any)
+		item := items[0].(map[string]any)
+		if item["product_price"].(float64) != 100000 || item["subtotal"].(float64) != 100000 ||
+			item["product_width"].(float64) != 10 {
+			t.Fatalf("unexpected item payload: %#v", item)
+		}
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{"meta":{"message":"Success Create New Order","code":201,"status":"success"},"data":{"order_id":9999,"order_no":"KOM-100"}}`))
 	}))
@@ -88,7 +94,12 @@ func validFulfillmentRequest() fulfillment.CreateRequest {
 		CourierCode: "jne", ServiceCode: "REG", DeliveryMode: "regular", Fulfillment: "pickup",
 		Sender:    fulfillment.Address{Name: "Toko", Phone: "0812", Email: "admin@example.com", Address: "Jalan A", DestinationID: 5969},
 		Recipient: fulfillment.Address{Name: "Budi", Phone: "0813", Address: "Jalan B", DestinationID: 4956},
-		Package:   fulfillment.Package{WeightGrams: 1000, LengthCM: 10, WidthCM: 10, HeightCM: 5, ItemValue: 100000, Contents: "Kaos", Items: []fulfillment.Item{{Name: "Kaos", Quantity: 1, UnitValue: 100000, WeightGrams: 1000}}},
-		Payment:   fulfillment.Payment{Type: "non_cod", ShippingCost: 18000, GrandTotal: 118000},
+		Package: fulfillment.Package{
+			WeightGrams: 1000, LengthCM: 10, WidthCM: 10, HeightCM: 5,
+			Items: []fulfillment.Item{{Name: "Kaos", Quantity: 1, UnitPrice: 100000, Subtotal: 100000, WeightGrams: 1000}},
+		},
+		Payment: fulfillment.Payment{
+			Type: "non_cod", ItemsSubtotal: 100000, ShippingCost: 18000, GrandTotal: 118000,
+		},
 	}
 }

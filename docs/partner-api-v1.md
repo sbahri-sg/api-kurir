@@ -410,25 +410,30 @@ Idempotency-Key: 01J...ULID
     "longitude": 108.292
   },
   "package": {
-    "weight_grams": 1200,
+    "weight_grams": 1350,
     "length_cm": 20,
     "width_cm": 15,
     "height_cm": 10,
-    "item_value": 150000,
-    "contents": "Pakaian",
     "items": [
       {
-        "sku": "TSHIRT-BLACK-M",
         "name": "Kaos Hitam",
+        "variant": "M",
         "quantity": 1,
-        "unit_value": 150000,
+        "unit_price": 150000,
+        "subtotal": 130000,
         "weight_grams": 1200
       }
     ]
   },
   "payment": {
     "type": "non_cod",
-    "funding_source": "provider_balance",
+    "items_subtotal": 130000,
+    "order_discount": 0,
+    "tax_amount": 0,
+    "shipping_cost": 18000,
+    "shipping_discount": 5000,
+    "additional_cost": 0,
+    "grand_total": 143000,
     "cod_value": 0,
     "insurance_value": 0
   },

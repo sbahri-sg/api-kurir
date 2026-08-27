@@ -26,6 +26,7 @@ var (
 	ErrQuoteExpired          = errors.New("fulfillment quote expired")
 	ErrQuoteMismatch         = errors.New("fulfillment quote does not match request")
 	ErrQuoteConsumed         = errors.New("fulfillment quote already consumed")
+	ErrAmountMismatch        = errors.New("fulfillment payment amount does not match items")
 	ErrNoLifecycleJob        = errors.New("fulfillment lifecycle job is not available")
 	ErrNoWebhookJob          = errors.New("fulfillment webhook job is not available")
 )
@@ -58,15 +59,12 @@ type Address struct {
 }
 
 type Item struct {
-	SKU         string `json:"sku,omitempty"`
 	Name        string `json:"name"`
 	Variant     string `json:"variant,omitempty"`
 	Quantity    int    `json:"quantity"`
-	UnitValue   int64  `json:"unit_value"`
+	UnitPrice   int64  `json:"unit_price"`
+	Subtotal    int64  `json:"subtotal"`
 	WeightGrams int64  `json:"weight_grams"`
-	LengthCM    int    `json:"length_cm,omitempty"`
-	WidthCM     int    `json:"width_cm,omitempty"`
-	HeightCM    int    `json:"height_cm,omitempty"`
 }
 
 type Package struct {
@@ -74,21 +72,31 @@ type Package struct {
 	LengthCM    int    `json:"length_cm"`
 	WidthCM     int    `json:"width_cm"`
 	HeightCM    int    `json:"height_cm"`
-	ItemValue   int64  `json:"item_value"`
-	Contents    string `json:"contents"`
 	Items       []Item `json:"items"`
 }
 
 type Payment struct {
-	Type             string `json:"type"`
-	FundingSource    string `json:"funding_source,omitempty"`
-	ShippingCost     int64  `json:"shipping_cost"`
-	ShippingCashback int64  `json:"shipping_cashback,omitempty"`
-	ServiceFee       int64  `json:"service_fee,omitempty"`
-	AdditionalCost   int64  `json:"additional_cost,omitempty"`
-	GrandTotal       int64  `json:"grand_total"`
-	CODValue         int64  `json:"cod_value,omitempty"`
-	InsuranceValue   int64  `json:"insurance_value,omitempty"`
+	Type                     string `json:"type"`
+	ItemsSubtotal            int64  `json:"items_subtotal"`
+	OrderDiscount            int64  `json:"order_discount"`
+	TaxAmount                int64  `json:"tax_amount"`
+	ShippingCost             int64  `json:"shipping_cost"`
+	ShippingDiscount         int64  `json:"shipping_discount"`
+	ServiceFee               int64  `json:"-"`
+	AdditionalCost           int64  `json:"additional_cost"`
+	ProviderShippingDiscount int64  `json:"-"`
+	ProviderAdditionalCost   int64  `json:"-"`
+	GrandTotal               int64  `json:"grand_total"`
+	CODValue                 int64  `json:"cod_value,omitempty"`
+	InsuranceValue           int64  `json:"insurance_value,omitempty"`
+}
+
+type QuotePackage struct {
+	WeightGrams int64 `json:"weight_grams"`
+	LengthCM    int   `json:"length_cm"`
+	WidthCM     int   `json:"width_cm"`
+	HeightCM    int   `json:"height_cm"`
+	ItemValue   int64 `json:"item_value"`
 }
 
 type QuoteLocation struct {
@@ -103,7 +111,7 @@ type QuoteRequest struct {
 	ServiceGroups []string      `json:"service_groups,omitempty"`
 	Origin        QuoteLocation `json:"origin"`
 	Destination   QuoteLocation `json:"destination"`
-	Package       Package       `json:"package"`
+	Package       QuotePackage  `json:"package"`
 	PaymentType   string        `json:"payment_type"`
 }
 

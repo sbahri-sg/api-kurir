@@ -1324,30 +1324,52 @@ components:
         - required: [official_code, postal_code]
         - required: [latitude, longitude]
 
-    Payment:
+    ShipmentItem:
       type: object
-      required: [type, funding_source, cod_value, insurance_value]
+      additionalProperties: false
+      required: [name, quantity, unit_price, subtotal, weight_grams]
       properties:
-        type:
-          type: string
-          enum: [non_cod, cod]
-        funding_source:
-          type: string
-          enum: [provider_balance, invoice, cash, qris, not_applicable]
-        cod_value:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        variant: { type: string, maxLength: 255 }
+        quantity: { type: integer, minimum: 1 }
+        unit_price: { type: integer, minimum: 0 }
+        subtotal: { type: integer, minimum: 0 }
+        weight_grams: { type: integer, minimum: 1 }
+
+    ShipmentPackage:
+      type: object
+      additionalProperties: false
+      required: [weight_grams, length_cm, width_cm, height_cm, items]
+      properties:
+        weight_grams: { type: integer, minimum: 1 }
+        length_cm: { type: integer, minimum: 1 }
+        width_cm: { type: integer, minimum: 1 }
+        height_cm: { type: integer, minimum: 1 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/ShipmentItem" }
+
+    ShipmentPayment:
+      type: object
+      additionalProperties: false
+      required: [type, items_subtotal, order_discount, tax_amount, shipping_cost, shipping_discount, additional_cost, grand_total]
+      properties:
+        type: { type: string, enum: [non_cod, cod] }
+        items_subtotal: { type: integer, minimum: 0 }
+        order_discount: { type: integer, minimum: 0 }
+        tax_amount: { type: integer, minimum: 0 }
+        shipping_cost: { type: integer, minimum: 0 }
+        shipping_discount: { type: integer, minimum: 0 }
+        service_fee:
           type: integer
           minimum: 0
-        insurance_value:
-          type: integer
-          minimum: 0
-        payment_id:
-          type: [string, "null"]
-          maxLength: 128
-        provider_authorization:
-          type: [string, "null"]
-          writeOnly: true
-          maxLength: 512
-          description: Otorisasi sekali pakai; tidak boleh disimpan atau dicatat
+          description: Biaya provider yang diteruskan API Kurir dari quote terkunci.
+        additional_cost: { type: integer, minimum: 0 }
+        grand_total: { type: integer, minimum: 0 }
+        cod_value: { type: integer, minimum: 0 }
+        insurance_value: { type: integer, minimum: 0 }
 
     PickupInput:
       type: object
@@ -1412,9 +1434,9 @@ components:
           items:
             $ref: "#/components/schemas/Party"
         package:
-          $ref: "#/components/schemas/Package"
+          $ref: "#/components/schemas/ShipmentPackage"
         payment:
-          $ref: "#/components/schemas/Payment"
+          $ref: "#/components/schemas/ShipmentPayment"
         pickup:
           $ref: "#/components/schemas/PickupInput"
 

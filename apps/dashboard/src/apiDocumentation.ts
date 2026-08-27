@@ -2509,7 +2509,7 @@ Content-Type: application/json
     "length_cm": 20,
     "width_cm": 15,
     "height_cm": 10,
-    "item_value": 150000
+    "item_value": 130000
   },
   "payment_type": "non_cod",
   "courier_codes": ["jne"],
@@ -2528,7 +2528,7 @@ Content-Type: application/json
       "service_group": "regular",
       "delivery_mode": "regular",
       "shipping_cost": 10500,
-      "grand_total": 160500,
+      "grand_total": 140500,
       "currency": "IDR",
       "expires_at": "2026-08-27T15:15:00Z"
     }]
@@ -2544,7 +2544,7 @@ Kode seperti JNEFlat disimpan internal dan tidak perlu diketahui Emisell.`,
     path: "/api/v1/integrations/shipments",
     title: "Buat shipment fulfillment",
     description:
-      "Membuat booking memakai quote fq_ yang sebelumnya disimpan API Kurir. API Kurir mengambil service native dan seluruh biaya dari snapshot server-side, sehingga Emisell tidak dapat mengirim kode/harga provider yang keliru. Alamat, telepon, dan isi paket tetap terenkripsi. Quote legacy masih diterima sementara agar integrasi lama tidak terputus.",
+      "Membuat booking memakai quote fq_ yang sebelumnya disimpan API Kurir. API Kurir mengambil service native dan biaya provider dari snapshot server-side, lalu memvalidasi subtotal barang, diskon, pajak, ongkir, dan grand total sebelum provider dipanggil. Field shipment lama tidak diterima.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
     parameters: [
       "Idempotency-Key — wajib, unik per percobaan booking; gunakan nilai yang sama hanya untuk retry payload identik",
@@ -2554,6 +2554,9 @@ Kode seperti JNEFlat disimpan internal dan tidak perlu diketahui Emisell.`,
       "courier_code, delivery_mode, dan komponen payment boleh diteruskan dari quote; bila nilainya berbeda request ditolak sebelum hit provider",
       "provider_code — opsional; bila dikirim harus sama dengan provider aktif merchant",
       "destination_id pada sender/recipient — ID tujuan Shipping Delivery provider",
+      "items_subtotal harus sama dengan jumlah subtotal item; subtotal item sudah memperhitungkan diskon produk",
+      "grand_total = items_subtotal - order_discount + tax_amount + shipping_cost - shipping_discount + additional_cost + penyesuaian biaya/diskon provider dari quote",
+      "AMOUNT_MISMATCH (HTTP 422) berarti rincian nominal tidak konsisten dan request dihentikan sebelum hit provider",
       "Jika booking_failed dan payload perlu diperbaiki, buat merchant_reference serta Idempotency-Key baru. Referensi lama tetap dikunci untuk mencegah AWB ganda",
     ],
     request: `POST {{base_url}}/api/v1/integrations/shipments
@@ -2588,22 +2591,24 @@ Content-Type: application/json
     "length_cm": 20,
     "width_cm": 15,
     "height_cm": 10,
-    "item_value": 150000,
-    "contents": "Pakaian",
     "items": [{
-      "sku": "TSHIRT-M",
       "name": "Kaos",
+      "variant": "M",
       "quantity": 1,
-      "unit_value": 150000,
+      "unit_price": 150000,
+      "subtotal": 130000,
       "weight_grams": 1200
     }]
   },
   "payment": {
     "type": "non_cod",
+    "items_subtotal": 130000,
+    "order_discount": 0,
+    "tax_amount": 0,
     "shipping_cost": 10500,
-    "shipping_cashback": 0,
-    "service_fee": 0,
-    "grand_total": 160500
+    "shipping_discount": 0,
+    "additional_cost": 0,
+    "grand_total": 140500
   }
 }`,
     response: `HTTP 201 — shipment berhasil dibuat

@@ -143,8 +143,14 @@ func TestHostedFulfillmentAdapterUsesDeliveryCredential(t *testing.T) {
 			http.Error(response, "unexpected request", http.StatusBadRequest)
 			return
 		}
-		var input fulfillment.CreateRequest
-		if err := json.NewDecoder(request.Body).Decode(&input); err != nil || input.MerchantReference != "order-1" {
+		var input struct {
+			MerchantReference string `json:"merchant_reference"`
+			Payment           struct {
+				ServiceFee int64 `json:"service_fee"`
+			} `json:"payment"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil ||
+			input.MerchantReference != "order-1" || input.Payment.ServiceFee != 2500 {
 			http.Error(response, "invalid payload", http.StatusUnprocessableEntity)
 			return
 		}
@@ -165,6 +171,7 @@ func TestHostedFulfillmentAdapterUsesDeliveryCredential(t *testing.T) {
 	adapter := NewFulfillmentAdapter("rajaongkir", client)
 	result, err := adapter.Create(context.Background(), "delivery-key", fulfillment.CreateRequest{
 		MerchantReference: "order-1",
+		Payment:           fulfillment.Payment{ServiceFee: 2500},
 	})
 	if err != nil {
 		t.Fatal(err)

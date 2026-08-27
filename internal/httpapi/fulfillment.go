@@ -167,6 +167,8 @@ func writeFulfillmentError(c *echo.Context, err error) error {
 		return nil
 	case errors.Is(err, fulfillment.ErrInvalidRequest):
 		return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "Data shipment tidak lengkap atau tidak valid.", nil)
+	case errors.Is(err, fulfillment.ErrAmountMismatch):
+		return writeError(c, http.StatusUnprocessableEntity, "AMOUNT_MISMATCH", "Rincian subtotal, diskon, pajak, ongkir, atau total pembayaran tidak konsisten.", nil)
 	case errors.Is(err, fulfillment.ErrInvalidIdempotency):
 		return writeError(c, http.StatusBadRequest, "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key wajib 8-128 karakter.", nil)
 	case errors.Is(err, fulfillment.ErrIdempotencyConflict):

@@ -102,7 +102,7 @@ services:
 
   rajaongkir-hosted:
     build:
-      context: ./artifacts/rajaongkir-hosted-v1.0.7
+      context: ./artifacts/rajaongkir-hosted-v1.0.8
     environment:
       PORT: "8080"
       RAJAONGKIR_DELIVERY_ENV: "${RAJAONGKIR_DELIVERY_ENV:-production}"

@@ -5428,7 +5428,9 @@ NATIVE_REG hanya diterima API Kurir dan tidak pernah diteruskan ke Emisell.`,
     parameters: [
       "Idempotency-Key — wajib dan unik untuk satu operasi",
       "quote_id — quote canonical yang dikunci API Kurir dari endpoint fulfillment/quotes",
-      "sender, recipient, package, payment, dan pickup — detail fulfillment",
+      "item_value hanya dipakai saat quote dan tidak dikirim kembali pada create shipment",
+      "subtotal item adalah total baris setelah diskon produk; payment membawa ringkasan diskon, pajak, dan total order",
+      "field shipment lama seperti contents, sku, unit_value, funding_source, dan shipping_cashback tidak diterima",
     ],
     request: `POST https://{{partner_host}}/partner/v1/shipments
 Authorization: Bearer {{partner_runtime_token}}
@@ -5443,7 +5445,30 @@ X-Signature: {{signature}}
   "fulfillment": "pickup",
   "sender": {"name": "Toko Emisell", "phone": "628123456789"},
   "recipient": {"name": "Budi", "phone": "628987654321"},
-  "package": {"weight_grams": 1200, "item_value": 150000}
+  "package": {
+    "weight_grams": 1350,
+    "length_cm": 20,
+    "width_cm": 15,
+    "height_cm": 10,
+    "items": [{
+      "name": "Kaos",
+      "variant": "M",
+      "quantity": 1,
+      "unit_price": 150000,
+      "subtotal": 130000,
+      "weight_grams": 1200
+    }]
+  },
+  "payment": {
+    "type": "non_cod",
+    "items_subtotal": 130000,
+    "order_discount": 0,
+    "tax_amount": 0,
+    "shipping_cost": 18000,
+    "shipping_discount": 5000,
+    "additional_cost": 0,
+    "grand_total": 143000
+  }
 }`,
     response: `HTTP 201
 {
