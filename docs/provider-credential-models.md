@@ -93,9 +93,23 @@ fitur fulfillment diaktifkan.
 ```json
 {
   "provider_code": "rajaongkir",
+  "environment": "live",
   "credentials": {
     "shipping_api_key": "shipping-key-seller",
-    "delivery_api_key": "delivery-key-seller"
+    "delivery_api_key": "delivery-live-key-seller"
+  }
+}
+```
+
+Jika merchant juga memakai fulfillment sandbox, kirim request kedua. Jangan
+menggabungkan key sandbox ke bundle live:
+
+```json
+{
+  "provider_code": "rajaongkir",
+  "environment": "sandbox",
+  "credentials": {
+    "delivery_api_key": "delivery-sandbox-key-seller"
   }
 }
 ```
@@ -109,7 +123,8 @@ delivery bila `delivery_api_key` belum tersedia.
 Header internal `X-Emisell-Execution-Mode` menerima `live` atau `sandbox` dan
 default-nya `live`, sehingga integrasi Emisell lama tetap kompatibel. Credential
 live dan sandbox disimpan terpisah. Memindahkan mode tidak pernah menyalin
-secret dari environment lain.
+secret dari environment lain. Field `environment` yang tidak dikirim selalu
+berarti `live`; satu request hanya mengonfigurasi satu environment.
 
 | Capability RajaOngkir | Mode | Perilaku | Credential | Implikasi |
 |---|---|---|---|---|

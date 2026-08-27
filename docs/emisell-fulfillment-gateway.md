@@ -74,6 +74,19 @@ rate dan tracking RajaOngkir tidak mempunyai sandbox terpisah. Validator lama
 Shipping Cost tidak dipakai untuk menolak key Delivery-only. Key tersebut
 divalidasi secara otoritatif oleh request fulfillment sandbox pertama.
 
+Instalasi RajaOngkir yang menggunakan kedua mode harus membuat **dua request**
+credential:
+
+1. `environment: live` berisi `shipping_api_key` dan, jika fulfillment live
+   digunakan, `delivery_api_key` production;
+2. `environment: sandbox` berisi `delivery_api_key` sandbox.
+
+Jika `environment` tidak dikirim, API selalu memilih `live`. Karena itu payload
+yang berisi kedua key tanpa `environment` hanya mengonfigurasi live dan tidak
+menyediakan credential untuk request dengan
+`X-Emisell-Execution-Mode: sandbox`. API sengaja tidak menyalin secret live ke
+sandbox maupun sebaliknya.
+
 ## Perlindungan data
 
 Alamat, telepon, email, detail barang, dan label disimpan dengan AES-256-GCM

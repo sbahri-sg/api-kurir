@@ -2060,7 +2060,8 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     description:
       "Memvalidasi credential sesuai credential_fields dan environment provider, mengenkripsi seluruh bundle dengan AES-256-GCM, dan mengikatnya ke merchant. api_key lama tetap kompatibel pada mode live.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
-    request: `POST {{base_url}}/api/v1/integrations/provider-credentials
+    request: `# 1. Simpan credential live untuk cek ongkir, tracking, dan fulfillment production
+POST {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}
 Content-Type: application/json
@@ -2073,13 +2074,30 @@ Content-Type: application/json
     "delivery_api_key": "{{seller_rajaongkir_delivery_key}}"
   },
   "daily_limit": 50000
+}
+
+# 2. Simpan credential Shipping Delivery sandbox sebagai request terpisah
+POST {{base_url}}/api/v1/integrations/provider-credentials
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}
+Content-Type: application/json
+
+{
+  "provider_code": "rajaongkir",
+  "environment": "sandbox",
+  "credentials": {
+    "delivery_api_key": "{{seller_rajaongkir_sandbox_delivery_key}}"
+  },
+  "daily_limit": 50000
 }`,
     parameters: [
       "delivery_api_key opsional selama seller hanya menggunakan cek ongkir dan tracking.",
       "Payload lama api_key tetap diterima dan dipetakan ke shipping_api_key.",
       `Contoh OAuth: { "provider_code": "provider-oauth", "credentials": { "client_id": "...", "client_secret": "..." } }`,
       "Nama field wajib mengikuti credential_fields dari GET /api/v1/integrations/providers.",
-      "environment menerima live atau sandbox; default live. Secret kedua mode tidak pernah dicampur.",
+      "environment menerima live atau sandbox; jika tidak dikirim selalu dianggap live.",
+      "Mengirim shipping_api_key dan delivery_api_key tanpa environment hanya mengonfigurasi live, bukan sandbox.",
+      "Live dan sandbox wajib memakai dua request terpisah. Secret kedua mode tidak pernah disalin atau dicampur otomatis.",
       `Credential fulfillment sandbox disimpan terpisah: { "provider_code": "rajaongkir", "environment": "sandbox", "credentials": { "delivery_api_key": "..." } }`,
       "Credential Shipping Delivery-only tidak diuji melalui endpoint Shipping Cost. Format dan penyimpanannya divalidasi saat instalasi; otorisasi provider dipastikan pada request fulfillment sandbox pertama.",
     ],

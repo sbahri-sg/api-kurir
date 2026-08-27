@@ -869,7 +869,10 @@ paths:
         credential aktif lama untuk merchant dan provider yang sama. Credential
         milik merchant yang sama yang pernah dinonaktifkan akan diaktifkan
         kembali tanpa membuat credential duplikat dan tanpa mengaktifkan
-        provider shipping secara otomatis.
+        provider shipping secara otomatis. Jika environment tidak dikirim,
+        credential selalu disimpan sebagai live. RajaOngkir live dan sandbox
+        harus dikonfigurasi melalui dua request terpisah; secret tidak pernah
+        disalin otomatis antar-environment.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -881,6 +884,24 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateTenantProviderCredentialRequest"
+            examples:
+              rajaongkirLive:
+                summary: Shipping Cost dan Shipping Delivery production
+                value:
+                  provider_code: rajaongkir
+                  environment: live
+                  credentials:
+                    shipping_api_key: shipping-live-key
+                    delivery_api_key: delivery-live-key
+                  daily_limit: 50000
+              rajaongkirSandbox:
+                summary: Shipping Delivery sandbox sebagai request terpisah
+                value:
+                  provider_code: rajaongkir
+                  environment: sandbox
+                  credentials:
+                    delivery_api_key: delivery-sandbox-key
+                  daily_limit: 50000
       responses:
         "201":
           description: Credential seller valid dan aktif
@@ -5988,7 +6009,10 @@ components:
           type: string
           enum: [live, sandbox]
           default: live
-          description: Credential live dan sandbox disimpan terpisah.
+          description: >
+            Credential live dan sandbox disimpan terpisah. Jika tidak dikirim,
+            nilainya live. Satu request hanya mengonfigurasi satu environment;
+            secret tidak disalin ke environment lain.
         api_key:
           type: string
           minLength: 8
