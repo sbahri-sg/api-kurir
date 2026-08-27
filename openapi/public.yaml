@@ -1156,7 +1156,12 @@ paths:
         disimpan terenkripsi. Request timeout tidak diulang otomatis agar tidak
         membuat dua AWB. Credential sandbox hanya dipilih bila header
         X-Emisell-Execution-Mode bernilai sandbox. Service code dan biaya wajib
-        berasal dari quote provider untuk rute, berat, dan layanan yang sama.
+        berasal dari quote fulfillment provider untuk rute, berat, layanan,
+        dan environment yang sama. RajaOngkir Shipping Delivery wajib memakai
+        hasil Calculate Shipping Delivery; respons endpoint Shipping Cost
+        /api/v1/calculate/district/domestic-cost tidak boleh digunakan untuk
+        Store Order Shipping Delivery. quote_id saat ini disimpan sebagai
+        referensi audit dan provider tetap memvalidasi data booking.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1189,13 +1194,20 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Idempotency conflict atau operasi masih berjalan
+          description: >
+            Idempotency conflict atau operasi masih berjalan. Booking gagal
+            tetap mengunci merchant_reference dan Idempotency-Key; payload yang
+            diperbaiki harus menggunakan reference dan key baru.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
-          description: Provider, credential delivery, atau data shipment tidak tersedia
+          description: >
+            Credential Shipping Delivery pada environment request belum ada,
+            atau provider menolak service, harga, total, rute, maupun data
+            shipment. Ambil ulang quote fulfillment sebelum membuat percobaan
+            baru.
           content:
             application/json:
               schema:

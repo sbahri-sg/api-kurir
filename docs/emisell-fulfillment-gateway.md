@@ -7,7 +7,10 @@ native RajaOngkir, Biteship, atau partner lain tidak diteruskan ke Emisell.
 ## Alur
 
 1. Merchant mengaktifkan tepat satu provider dari katalog API Kurir.
-2. Checkout memperoleh quote ongkir dari endpoint rate yang sudah ada.
+2. Checkout memperoleh quote fulfillment dari produk provider yang akan membuat
+   shipment. Untuk RajaOngkir Shipping Delivery, quote harus berasal dari
+   Calculate Shipping Delivery; tarif Shipping Cost tidak boleh dipakai untuk
+   Store Order Shipping Delivery.
 3. Main Service membuat shipment dengan `merchant_reference`, `quote_id`, dan
    `Idempotency-Key` yang stabil.
 4. API Kurir mereservasi operasi di PostgreSQL sebelum memanggil provider.
@@ -97,6 +100,22 @@ berasal dari hasil quote provider untuk rute, berat, dan layanan yang sama.
 Contohnya, nilai `REG` dan harga manual tidak boleh menggantikan service
 `JNEFlat` yang dikembalikan kalkulasi sandbox. Ketidaksesuaian ini diteruskan
 sebagai `422 PROVIDER_REJECTED`, bukan error credential.
+
+Endpoint `/api/v1/calculate/district/domestic-cost` menggunakan produk
+RajaOngkir Shipping Cost. Responsnya tetap sah untuk cek ongkir dan checkout
+tanpa fulfillment, tetapi tidak menjadi sumber booking Shipping Delivery.
+Sampai quote-lock fulfillment internal tersedia, `quote_id` pada create
+shipment berfungsi sebagai referensi audit; provider tetap menjadi validator
+otoritatif untuk service, harga, total, rute, dan paket.
+
+Contoh `JNEFlat` Rp10.500 dalam dokumentasi adalah hasil fixture sandbox untuk
+rute `5969 -> 4956`, berat 1.200 gram, dan nilai barang Rp150.000. Nilai tersebut
+bukan tarif tetap dan tidak boleh disalin untuk order/rute lain.
+
+Jika provider sudah menolak booking, API mempertahankan `merchant_reference`
+dan `Idempotency-Key` sebagai bukti percobaan. Retry payload identik mengembalikan
+error lama; payload yang diperbaiki wajib memakai reference dan key baru. Aturan
+ini mencegah dua AWB ketika status upstream belum pasti.
 
 ## Perlindungan data
 

@@ -2485,15 +2485,18 @@ awb=TEST123456789&courier=sicepat`,
     path: "/api/v1/integrations/shipments",
     title: "Buat shipment fulfillment",
     description:
-      "Membuat booking pada provider aktif merchant. API Kurir mengunci provider dan credential, mereservasi idempotency sebelum hit upstream, serta mengenkripsi alamat, telepon, dan isi paket di database. Replay atas booking_failed tetap mengembalikan error provider semula, bukan sukses palsu.",
+      "Membuat booking pada provider aktif merchant. Untuk RajaOngkir, nilai booking wajib berasal dari Calculate milik Shipping Delivery, bukan endpoint Shipping Cost /api/v1/calculate/district/domestic-cost. API Kurir mengunci provider dan credential, mereservasi idempotency sebelum hit upstream, serta mengenkripsi alamat, telepon, dan isi paket di database. Replay atas booking_failed tetap mengembalikan error provider semula, bukan sukses palsu.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
     parameters: [
       "Idempotency-Key — wajib, unik per percobaan booking; gunakan nilai yang sama hanya untuk retry payload identik",
       "X-Emisell-Execution-Mode — kirim sandbox untuk memakai delivery_api_key sandbox; jika header tidak dikirim, API selalu memilih live",
-      "quote_id — quote ongkir yang dipilih checkout",
-      "service_code dan payment.shipping_cost — wajib berasal dari quote provider pada rute, berat, dan layanan yang sama; jangan memakai nilai manual",
+      "quote_id — referensi quote fulfillment yang dipilih checkout; saat ini disimpan untuk audit dan belum menggantikan validasi native provider",
+      "RajaOngkir fulfillment — gunakan hasil Calculate Shipping Delivery. Quote Shipping Cost seperti REG/Rp18.000 tidak otomatis valid untuk Store Order Shipping Delivery",
+      "service_code dan payment.shipping_cost — salin persis dari quote fulfillment pada rute, berat, layanan, dan environment yang sama; jangan memakai nilai manual",
+      "Contoh JNEFlat/Rp10.500 di bawah hanya berlaku untuk data sandbox contoh. Produksi wajib menggunakan quote terbaru milik order tersebut",
       "provider_code — opsional; bila dikirim harus sama dengan provider aktif merchant",
       "destination_id pada sender/recipient — ID tujuan Shipping Delivery provider",
+      "Jika booking_failed dan payload perlu diperbaiki, buat merchant_reference serta Idempotency-Key baru. Referensi lama tetap dikunci untuk mencegah AWB ganda",
     ],
     request: `POST {{base_url}}/api/v1/integrations/shipments
 key: {{api_key}}
@@ -2545,7 +2548,9 @@ Content-Type: application/json
     "grand_total": 160500
   }
 }`,
-    response: `{
+    response: `HTTP 201 — shipment berhasil dibuat
+
+{
   "meta": { "message": "Shipment created", "code": 201, "status": "success" },
   "data": {
     "shipment": {
@@ -2564,7 +2569,13 @@ Content-Type: application/json
     },
     "idempotent_replay": false
   }
-}`,
+}
+
+HTTP 409 IDEMPOTENCY_CONFLICT — merchant_reference/Idempotency-Key pernah dipakai dengan payload berbeda. Gunakan referensi baru untuk payload yang diperbaiki.
+
+HTTP 422 DELIVERY_CREDENTIAL_REQUIRED — delivery_api_key belum tersedia pada environment request. Pastikan header live/sandbox sesuai credential.
+
+HTTP 422 PROVIDER_REJECTED — request sudah mencapai provider, tetapi service, harga, total, rute, atau data shipment tidak diterima. Ambil ulang quote fulfillment dan buat percobaan baru dengan reference/key baru.`,
   },
   {
     contract: "gateway",
