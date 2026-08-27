@@ -91,8 +91,9 @@ calculate Delivery -> store order -> pickup -> AWB/label -> webhook/history
 ```
 
 Quote Shipping Cost tidak boleh langsung digunakan untuk membuat order
-Shipping Delivery. API Kurir harus menyimpan ID quote/order produk Delivery
-yang benar dan memisahkan biaya `quoted`, `booked`, serta `actual`.
+Shipping Delivery. API Kurir menyimpan quote Calculate Delivery sebagai
+snapshot canonical `fq_`, menyembunyikan service native, dan mengikat provider,
+credential, environment, rute, paket, harga, serta masa berlaku sebelum booking.
 
 Pickup mendukung kumpulan order, tanggal, waktu, dan kendaraan. Callback yang
 tidak mempunyai signature atau delivery ID yang cukup kuat wajib dilengkapi

@@ -1145,6 +1145,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/integrations/shipping-quotes:
+    post:
+      tags: [Emisell Gateway]
+      operationId: createTenantFulfillmentQuotes
+      summary: Mengambil dan mengunci quote fulfillment provider
+      description: >
+        Memanggil endpoint quote milik provider fulfillment aktif, lalu
+        menyimpan snapshot harga, service native, credential, environment,
+        rute, dan paket di API Kurir. Response hanya membawa service_code
+        canonical. Quote berawalan fq_ wajib dipakai saat create shipment dan
+        tidak dapat dipindahkan ke provider, credential, mode, rute, atau paket
+        lain. Shipping Cost umum bukan sumber endpoint ini.
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ExecutionModeHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FulfillmentQuoteRequest"
+      responses:
+        "200":
+          description: Quote canonical tersimpan dan siap dipakai checkout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentQuoteListResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Provider, credential, atau quote fulfillment tidak tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Provider fulfillment tidak tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/integrations/shipments:
     post:
       tags: [Emisell Gateway]
@@ -1155,13 +1204,12 @@ paths:
         credential dipilih server-side dari konfigurasi merchant; payload PII
         disimpan terenkripsi. Request timeout tidak diulang otomatis agar tidak
         membuat dua AWB. Credential sandbox hanya dipilih bila header
-        X-Emisell-Execution-Mode bernilai sandbox. Service code dan biaya wajib
-        berasal dari quote fulfillment provider untuk rute, berat, layanan,
-        dan environment yang sama. RajaOngkir Shipping Delivery wajib memakai
-        hasil Calculate Shipping Delivery; respons endpoint Shipping Cost
-        /api/v1/calculate/district/domestic-cost tidak boleh digunakan untuk
-        Store Order Shipping Delivery. quote_id saat ini disimpan sebagai
-        referensi audit dan provider tetap memvalidasi data booking.
+        X-Emisell-Execution-Mode bernilai sandbox. Gunakan quote_id fq_ dari
+        /api/v1/integrations/shipping-quotes. API Kurir mengambil service native
+        dan seluruh komponen biaya dari snapshot server-side; perubahan rute,
+        paket, provider, mode, credential, service, atau harga ditolak sebelum
+        provider dipanggil. Quote legacy tanpa prefix fq_ masih diterima selama
+        masa transisi dan akan dihapus setelah Emisell bermigrasi.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -3263,15 +3311,106 @@ components:
         cod_value: { type: integer, format: int64, minimum: 0 }
         insurance_value: { type: integer, format: int64, minimum: 0 }
 
+    FulfillmentQuoteLocation:
+      type: object
+      additionalProperties: false
+      required: [destination_id]
+      properties:
+        destination_id: { type: integer, format: int64, minimum: 1 }
+        latitude: { type: number, format: double }
+        longitude: { type: number, format: double }
+
+    FulfillmentQuotePackage:
+      type: object
+      additionalProperties: false
+      required: [weight_grams, length_cm, width_cm, height_cm, item_value]
+      properties:
+        weight_grams: { type: integer, format: int64, minimum: 1, maximum: 1000000 }
+        length_cm: { type: integer, minimum: 1 }
+        width_cm: { type: integer, minimum: 1 }
+        height_cm: { type: integer, minimum: 1 }
+        item_value: { type: integer, format: int64, minimum: 0 }
+        contents: { type: string }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FulfillmentItem" }
+
+    FulfillmentQuoteRequest:
+      type: object
+      additionalProperties: false
+      required: [origin, destination, package, payment_type]
+      properties:
+        provider_code: { type: string, description: Opsional; harus sama dengan provider aktif merchant. }
+        courier_codes:
+          type: array
+          maxItems: 20
+          items: { type: string }
+        service_groups:
+          type: array
+          maxItems: 4
+          items: { type: string, enum: [regular, next_day, economy, cargo] }
+        origin: { $ref: "#/components/schemas/FulfillmentQuoteLocation" }
+        destination: { $ref: "#/components/schemas/FulfillmentQuoteLocation" }
+        package: { $ref: "#/components/schemas/FulfillmentQuotePackage" }
+        payment_type: { type: string, enum: [non_cod, cod], default: non_cod }
+
+    FulfillmentQuote:
+      type: object
+      required:
+        - quote_id
+        - provider_code
+        - environment
+        - courier_code
+        - service_code
+        - service_name
+        - service_group
+        - delivery_mode
+        - shipping_cost
+        - grand_total
+        - currency
+        - expires_at
+      properties:
+        quote_id: { type: string, pattern: "^fq_[a-f0-9]{32}$" }
+        provider_code: { type: string }
+        environment: { type: string, enum: [live, sandbox] }
+        courier_code: { type: string }
+        courier_name: { type: string }
+        service_code:
+          type: string
+          description: Kode canonical API Kurir; kode native provider tidak diekspos.
+        service_name: { type: string, enum: [Regular, Next Day, Economy, Cargo] }
+        service_group: { type: string, enum: [regular, next_day, economy, cargo] }
+        delivery_mode: { type: string, enum: [regular, next_day, economy, cargo] }
+        shipping_cost: { type: integer, format: int64, minimum: 0 }
+        shipping_cashback: { type: integer, format: int64, minimum: 0 }
+        service_fee: { type: integer, format: int64, minimum: 0 }
+        additional_cost: { type: integer, format: int64, minimum: 0 }
+        grand_total: { type: integer, format: int64, minimum: 0 }
+        cod_value: { type: integer, format: int64, minimum: 0 }
+        insurance_value: { type: integer, format: int64, minimum: 0 }
+        currency: { type: string, example: IDR }
+        etd: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    FulfillmentQuoteListResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta: { $ref: "#/components/schemas/Meta" }
+        data:
+          type: object
+          required: [quotes]
+          properties:
+            quotes:
+              type: array
+              items: { $ref: "#/components/schemas/FulfillmentQuote" }
+
     FulfillmentCreateRequest:
       type: object
       additionalProperties: false
       required:
         - merchant_reference
         - quote_id
-        - courier_code
-        - service_code
-        - delivery_mode
         - fulfillment
         - sender
         - recipient
@@ -3282,9 +3421,9 @@ components:
         merchant_reference: { type: string, minLength: 1, maxLength: 128 }
         quote_id: { type: string, minLength: 1, maxLength: 128 }
         brand_name: { type: string, default: Emisell }
-        courier_code: { type: string, minLength: 1, maxLength: 32 }
-        service_code: { type: string, minLength: 1, maxLength: 64 }
-        delivery_mode: { type: string, enum: [regular, next_day, economy, cargo] }
+        courier_code: { type: string, minLength: 1, maxLength: 32, description: Opsional untuk fq_; bila dikirim harus sesuai quote. }
+        service_code: { type: string, minLength: 1, maxLength: 64, description: Kode canonical dari quote; bukan kode native provider. }
+        delivery_mode: { type: string, enum: [regular, next_day, economy, cargo], description: Opsional untuk fq_; bila dikirim harus sesuai quote. }
         fulfillment: { type: string, enum: [pickup, dropoff] }
         sender: { $ref: "#/components/schemas/FulfillmentAddress" }
         recipient: { $ref: "#/components/schemas/FulfillmentAddress" }

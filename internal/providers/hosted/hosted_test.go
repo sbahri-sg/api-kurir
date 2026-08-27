@@ -174,6 +174,37 @@ func TestHostedFulfillmentAdapterUsesDeliveryCredential(t *testing.T) {
 	}
 }
 
+func TestHostedFulfillmentQuoteUsesDeliveryCredential(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/partner/v1/fulfillment/quotes" || request.Header.Get("x-api-key") != "delivery-key" {
+			http.Error(response, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]any{
+			"data": map[string]any{"quotes": []map[string]any{{
+				"courier_code": "jne", "courier_name": "JNE",
+				"service_code": "JNEFlat", "service_name": "Regular",
+				"service_group": "regular", "delivery_mode": "regular",
+				"shipping_cost": 10500, "grand_total": 110500,
+				"currency": "IDR", "expires_at": "2026-08-27T09:00:00Z",
+			}}},
+		})
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL+"/partner/v1", 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quotes, err := NewFulfillmentAdapter("rajaongkir", client).Quote(
+		context.Background(), "delivery-key", fulfillment.QuoteRequest{},
+	)
+	if err != nil || len(quotes) != 1 || quotes[0].ServiceCode != "JNEFlat" || quotes[0].ShippingCost != 10500 {
+		t.Fatalf("unexpected fulfillment quote: %#v err=%v", quotes, err)
+	}
+}
+
 func TestHostedPickupForwardsSandboxModeAndMapsWaybill(t *testing.T) {
 	t.Parallel()
 

@@ -60,7 +60,7 @@ type integrationManifest struct {
 	} `yaml:"connector"`
 	Capabilities []string `yaml:"capabilities"`
 	Services     []string `yaml:"services"`
-	Credentials struct {
+	Credentials  struct {
 		Fields []providercredentials.FieldDefinition `yaml:"fields"`
 	} `yaml:"credentials,omitempty"`
 	Environments       []providercredentials.EnvironmentDefinition       `yaml:"environments,omitempty"`
@@ -272,8 +272,8 @@ func normalizeEnvironments(
 ) ([]providercredentials.EnvironmentDefinition, error) {
 	if len(values) == 0 {
 		return []providercredentials.EnvironmentDefinition{{
-			Code: providercredentials.EnvironmentLive,
-			Label: "Live",
+			Code:        providercredentials.EnvironmentLive,
+			Label:       "Live",
 			Description: "Operasi provider production.",
 		}}, nil
 	}
@@ -320,11 +320,11 @@ func normalizeCapabilityPolicies(
 		values = make([]providercredentials.CapabilityEnvironmentPolicy, 0, len(capabilities))
 		for _, capability := range capabilities {
 			values = append(values, providercredentials.CapabilityEnvironmentPolicy{
-				Capability: capability,
-				Environment: providercredentials.EnvironmentLive,
-				Behavior: "live",
+				Capability:            capability,
+				Environment:           providercredentials.EnvironmentLive,
+				Behavior:              "live",
 				CredentialEnvironment: providercredentials.EnvironmentLive,
-				Billing: "provider_defined",
+				Billing:               "provider_defined",
 			})
 		}
 	}
@@ -419,6 +419,7 @@ func validateOpenAPI(payload []byte, capabilities []string) ([]string, error) {
 	for _, capability := range capabilities {
 		switch capability {
 		case "shipments":
+			requiredMethods["/fulfillment/quotes"] = "post"
 			requiredMethods["/shipments"] = "post"
 		case "pickup":
 			requiredMethods["/pickups"] = "post"

@@ -36,6 +36,25 @@ func fulfillmentCreateHandler(service *fulfillment.Service) echo.HandlerFunc {
 	}
 }
 
+func fulfillmentQuoteHandler(service *fulfillment.Service) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		if service == nil {
+			return fulfillmentNotConfigured(c)
+		}
+		var request fulfillment.QuoteRequest
+		if err := decodeFulfillmentJSON(c, &request); err != nil {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "Payload quote fulfillment tidak valid.", nil)
+		}
+		quotes, err := service.Quotes(c.Request().Context(), request)
+		if err != nil {
+			return writeFulfillmentError(c, err)
+		}
+		return c.JSON(http.StatusOK, fulfillmentResponse(c, http.StatusOK, "Success Get Fulfillment Quotes", map[string]any{
+			"quotes": quotes,
+		}))
+	}
+}
+
 func fulfillmentGetHandler(service *fulfillment.Service) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		if service == nil {
@@ -156,6 +175,14 @@ func writeFulfillmentError(c *echo.Context, err error) error {
 		return writeError(c, http.StatusConflict, "OPERATION_IN_PROGRESS", "Operasi dengan key tersebut masih diproses; jangan membuat booking baru.", map[string]any{"retryable": true})
 	case errors.Is(err, fulfillment.ErrShipmentNotFound):
 		return writeError(c, http.StatusNotFound, "SHIPMENT_NOT_FOUND", "Shipment tidak ditemukan pada merchant ini.", nil)
+	case errors.Is(err, fulfillment.ErrQuoteNotFound):
+		return writeError(c, http.StatusNotFound, "QUOTE_NOT_FOUND", "Quote fulfillment tidak ditemukan pada merchant ini.", nil)
+	case errors.Is(err, fulfillment.ErrQuoteExpired):
+		return writeError(c, http.StatusConflict, "QUOTE_EXPIRED", "Quote fulfillment sudah kedaluwarsa; hitung ulang sebelum booking.", nil)
+	case errors.Is(err, fulfillment.ErrQuoteMismatch):
+		return writeError(c, http.StatusConflict, "QUOTE_MISMATCH", "Provider, mode, rute, paket, service, atau harga tidak sesuai snapshot quote.", nil)
+	case errors.Is(err, fulfillment.ErrQuoteConsumed):
+		return writeError(c, http.StatusConflict, "QUOTE_ALREADY_USED", "Quote fulfillment sudah digunakan oleh shipment lain.", nil)
 	case errors.Is(err, fulfillment.ErrShippingDisabled):
 		return writeError(c, http.StatusUnprocessableEntity, "SHIPPING_PROVIDER_INACTIVE", "Merchant belum mengaktifkan provider pengiriman.", nil)
 	case errors.Is(err, fulfillment.ErrProviderUnsupported):

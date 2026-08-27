@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/emisell/api-kurir/internal/couriers"
 	"github.com/emisell/api-kurir/internal/merchantproviders"
@@ -58,16 +59,42 @@ func (s *Service) Create(
 		return Shipment{}, false, err
 	}
 	request = normalizeCreateRequest(request)
+	var lockedQuote *Quote
+	if strings.HasPrefix(request.QuoteID, "fq_") {
+		quote, quoteErr := s.repository.GetQuote(ctx, tenantID, request.QuoteID)
+		if quoteErr != nil {
+			return Shipment{}, false, quoteErr
+		}
+		if !quote.ExpiresAt.After(time.Now().UTC()) {
+			return Shipment{}, false, ErrQuoteExpired
+		}
+		if quote.Environment != providercredentials.ExecutionEnvironment(ctx) {
+			return Shipment{}, false, ErrQuoteMismatch
+		}
+		if err := applyLockedQuote(&request, quote); err != nil {
+			return Shipment{}, false, err
+		}
+		lockedQuote = &quote
+	}
 	if err := validateCreateRequest(request); err != nil {
 		return Shipment{}, false, err
 	}
-	providerCode, adapter, credential, err := s.resolveProvider(
+	providerCode, adapter, credential, credentialAlias, err := s.resolveProvider(
 		ctx, tenantID, request.ProviderCode, "shipments:write",
 	)
 	if err != nil {
 		return Shipment{}, false, err
 	}
+	if lockedQuote != nil && (lockedQuote.ProviderCode != providerCode ||
+		lockedQuote.CredentialAlias != credentialAlias) {
+		return Shipment{}, false, ErrQuoteMismatch
+	}
 	request.ProviderCode = providerCode
+	publicServiceCode := request.ServiceCode
+	if lockedQuote != nil {
+		publicServiceCode = lockedQuote.ServiceCode
+		request.ServiceCode = lockedQuote.NativeServiceCode
+	}
 	payload, requestHash, err := requestPayload(request)
 	if err != nil {
 		return Shipment{}, false, err
@@ -79,7 +106,7 @@ func (s *Service) Create(
 	reserved, created, err := s.repository.ReserveCreate(ctx, ReserveCreateInput{
 		ID: shipmentID, TenantID: tenantID, ProviderCode: providerCode,
 		MerchantReference: request.MerchantReference, QuoteID: request.QuoteID,
-		CourierCode: request.CourierCode, ServiceCode: request.ServiceCode,
+		CourierCode: request.CourierCode, ServiceCode: publicServiceCode,
 		DeliveryMode: request.DeliveryMode, Fulfillment: request.Fulfillment,
 		ShippingCost: request.Payment.ShippingCost, Currency: "IDR",
 		IdempotencyKey: idempotencyKey, RequestHash: requestHash,
@@ -104,6 +131,70 @@ func (s *Service) Create(
 	}
 	completed, err := s.repository.CompleteCreate(ctx, tenantID, reserved.ID, result)
 	return completed, false, err
+}
+
+func (s *Service) Quotes(ctx context.Context, request QuoteRequest) ([]Quote, error) {
+	tenantID, err := tenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	request = normalizeQuoteRequest(request)
+	if err := validateQuoteRequest(request); err != nil {
+		return nil, err
+	}
+	providerCode, adapter, credential, credentialAlias, err := s.resolveProvider(
+		ctx, tenantID, request.ProviderCode, "shipments:write",
+	)
+	if err != nil {
+		return nil, err
+	}
+	quoteAdapter, ok := adapter.(QuoteAdapter)
+	if !ok {
+		return nil, ErrProviderUnsupported
+	}
+	providerQuotes, err := quoteAdapter.Quote(ctx, credential, request)
+	if err != nil {
+		return nil, err
+	}
+	_, bindingHash, err := requestPayload(quoteBindingFromQuote(request))
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	environment := providercredentials.ExecutionEnvironment(ctx)
+	quotes := make([]Quote, 0, len(providerQuotes))
+	for _, providerQuote := range providerQuotes {
+		providerQuote = normalizeProviderQuote(providerQuote, request.Package.ItemValue, request.PaymentType, now)
+		if !validProviderQuote(providerQuote, now) {
+			continue
+		}
+		id, idErr := newQuoteID()
+		if idErr != nil {
+			return nil, idErr
+		}
+		quotes = append(quotes, Quote{
+			ID: id, ProviderCode: providerCode, Environment: environment,
+			CourierCode: providerQuote.CourierCode, CourierName: providerQuote.CourierName,
+			ServiceCode:  canonicalQuoteServiceCode(providerCode, providerQuote),
+			ServiceName:  quoteServiceName(providerQuote.ServiceGroup),
+			ServiceGroup: providerQuote.ServiceGroup, DeliveryMode: providerQuote.DeliveryMode,
+			ShippingCost: providerQuote.ShippingCost, ShippingCashback: providerQuote.ShippingCashback,
+			ServiceFee: providerQuote.ServiceFee, AdditionalCost: providerQuote.AdditionalCost,
+			GrandTotal: providerQuote.GrandTotal, CODValue: providerQuote.CODValue,
+			InsuranceValue: providerQuote.InsuranceValue, Currency: providerQuote.Currency,
+			ETD: providerQuote.ETD, ExpiresAt: providerQuote.ExpiresAt,
+			ProviderQuoteID:   providerQuote.ProviderQuoteID,
+			NativeServiceCode: providerQuote.ServiceCode,
+			CredentialAlias:   credentialAlias, BindingHash: append([]byte(nil), bindingHash...),
+		})
+	}
+	if len(quotes) == 0 {
+		return nil, ErrProviderRejected
+	}
+	if err := s.repository.SaveQuotes(ctx, tenantID, quotes); err != nil {
+		return nil, err
+	}
+	return quotes, nil
 }
 
 func (s *Service) Get(ctx context.Context, shipmentID string) (Shipment, error) {
@@ -329,46 +420,54 @@ func (s *Service) ReconcileNow(ctx context.Context, shipmentID string) error {
 func (s *Service) resolveProvider(
 	ctx context.Context,
 	tenantID, requestedProvider, capability string,
-) (string, Adapter, string, error) {
+) (string, Adapter, string, string, error) {
 	activeProvider, err := s.catalog.ActiveProviderCode(ctx, tenantID)
 	if err != nil {
-		return "", nil, "", err
+		return "", nil, "", "", err
 	}
 	if activeProvider == "" {
-		return "", nil, "", ErrShippingDisabled
+		return "", nil, "", "", ErrShippingDisabled
 	}
 	requestedProvider = strings.ToLower(strings.TrimSpace(requestedProvider))
 	if requestedProvider != "" && requestedProvider != activeProvider &&
 		!(activeProvider == merchantproviders.EmisellProviderCode && requestedProvider == "rajaongkir") {
-		return "", nil, "", ErrProviderUnsupported
+		return "", nil, "", "", ErrProviderUnsupported
 	}
 	effectiveProvider := activeProvider
 	if effectiveProvider == merchantproviders.EmisellProviderCode {
 		effectiveProvider = "rajaongkir"
 	}
-	adapter, credential, err := s.adapterCredential(ctx, effectiveProvider, capability)
-	return effectiveProvider, adapter, credential, err
+	adapter, credential, alias, err := s.adapterCredentialWithAlias(ctx, effectiveProvider, capability)
+	return effectiveProvider, adapter, credential, alias, err
 }
 
 func (s *Service) adapterCredential(
 	ctx context.Context,
 	providerCode, capability string,
 ) (Adapter, string, error) {
+	adapter, credential, _, err := s.adapterCredentialWithAlias(ctx, providerCode, capability)
+	return adapter, credential, err
+}
+
+func (s *Service) adapterCredentialWithAlias(
+	ctx context.Context,
+	providerCode, capability string,
+) (Adapter, string, string, error) {
 	adapter, ok := s.adapters[providerCode]
 	if !ok {
-		return nil, "", ErrProviderUnsupported
+		return nil, "", "", ErrProviderUnsupported
 	}
-	credential, _, _, err := s.credentials.ResolveProviderCredentialForCapability(
+	credential, alias, _, err := s.credentials.ResolveProviderCredentialForCapability(
 		ctx, providerCode, capability,
 	)
 	if errors.Is(err, providercredentials.ErrCredentialCapabilityUnavailable) ||
 		errors.Is(err, providercredentials.ErrNoActiveCredential) {
-		return nil, "", ErrCredentialUnavailable
+		return nil, "", "", ErrCredentialUnavailable
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
-	return adapter, credential, nil
+	return adapter, credential, alias, nil
 }
 
 func normalizeCreateRequest(request CreateRequest) CreateRequest {
@@ -395,6 +494,177 @@ func normalizeCreateRequest(request CreateRequest) CreateRequest {
 		request.Package.Items[index].Variant = strings.TrimSpace(request.Package.Items[index].Variant)
 	}
 	return request
+}
+
+func normalizeQuoteRequest(request QuoteRequest) QuoteRequest {
+	request.ProviderCode = strings.ToLower(strings.TrimSpace(request.ProviderCode))
+	request.PaymentType = strings.ToLower(strings.TrimSpace(request.PaymentType))
+	if request.PaymentType == "" {
+		request.PaymentType = "non_cod"
+	}
+	request.Package.Contents = strings.TrimSpace(request.Package.Contents)
+	request.CourierCodes = normalizeStringList(request.CourierCodes, true)
+	request.ServiceGroups = normalizeStringList(request.ServiceGroups, false)
+	if len(request.ServiceGroups) == 0 {
+		request.ServiceGroups = []string{"regular", "next_day", "economy", "cargo"}
+	}
+	return request
+}
+
+func normalizeStringList(values []string, courierCodes bool) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if courierCodes {
+			value = couriers.NormalizeCode(value)
+		} else {
+			value = strings.ToLower(strings.TrimSpace(value))
+		}
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func validateQuoteRequest(request QuoteRequest) error {
+	if request.Origin.DestinationID < 1 || request.Destination.DestinationID < 1 ||
+		request.Package.WeightGrams < 1 || request.Package.WeightGrams > 1_000_000 ||
+		request.Package.LengthCM < 1 || request.Package.WidthCM < 1 || request.Package.HeightCM < 1 ||
+		request.Package.ItemValue < 0 || !oneOf(request.PaymentType, "non_cod", "cod") ||
+		len(request.CourierCodes) > 20 || len(request.ServiceGroups) > 4 {
+		return ErrInvalidRequest
+	}
+	for _, group := range request.ServiceGroups {
+		if !oneOf(group, "regular", "next_day", "economy", "cargo") {
+			return ErrInvalidRequest
+		}
+	}
+	return nil
+}
+
+type quoteBinding struct {
+	OriginDestinationID      int64  `json:"origin_destination_id"`
+	DestinationDestinationID int64  `json:"destination_destination_id"`
+	WeightGrams              int64  `json:"weight_grams"`
+	LengthCM                 int    `json:"length_cm"`
+	WidthCM                  int    `json:"width_cm"`
+	HeightCM                 int    `json:"height_cm"`
+	ItemValue                int64  `json:"item_value"`
+	PaymentType              string `json:"payment_type"`
+}
+
+func quoteBindingFromQuote(request QuoteRequest) quoteBinding {
+	return quoteBinding{
+		OriginDestinationID:      request.Origin.DestinationID,
+		DestinationDestinationID: request.Destination.DestinationID,
+		WeightGrams:              request.Package.WeightGrams, LengthCM: request.Package.LengthCM,
+		WidthCM: request.Package.WidthCM, HeightCM: request.Package.HeightCM,
+		ItemValue: request.Package.ItemValue, PaymentType: request.PaymentType,
+	}
+}
+
+func quoteBindingFromCreate(request CreateRequest) quoteBinding {
+	return quoteBinding{
+		OriginDestinationID:      request.Sender.DestinationID,
+		DestinationDestinationID: request.Recipient.DestinationID,
+		WeightGrams:              request.Package.WeightGrams, LengthCM: request.Package.LengthCM,
+		WidthCM: request.Package.WidthCM, HeightCM: request.Package.HeightCM,
+		ItemValue: request.Package.ItemValue, PaymentType: request.Payment.Type,
+	}
+}
+
+func applyLockedQuote(request *CreateRequest, quote Quote) error {
+	_, bindingHash, err := requestPayload(quoteBindingFromCreate(*request))
+	if err != nil {
+		return err
+	}
+	if !equalBytes(bindingHash, quote.BindingHash) ||
+		(request.ProviderCode != "" && request.ProviderCode != quote.ProviderCode) ||
+		(request.CourierCode != "" && request.CourierCode != quote.CourierCode) ||
+		(request.ServiceCode != "" && request.ServiceCode != quote.ServiceCode) ||
+		(request.DeliveryMode != "" && request.DeliveryMode != quote.DeliveryMode) ||
+		(request.Payment.ShippingCost != 0 && request.Payment.ShippingCost != quote.ShippingCost) ||
+		(request.Payment.GrandTotal != 0 && request.Payment.GrandTotal != quote.GrandTotal) {
+		return ErrQuoteMismatch
+	}
+	request.ProviderCode = quote.ProviderCode
+	request.CourierCode = quote.CourierCode
+	request.ServiceCode = quote.ServiceCode
+	request.DeliveryMode = quote.DeliveryMode
+	request.Payment.ShippingCost = quote.ShippingCost
+	request.Payment.ShippingCashback = quote.ShippingCashback
+	request.Payment.ServiceFee = quote.ServiceFee
+	request.Payment.AdditionalCost = quote.AdditionalCost
+	request.Payment.GrandTotal = quote.GrandTotal
+	request.Payment.CODValue = quote.CODValue
+	request.Payment.InsuranceValue = quote.InsuranceValue
+	return nil
+}
+
+func equalBytes(left, right []byte) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	var difference byte
+	for index := range left {
+		difference |= left[index] ^ right[index]
+	}
+	return difference == 0
+}
+
+func normalizeProviderQuote(quote ProviderQuote, itemValue int64, paymentType string, now time.Time) ProviderQuote {
+	quote.CourierCode = couriers.NormalizeCode(quote.CourierCode)
+	quote.CourierName = strings.TrimSpace(quote.CourierName)
+	quote.ServiceCode = strings.TrimSpace(quote.ServiceCode)
+	quote.ServiceGroup = strings.ToLower(strings.TrimSpace(quote.ServiceGroup))
+	quote.DeliveryMode = strings.ToLower(strings.TrimSpace(quote.DeliveryMode))
+	if quote.DeliveryMode == "" {
+		quote.DeliveryMode = quote.ServiceGroup
+	}
+	if quote.Currency == "" {
+		quote.Currency = "IDR"
+	}
+	if quote.ExpiresAt.IsZero() {
+		quote.ExpiresAt = now.Add(15 * time.Minute)
+	}
+	if quote.GrandTotal == 0 {
+		quote.GrandTotal = itemValue + quote.ShippingCost - quote.ShippingCashback + quote.ServiceFee + quote.AdditionalCost
+	}
+	if paymentType == "cod" && quote.CODValue == 0 {
+		quote.CODValue = quote.GrandTotal
+	}
+	return quote
+}
+
+func validProviderQuote(quote ProviderQuote, now time.Time) bool {
+	return quote.CourierCode != "" && quote.ServiceCode != "" &&
+		oneOf(quote.ServiceGroup, "regular", "next_day", "economy", "cargo") &&
+		oneOf(quote.DeliveryMode, "regular", "next_day", "economy", "cargo") &&
+		quote.ShippingCost >= 0 && quote.GrandTotal >= 0 && quote.ExpiresAt.After(now)
+}
+
+func canonicalQuoteServiceCode(providerCode string, quote ProviderQuote) string {
+	sum := sha256.Sum256([]byte(providerCode + "\x00" + quote.CourierCode + "\x00" + quote.ServiceCode))
+	return fmt.Sprintf("svc_%x", sum[:8])
+}
+
+func quoteServiceName(group string) string {
+	switch group {
+	case "next_day":
+		return "Next Day"
+	case "economy":
+		return "Economy"
+	case "cargo":
+		return "Cargo"
+	default:
+		return "Regular"
+	}
 }
 
 func normalizeAddress(address Address) Address {
@@ -487,6 +757,14 @@ func newUUID() (string, error) {
 	value[6] = (value[6] & 0x0f) | 0x40
 	value[8] = (value[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
+}
+
+func newQuoteID() (string, error) {
+	id, err := newUUID()
+	if err != nil {
+		return "", err
+	}
+	return "fq_" + strings.ReplaceAll(id, "-", ""), nil
 }
 
 func oneOf(value string, allowed ...string) bool {

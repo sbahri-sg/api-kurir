@@ -20,8 +20,8 @@ func TestValidateArchiveAcceptsCanonicalPackage(t *testing.T) {
 	if report.Manifest.ProviderCode != "mengantar" {
 		t.Fatalf("unexpected provider code: %q", report.Manifest.ProviderCode)
 	}
-	if len(report.RequiredOpenAPIPaths) != 8 {
-		t.Fatalf("expected 8 canonical paths, got %d", len(report.RequiredOpenAPIPaths))
+	if len(report.RequiredOpenAPIPaths) != 9 {
+		t.Fatalf("expected 9 canonical paths, got %d", len(report.RequiredOpenAPIPaths))
 	}
 }
 
@@ -173,6 +173,7 @@ paths:
   /capabilities: {get: {responses: {"200": {description: OK}}}}
   /services: {get: {responses: {"200": {description: OK}}}}
   /rates: {post: {responses: {"200": {description: OK}}}}
+  /fulfillment/quotes: {post: {responses: {"200": {description: OK}}}}
   /shipments: {post: {responses: {"200": {description: OK}}}}
   /pickups: {post: {responses: {"200": {description: OK}}}}
   /tracking/waybills: {post: {responses: {"200": {description: OK}}}}

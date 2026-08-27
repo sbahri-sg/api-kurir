@@ -1,0 +1,11 @@
+{
+  "origin": {
+    "district_id": "1391"
+  },
+  "destination": {
+    "district_id": "1376"
+  },
+  "weight_grams": 1000,
+  "courier_codes": ["jne", "jnt", "sicepat", "anteraja"],
+  "service_groups": ["regular", "next_day", "economy", "cargo"]
+}

@@ -3,6 +3,7 @@ package fulfillment
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -30,10 +31,52 @@ func TestFulfillmentRepositoryTenantIsolationAndEncryptedPayloadIntegration(t *t
 	repository := NewPostgresRepository(pool, cipher)
 	suffix := uint64(time.Now().UnixNano()) & 0xffffffffffff
 	shipmentID := fmt.Sprintf("00000000-0000-4000-8000-%012x", suffix)
+	quoteShipmentID := fmt.Sprintf("20000000-0000-4000-8000-%012x", suffix)
+	secondQuoteShipmentID := fmt.Sprintf("30000000-0000-4000-8000-%012x", suffix)
 	tenantID := fmt.Sprintf("fulfillment_%d", suffix)
 	defer func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM fulfillment_quotes WHERE tenant_id = $1", tenantID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM fulfillment_shipments WHERE id = ANY($1::uuid[])", []string{quoteShipmentID, secondQuoteShipmentID})
 		_, _ = pool.Exec(context.Background(), "DELETE FROM fulfillment_shipments WHERE id = $1::uuid", shipmentID)
 	}()
+
+	quoteID := "fq_" + fmt.Sprintf("%032x", suffix)
+	if err := repository.SaveQuotes(ctx, tenantID, []Quote{{
+		ID: quoteID, ProviderCode: "rajaongkir", Environment: "sandbox",
+		CredentialAlias: "rajaongkir-sandbox", CourierCode: "jne", CourierName: "JNE",
+		ServiceCode: "svc_test", NativeServiceCode: "JNEFlat", ServiceName: "Regular",
+		ServiceGroup: "regular", DeliveryMode: "regular", ShippingCost: 18000,
+		GrandTotal: 118000, Currency: "IDR", BindingHash: []byte("quote-binding"),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	loadedQuote, err := repository.GetQuote(ctx, tenantID, quoteID)
+	if err != nil || loadedQuote.NativeServiceCode != "JNEFlat" {
+		t.Fatalf("loaded quote=%+v err=%v", loadedQuote, err)
+	}
+	_, created, err := repository.ReserveCreate(ctx, ReserveCreateInput{
+		ID: quoteShipmentID, TenantID: tenantID, ProviderCode: "rajaongkir",
+		MerchantReference: "ORDER-QUOTE-" + fmt.Sprint(suffix), QuoteID: quoteID,
+		CourierCode: "jne", ServiceCode: "svc_test", DeliveryMode: "regular",
+		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR",
+		IdempotencyKey: "shipment:quote:" + fmt.Sprint(suffix),
+		RequestHash:    []byte("quote-request-hash"), RequestCiphertext: []byte(`{"quote":true}`),
+	})
+	if err != nil || !created {
+		t.Fatalf("consume quote created=%v err=%v", created, err)
+	}
+	_, _, err = repository.ReserveCreate(ctx, ReserveCreateInput{
+		ID: secondQuoteShipmentID, TenantID: tenantID, ProviderCode: "rajaongkir",
+		MerchantReference: "ORDER-QUOTE-SECOND-" + fmt.Sprint(suffix), QuoteID: quoteID,
+		CourierCode: "jne", ServiceCode: "svc_test", DeliveryMode: "regular",
+		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR",
+		IdempotencyKey: "shipment:quote:second:" + fmt.Sprint(suffix),
+		RequestHash:    []byte("quote-request-hash-second"), RequestCiphertext: []byte(`{"quote":true}`),
+	})
+	if !errors.Is(err, ErrQuoteConsumed) {
+		t.Fatalf("second quote use should fail with ErrQuoteConsumed, got %v", err)
+	}
 
 	plaintext := []byte(`{"recipient":{"phone":"081234567890"}}`)
 	shipment, created, err := repository.ReserveCreate(ctx, ReserveCreateInput{

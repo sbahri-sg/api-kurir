@@ -7,10 +7,9 @@ native RajaOngkir, Biteship, atau partner lain tidak diteruskan ke Emisell.
 ## Alur
 
 1. Merchant mengaktifkan tepat satu provider dari katalog API Kurir.
-2. Checkout memperoleh quote fulfillment dari produk provider yang akan membuat
-   shipment. Untuk RajaOngkir Shipping Delivery, quote harus berasal dari
-   Calculate Shipping Delivery; tarif Shipping Cost tidak boleh dipakai untuk
-   Store Order Shipping Delivery.
+2. Checkout memanggil `POST /api/v1/integrations/shipping-quotes`. API Kurir
+   mengambil quote dari produk fulfillment provider, menyimpan service native
+   dan harga server-side, lalu mengembalikan `quote_id` canonical `fq_...`.
 3. Main Service membuat shipment dengan `merchant_reference`, `quote_id`, dan
    `Idempotency-Key` yang stabil.
 4. API Kurir mereservasi operasi di PostgreSQL sebelum memanggil provider.
@@ -30,6 +29,7 @@ native RajaOngkir, Biteship, atau partner lain tidak diteruskan ke Emisell.
 
 | Method | Path | Fungsi |
 | --- | --- | --- |
+| `POST` | `/api/v1/integrations/shipping-quotes` | Mengambil dan mengunci quote fulfillment |
 | `POST` | `/api/v1/integrations/shipments` | Membuat booking shipment |
 | `GET` | `/api/v1/integrations/shipments/{shipment_id}` | Membaca snapshot shipment |
 | `POST` | `/api/v1/integrations/shipments/{shipment_id}/pickup` | Menjadwalkan pickup |
@@ -95,22 +95,25 @@ Menyimpan credential dengan `environment: sandbox` tidak otomatis mengubah mode
 request berikutnya. Tanpa `X-Emisell-Execution-Mode: sandbox`, create shipment,
 pickup, cancel, detail, dan label tetap berjalan sebagai `live`.
 
-`service_code`, `shipping_cost`, serta komponen total pada create shipment harus
-berasal dari hasil quote provider untuk rute, berat, dan layanan yang sama.
-Contohnya, nilai `REG` dan harga manual tidak boleh menggantikan service
-`JNEFlat` yang dikembalikan kalkulasi sandbox. Ketidaksesuaian ini diteruskan
-sebagai `422 PROVIDER_REJECTED`, bukan error credential.
+`service_code`, `shipping_cost`, serta komponen total pada create shipment
+diambil kembali dari snapshot `fq_` oleh API Kurir. Kode native seperti
+`JNEFlat` tidak dikirim ke Emisell; response memakai kode canonical `svc_...`
+dan label `Regular`, `Next Day`, `Economy`, atau `Cargo`.
 
 Endpoint `/api/v1/calculate/district/domestic-cost` menggunakan produk
 RajaOngkir Shipping Cost. Responsnya tetap sah untuk cek ongkir dan checkout
 tanpa fulfillment, tetapi tidak menjadi sumber booking Shipping Delivery.
-Sampai quote-lock fulfillment internal tersedia, `quote_id` pada create
-shipment berfungsi sebagai referensi audit; provider tetap menjadi validator
-otoritatif untuk service, harga, total, rute, dan paket.
+Quote terkunci pada merchant, provider, environment, credential, origin,
+destination, berat, dimensi, nilai barang, jenis pembayaran, service, harga,
+dan waktu berlaku. Perubahan menghasilkan `409 QUOTE_MISMATCH`; quote
+kedaluwarsa menghasilkan `409 QUOTE_EXPIRED`; pemakaian kedua menghasilkan
+`409 QUOTE_ALREADY_USED`. Quote legacy tanpa prefix `fq_` tetap diterima selama
+masa transisi agar integrasi Emisell yang sudah berjalan tidak terputus.
 
-Contoh `JNEFlat` Rp10.500 dalam dokumentasi adalah hasil fixture sandbox untuk
-rute `5969 -> 4956`, berat 1.200 gram, dan nilai barang Rp150.000. Nilai tersebut
-bukan tarif tetap dan tidak boleh disalin untuk order/rute lain.
+RajaOngkir Hosted mengambil quote dari `/tariff/api/v1/calculate` Shipping
+Delivery. Provider partner lain menggunakan operasi quote fulfillment pada
+connector masing-masing. Dengan demikian Main Service selalu memakai kontrak
+yang sama untuk RajaOngkir, Mengantar, KiriminAja, atau provider berikutnya.
 
 Jika provider sudah menolak booking, API mempertahankan `merchant_reference`
 dan `Idempotency-Key` sebagai bukti percobaan. Retry payload identik mengembalikan

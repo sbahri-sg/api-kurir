@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/emisell/api-kurir/internal/fulfillment"
 )
@@ -20,6 +21,53 @@ func NewFulfillmentAdapter(providerCode string, client *Client) *FulfillmentAdap
 }
 
 func (a *FulfillmentAdapter) Code() string { return a.providerCode }
+
+func (a *FulfillmentAdapter) Quote(ctx context.Context, credential string, request fulfillment.QuoteRequest) ([]fulfillment.ProviderQuote, error) {
+	var response struct {
+		Data struct {
+			Quotes []struct {
+				ProviderQuoteID  string `json:"provider_quote_id"`
+				CourierCode      string `json:"courier_code"`
+				CourierName      string `json:"courier_name"`
+				ServiceCode      string `json:"service_code"`
+				ServiceName      string `json:"service_name"`
+				ServiceGroup     string `json:"service_group"`
+				DeliveryMode     string `json:"delivery_mode"`
+				ShippingCost     int64  `json:"shipping_cost"`
+				ShippingCashback int64  `json:"shipping_cashback"`
+				ServiceFee       int64  `json:"service_fee"`
+				AdditionalCost   int64  `json:"additional_cost"`
+				GrandTotal       int64  `json:"grand_total"`
+				CODValue         int64  `json:"cod_value"`
+				InsuranceValue   int64  `json:"insurance_value"`
+				Currency         string `json:"currency"`
+				ETD              string `json:"etd"`
+				ExpiresAt        string `json:"expires_at"`
+			} `json:"quotes"`
+		} `json:"data"`
+	}
+	if err := a.client.Do(ctx, http.MethodPost, "fulfillment/quotes", "x-api-key", credential, request, &response); err != nil {
+		return nil, mapFulfillmentError(err)
+	}
+	quotes := make([]fulfillment.ProviderQuote, 0, len(response.Data.Quotes))
+	for _, item := range response.Data.Quotes {
+		expiresAt, _ := time.Parse(time.RFC3339, item.ExpiresAt)
+		quotes = append(quotes, fulfillment.ProviderQuote{
+			ProviderQuoteID: item.ProviderQuoteID, CourierCode: item.CourierCode,
+			CourierName: item.CourierName, ServiceCode: item.ServiceCode,
+			ServiceName: item.ServiceName, ServiceGroup: item.ServiceGroup,
+			DeliveryMode: item.DeliveryMode, ShippingCost: item.ShippingCost,
+			ShippingCashback: item.ShippingCashback, ServiceFee: item.ServiceFee,
+			AdditionalCost: item.AdditionalCost, GrandTotal: item.GrandTotal,
+			CODValue: item.CODValue, InsuranceValue: item.InsuranceValue,
+			Currency: item.Currency, ETD: item.ETD, ExpiresAt: expiresAt,
+		})
+	}
+	if len(quotes) == 0 {
+		return nil, fulfillment.ErrProviderRejected
+	}
+	return quotes, nil
+}
 
 func (a *FulfillmentAdapter) Create(ctx context.Context, credential string, request fulfillment.CreateRequest) (fulfillment.ProviderCreateResult, error) {
 	var response shipmentResponse

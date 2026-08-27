@@ -2482,18 +2482,76 @@ awb=TEST123456789&courier=sicepat`,
     contract: "gateway",
     scope: "customer",
     method: "POST",
+    path: "/api/v1/integrations/shipping-quotes",
+    title: "Ambil quote fulfillment terkunci",
+    description:
+      "Mengambil tarif dari produk fulfillment provider aktif lalu menyimpannya sebagai snapshot canonical di API Kurir. Provider-native service code, credential alias, dan detail upstream tidak dikirim ke Emisell. Quote terikat pada merchant, provider, environment, credential, rute, paket, pembayaran, harga, dan masa berlaku.",
+    authentication: "Main Service API key + X-Emisell-Merchant-ID",
+    parameters: [
+      "X-Emisell-Execution-Mode — live (default) atau sandbox; harus sama ketika quote dipakai untuk create shipment",
+      "origin/destination.destination_id — ID tujuan produk fulfillment provider",
+      "package — berat, dimensi, dan nilai barang yang akan dikunci",
+      "payment_type — non_cod atau cod",
+      "courier_codes dan service_groups — filter opsional; group hanya regular, next_day, economy, cargo",
+      "quote_id fq_ hanya dapat digunakan satu kali dan tidak dapat dipindah ke provider, credential, rute, atau paket lain",
+    ],
+    request: `POST {{base_url}}/api/v1/integrations/shipping-quotes
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}
+X-Emisell-Execution-Mode: sandbox
+Content-Type: application/json
+
+{
+  "origin": { "destination_id": 5969 },
+  "destination": { "destination_id": 4956 },
+  "package": {
+    "weight_grams": 1200,
+    "length_cm": 20,
+    "width_cm": 15,
+    "height_cm": 10,
+    "item_value": 150000
+  },
+  "payment_type": "non_cod",
+  "courier_codes": ["jne"],
+  "service_groups": ["regular"]
+}`,
+    response: `{
+  "data": {
+    "quotes": [{
+      "quote_id": "fq_16be40a457d7469384af1bff1bc11b87",
+      "provider_code": "rajaongkir",
+      "environment": "sandbox",
+      "courier_code": "jne",
+      "courier_name": "JNE",
+      "service_code": "svc_5328e2d0d9efaa41",
+      "service_name": "Regular",
+      "service_group": "regular",
+      "delivery_mode": "regular",
+      "shipping_cost": 10500,
+      "grand_total": 160500,
+      "currency": "IDR",
+      "expires_at": "2026-08-27T15:15:00Z"
+    }]
+  }
+}
+
+Kode seperti JNEFlat disimpan internal dan tidak perlu diketahui Emisell.`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "POST",
     path: "/api/v1/integrations/shipments",
     title: "Buat shipment fulfillment",
     description:
-      "Membuat booking pada provider aktif merchant. Untuk RajaOngkir, nilai booking wajib berasal dari Calculate milik Shipping Delivery, bukan endpoint Shipping Cost /api/v1/calculate/district/domestic-cost. API Kurir mengunci provider dan credential, mereservasi idempotency sebelum hit upstream, serta mengenkripsi alamat, telepon, dan isi paket di database. Replay atas booking_failed tetap mengembalikan error provider semula, bukan sukses palsu.",
+      "Membuat booking memakai quote fq_ yang sebelumnya disimpan API Kurir. API Kurir mengambil service native dan seluruh biaya dari snapshot server-side, sehingga Emisell tidak dapat mengirim kode/harga provider yang keliru. Alamat, telepon, dan isi paket tetap terenkripsi. Quote legacy masih diterima sementara agar integrasi lama tidak terputus.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
     parameters: [
       "Idempotency-Key — wajib, unik per percobaan booking; gunakan nilai yang sama hanya untuk retry payload identik",
       "X-Emisell-Execution-Mode — kirim sandbox untuk memakai delivery_api_key sandbox; jika header tidak dikirim, API selalu memilih live",
-      "quote_id — referensi quote fulfillment yang dipilih checkout; saat ini disimpan untuk audit dan belum menggantikan validasi native provider",
-      "RajaOngkir fulfillment — gunakan hasil Calculate Shipping Delivery. Quote Shipping Cost seperti REG/Rp18.000 tidak otomatis valid untuk Store Order Shipping Delivery",
-      "service_code dan payment.shipping_cost — salin persis dari quote fulfillment pada rute, berat, layanan, dan environment yang sama; jangan memakai nilai manual",
-      "Contoh JNEFlat/Rp10.500 di bawah hanya berlaku untuk data sandbox contoh. Produksi wajib menggunakan quote terbaru milik order tersebut",
+      "quote_id — gunakan fq_ dari POST /api/v1/integrations/shipping-quotes",
+      "service_code — kode canonical svc_ dari quote; kode native provider tidak pernah dikirim Emisell",
+      "courier_code, delivery_mode, dan komponen payment boleh diteruskan dari quote; bila nilainya berbeda request ditolak sebelum hit provider",
       "provider_code — opsional; bila dikirim harus sama dengan provider aktif merchant",
       "destination_id pada sender/recipient — ID tujuan Shipping Delivery provider",
       "Jika booking_failed dan payload perlu diperbaiki, buat merchant_reference serta Idempotency-Key baru. Referensi lama tetap dikunci untuk mencegah AWB ganda",
@@ -2507,9 +2565,9 @@ Content-Type: application/json
 
 {
   "merchant_reference": "ORDER-10001",
-  "quote_id": "quote-checkout-10001",
+  "quote_id": "fq_16be40a457d7469384af1bff1bc11b87",
   "courier_code": "jne",
-  "service_code": "JNEFlat",
+  "service_code": "svc_5328e2d0d9efaa41",
   "delivery_mode": "regular",
   "fulfillment": "pickup",
   "sender": {
@@ -2559,7 +2617,7 @@ Content-Type: application/json
       "provider_code": "rajaongkir",
       "provider_shipment_id": "KOMXXXXXXXXXXXXXXXXX",
       "courier_code": "jne",
-      "service_code": "JNEFlat",
+      "service_code": "svc_5328e2d0d9efaa41",
       "status": "booked",
       "shipping_cost": 10500,
       "currency": "IDR",
@@ -2572,6 +2630,8 @@ Content-Type: application/json
 }
 
 HTTP 409 IDEMPOTENCY_CONFLICT — merchant_reference/Idempotency-Key pernah dipakai dengan payload berbeda. Gunakan referensi baru untuk payload yang diperbaiki.
+
+HTTP 409 QUOTE_EXPIRED / QUOTE_MISMATCH / QUOTE_ALREADY_USED — hitung quote baru; jangan mengubah atau memakai ulang snapshot.
 
 HTTP 422 DELIVERY_CREDENTIAL_REQUIRED — delivery_api_key belum tersedia pada environment request. Pastikan header live/sandbox sesuai credential.
 

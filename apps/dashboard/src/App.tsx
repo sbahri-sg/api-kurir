@@ -5371,6 +5371,55 @@ X-Signature: {{signature}}
   {
     scope: "partner",
     method: "POST",
+    path: "/partner/v1/fulfillment/quotes",
+    title: "Quote fulfillment partner",
+    description:
+      "Wajib bila provider mendukung shipment. Quote harus berasal dari produk yang benar-benar membuat order/pickup, bukan produk cek ongkir terpisah. API Kurir menyimpan service code native dan menerbitkan kode canonical ke Emisell.",
+    authentication: "Bearer runtime token + HMAC-SHA256",
+    parameters: [
+      "origin/destination.destination_id — lokasi yang diterima produk fulfillment provider",
+      "package — berat, dimensi, dan nilai barang",
+      "payment_type — non_cod atau cod",
+      "expires_at — wajib agar API Kurir dapat menolak quote kedaluwarsa",
+    ],
+    request: `POST https://{{partner_host}}/partner/v1/fulfillment/quotes
+Authorization: Bearer {{partner_runtime_token}}
+X-Signature: {{signature}}
+
+{
+  "origin": {"destination_id": 5969},
+  "destination": {"destination_id": 4956},
+  "package": {
+    "weight_grams": 1200,
+    "length_cm": 20,
+    "width_cm": 15,
+    "height_cm": 10,
+    "item_value": 150000
+  },
+  "payment_type": "non_cod",
+  "service_groups": ["regular"]
+}`,
+    response: `{
+  "data": {
+    "quotes": [{
+      "courier_code": "jne",
+      "service_code": "NATIVE_REG",
+      "service_name": "Regular",
+      "service_group": "regular",
+      "delivery_mode": "regular",
+      "shipping_cost": 18000,
+      "grand_total": 168000,
+      "currency": "IDR",
+      "expires_at": "2026-08-27T15:15:00Z"
+    }]
+  }
+}
+
+NATIVE_REG hanya diterima API Kurir dan tidak pernah diteruskan ke Emisell.`,
+  },
+  {
+    scope: "partner",
+    method: "POST",
     path: "/partner/v1/shipments",
     title: "Membuat shipment",
     description:
@@ -5378,7 +5427,7 @@ X-Signature: {{signature}}
     authentication: "Bearer runtime token + HMAC-SHA256",
     parameters: [
       "Idempotency-Key — wajib dan unik untuk satu operasi",
-      "quote_id — quote aktif dari endpoint rates",
+      "quote_id — quote canonical yang dikunci API Kurir dari endpoint fulfillment/quotes",
       "sender, recipient, package, payment, dan pickup — detail fulfillment",
     ],
     request: `POST https://{{partner_host}}/partner/v1/shipments

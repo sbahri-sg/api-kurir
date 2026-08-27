@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/emisell/api-kurir/internal/providercredentials"
@@ -20,6 +21,69 @@ type PostgresRepository struct {
 
 func NewPostgresRepository(pool *pgxpool.Pool, cipher *providercredentials.Cipher) *PostgresRepository {
 	return &PostgresRepository{pool: pool, cipher: cipher}
+}
+
+func (r *PostgresRepository) SaveQuotes(ctx context.Context, tenantID string, quotes []Quote) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin fulfillment quote storage: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, quote := range quotes {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO fulfillment_quotes (
+				id, tenant_id, provider_code, environment_code, credential_alias,
+				provider_quote_id, courier_code, courier_name, service_code,
+				native_service_code, service_name, service_group, delivery_mode,
+				shipping_cost, shipping_cashback, service_fee, additional_cost,
+				grand_total, cod_value, insurance_value, currency, etd,
+				binding_hash, expires_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+				$13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+			)
+		`, quote.ID, tenantID, quote.ProviderCode, quote.Environment,
+			quote.CredentialAlias, quote.ProviderQuoteID, quote.CourierCode,
+			quote.CourierName, quote.ServiceCode, quote.NativeServiceCode,
+			quote.ServiceName, quote.ServiceGroup, quote.DeliveryMode,
+			quote.ShippingCost, quote.ShippingCashback, quote.ServiceFee,
+			quote.AdditionalCost, quote.GrandTotal, quote.CODValue,
+			quote.InsuranceValue, quote.Currency, quote.ETD, quote.BindingHash,
+			quote.ExpiresAt)
+		if err != nil {
+			return fmt.Errorf("store fulfillment quote: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *PostgresRepository) GetQuote(ctx context.Context, tenantID, quoteID string) (Quote, error) {
+	var quote Quote
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, provider_code, environment_code, credential_alias,
+		       provider_quote_id, courier_code, courier_name, service_code,
+		       native_service_code, service_name, service_group, delivery_mode,
+		       shipping_cost, shipping_cashback, service_fee, additional_cost,
+		       grand_total, cod_value, insurance_value, currency, etd,
+		       binding_hash, expires_at
+		FROM fulfillment_quotes
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, quoteID).Scan(
+		&quote.ID, &quote.ProviderCode, &quote.Environment, &quote.CredentialAlias,
+		&quote.ProviderQuoteID, &quote.CourierCode, &quote.CourierName,
+		&quote.ServiceCode, &quote.NativeServiceCode, &quote.ServiceName,
+		&quote.ServiceGroup, &quote.DeliveryMode, &quote.ShippingCost,
+		&quote.ShippingCashback, &quote.ServiceFee, &quote.AdditionalCost,
+		&quote.GrandTotal, &quote.CODValue, &quote.InsuranceValue,
+		&quote.Currency, &quote.ETD, &quote.BindingHash, &quote.ExpiresAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Quote{}, ErrQuoteNotFound
+	}
+	if err != nil {
+		return Quote{}, fmt.Errorf("get fulfillment quote: %w", err)
+	}
+	return quote, nil
 }
 
 func (r *PostgresRepository) ReserveCreate(
@@ -74,6 +138,39 @@ func (r *PostgresRepository) ReserveCreate(
 			return Shipment{}, false, ErrIdempotencyConflict
 		}
 		return Shipment{}, false, fmt.Errorf("reserve fulfillment shipment: %w", err)
+	}
+	if strings.HasPrefix(input.QuoteID, "fq_") {
+		tag, consumeErr := tx.Exec(ctx, `
+			UPDATE fulfillment_quotes
+			SET consumed_by_shipment_id = $3::uuid, consumed_at = now()
+			WHERE tenant_id = $1 AND id = $2
+			  AND consumed_by_shipment_id IS NULL
+			  AND expires_at > now()
+		`, input.TenantID, input.QuoteID, input.ID)
+		if consumeErr != nil {
+			return Shipment{}, false, fmt.Errorf("consume fulfillment quote: %w", consumeErr)
+		}
+		if tag.RowsAffected() != 1 {
+			var consumed bool
+			var expired bool
+			stateErr := tx.QueryRow(ctx, `
+				SELECT consumed_by_shipment_id IS NOT NULL, expires_at <= now()
+				FROM fulfillment_quotes
+				WHERE tenant_id = $1 AND id = $2
+			`, input.TenantID, input.QuoteID).Scan(&consumed, &expired)
+			switch {
+			case errors.Is(stateErr, pgx.ErrNoRows):
+				return Shipment{}, false, ErrQuoteNotFound
+			case stateErr != nil:
+				return Shipment{}, false, fmt.Errorf("inspect fulfillment quote state: %w", stateErr)
+			case expired:
+				return Shipment{}, false, ErrQuoteExpired
+			case consumed:
+				return Shipment{}, false, ErrQuoteConsumed
+			default:
+				return Shipment{}, false, ErrQuoteMismatch
+			}
+		}
 	}
 	if err := insertHistory(ctx, tx, input.TenantID, input.ID, StatusBookingPending, "", "Shipment reserved; booking provider is in progress."); err != nil {
 		return Shipment{}, false, err

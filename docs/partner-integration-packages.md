@@ -139,7 +139,7 @@ Path tambahan mengikuti capability manifest:
 
 | Capability | Operation wajib |
 |---|---|
-| `shipments` | `POST /shipments` |
+| `shipments` | `POST /fulfillment/quotes` dan `POST /shipments` |
 | `pickup` | `POST /pickups` |
 | `tracking` | `POST /tracking/waybills` |
 | `balance` | `GET /account/balance` |

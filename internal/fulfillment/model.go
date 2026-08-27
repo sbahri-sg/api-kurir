@@ -22,6 +22,10 @@ var (
 	ErrPickupNotAllowed      = errors.New("fulfillment pickup is not allowed")
 	ErrShipmentFinal         = errors.New("fulfillment shipment is final")
 	ErrLabelUnavailable      = errors.New("fulfillment label is unavailable")
+	ErrQuoteNotFound         = errors.New("fulfillment quote not found")
+	ErrQuoteExpired          = errors.New("fulfillment quote expired")
+	ErrQuoteMismatch         = errors.New("fulfillment quote does not match request")
+	ErrQuoteConsumed         = errors.New("fulfillment quote already consumed")
 	ErrNoLifecycleJob        = errors.New("fulfillment lifecycle job is not available")
 	ErrNoWebhookJob          = errors.New("fulfillment webhook job is not available")
 )
@@ -85,6 +89,71 @@ type Payment struct {
 	GrandTotal       int64  `json:"grand_total"`
 	CODValue         int64  `json:"cod_value,omitempty"`
 	InsuranceValue   int64  `json:"insurance_value,omitempty"`
+}
+
+type QuoteLocation struct {
+	DestinationID int64    `json:"destination_id"`
+	Latitude      *float64 `json:"latitude,omitempty"`
+	Longitude     *float64 `json:"longitude,omitempty"`
+}
+
+type QuoteRequest struct {
+	ProviderCode  string        `json:"provider_code,omitempty"`
+	CourierCodes  []string      `json:"courier_codes,omitempty"`
+	ServiceGroups []string      `json:"service_groups,omitempty"`
+	Origin        QuoteLocation `json:"origin"`
+	Destination   QuoteLocation `json:"destination"`
+	Package       Package       `json:"package"`
+	PaymentType   string        `json:"payment_type"`
+}
+
+// Quote is the canonical, server-side price lock consumed by CreateRequest.
+// Provider-native identifiers remain internal and are never returned to Emisell.
+type Quote struct {
+	ID               string    `json:"quote_id"`
+	ProviderCode     string    `json:"provider_code"`
+	Environment      string    `json:"environment"`
+	CourierCode      string    `json:"courier_code"`
+	CourierName      string    `json:"courier_name"`
+	ServiceCode      string    `json:"service_code"`
+	ServiceName      string    `json:"service_name"`
+	ServiceGroup     string    `json:"service_group"`
+	DeliveryMode     string    `json:"delivery_mode"`
+	ShippingCost     int64     `json:"shipping_cost"`
+	ShippingCashback int64     `json:"shipping_cashback,omitempty"`
+	ServiceFee       int64     `json:"service_fee,omitempty"`
+	AdditionalCost   int64     `json:"additional_cost,omitempty"`
+	GrandTotal       int64     `json:"grand_total"`
+	CODValue         int64     `json:"cod_value,omitempty"`
+	InsuranceValue   int64     `json:"insurance_value,omitempty"`
+	Currency         string    `json:"currency"`
+	ETD              string    `json:"etd,omitempty"`
+	ExpiresAt        time.Time `json:"expires_at"`
+
+	ProviderQuoteID   string `json:"-"`
+	NativeServiceCode string `json:"-"`
+	CredentialAlias   string `json:"-"`
+	BindingHash       []byte `json:"-"`
+}
+
+type ProviderQuote struct {
+	ProviderQuoteID  string
+	CourierCode      string
+	CourierName      string
+	ServiceCode      string
+	ServiceName      string
+	ServiceGroup     string
+	DeliveryMode     string
+	ShippingCost     int64
+	ShippingCashback int64
+	ServiceFee       int64
+	AdditionalCost   int64
+	GrandTotal       int64
+	CODValue         int64
+	InsuranceValue   int64
+	Currency         string
+	ETD              string
+	ExpiresAt        time.Time
 }
 
 type CreateRequest struct {
@@ -268,7 +337,13 @@ type Adapter interface {
 	Cancel(ctx context.Context, credential string, shipment Shipment, request CancelRequest) (ProviderCancelResult, error)
 }
 
+type QuoteAdapter interface {
+	Quote(ctx context.Context, credential string, request QuoteRequest) ([]ProviderQuote, error)
+}
+
 type Repository interface {
+	SaveQuotes(ctx context.Context, tenantID string, quotes []Quote) error
+	GetQuote(ctx context.Context, tenantID, quoteID string) (Quote, error)
 	ReserveCreate(ctx context.Context, input ReserveCreateInput) (Shipment, bool, error)
 	CompleteCreate(ctx context.Context, tenantID, shipmentID string, result ProviderCreateResult) (Shipment, error)
 	FailCreate(ctx context.Context, tenantID, shipmentID, providerStatus string) error

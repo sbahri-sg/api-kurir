@@ -358,6 +358,20 @@ POST /partner/v1/rates
 `quote_id` mengikat rute, paket, layanan, fitur, harga, dan waktu berlaku.
 Partner harus menolak booking jika quote tidak sesuai atau kedaluwarsa.
 
+Provider yang mendeklarasikan capability `shipments` juga wajib menyediakan:
+
+```http
+POST /partner/v1/fulfillment/quotes
+```
+
+Operasi ini berbeda dari cek ongkir umum `/rates`: sumber quote harus produk
+yang benar-benar dipakai oleh `/shipments`. Ini penting ketika provider
+mempunyai produk rate dan fulfillment terpisah, seperti RajaOngkir Shipping
+Cost dan Shipping Delivery. Response membawa service code native ke API Kurir;
+API Kurir menyimpannya server-side dan hanya menerbitkan kode canonical
+`svc_...` ke Emisell. Provider lain seperti Mengantar dan KiriminAja mengikuti
+kontrak yang sama tanpa aturan nama/harga khusus di Main Service.
+
 ### 6.5 Membuat shipment
 
 ```http

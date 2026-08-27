@@ -75,6 +75,61 @@ func TestCreateReplayPreservesFailedProviderResult(t *testing.T) {
 	}
 }
 
+func TestCanonicalQuoteOverridesProviderNativeValues(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{}
+	adapter := &stubAdapter{quotes: []ProviderQuote{{
+		CourierCode: "jne", CourierName: "JNE", ServiceCode: "JNEFlat",
+		ServiceGroup: "regular", DeliveryMode: "regular", ShippingCost: 10500,
+		GrandTotal: 110500, Currency: "IDR", ExpiresAt: time.Now().Add(time.Hour),
+	}}}
+	service := NewService(repository, stubCatalog{code: "rajaongkir"}, stubCredentials{}, adapter)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
+	quotes, err := service.Quotes(ctx, validQuoteRequest())
+	if err != nil || len(quotes) != 1 {
+		t.Fatalf("quote failed: quotes=%+v err=%v", quotes, err)
+	}
+	request := validCreateRequest()
+	request.QuoteID = quotes[0].ID
+	request.ServiceCode = quotes[0].ServiceCode
+	request.Payment.ShippingCost = quotes[0].ShippingCost
+	request.Payment.GrandTotal = quotes[0].GrandTotal
+	shipment, _, err := service.Create(ctx, "shipment:create:canonical", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.lastCreate.ServiceCode != "JNEFlat" {
+		t.Fatalf("provider must receive native code, got %q", adapter.lastCreate.ServiceCode)
+	}
+	if shipment.ServiceCode != quotes[0].ServiceCode || shipment.ShippingCost != 10500 {
+		t.Fatalf("public shipment must retain canonical quote: %+v", shipment)
+	}
+}
+
+func TestCanonicalQuoteRejectsManipulatedPrice(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{}
+	adapter := &stubAdapter{quotes: []ProviderQuote{{
+		CourierCode: "jne", ServiceCode: "JNEFlat", ServiceGroup: "regular",
+		DeliveryMode: "regular", ShippingCost: 10500, GrandTotal: 110500,
+		Currency: "IDR", ExpiresAt: time.Now().Add(time.Hour),
+	}}}
+	service := NewService(repository, stubCatalog{code: "rajaongkir"}, stubCredentials{}, adapter)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
+	quotes, err := service.Quotes(ctx, validQuoteRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := validCreateRequest()
+	request.QuoteID = quotes[0].ID
+	request.ServiceCode = quotes[0].ServiceCode
+	request.Payment.ShippingCost = 999
+	_, _, err = service.Create(ctx, "shipment:create:manipulated", request)
+	if !errors.Is(err, ErrQuoteMismatch) {
+		t.Fatalf("expected quote mismatch, got %v", err)
+	}
+}
+
 func TestPickupRejectsShipmentWithoutSuccessfulBooking(t *testing.T) {
 	t.Parallel()
 	repository := &memoryRepository{shipment: &Shipment{
@@ -148,6 +203,16 @@ func validCreateRequest() CreateRequest {
 	}
 }
 
+func validQuoteRequest() QuoteRequest {
+	return QuoteRequest{
+		Origin:      QuoteLocation{DestinationID: 5969},
+		Destination: QuoteLocation{DestinationID: 4956},
+		Package:     Package{WeightGrams: 1000, LengthCM: 20, WidthCM: 10, HeightCM: 5, ItemValue: 100000},
+		PaymentType: "non_cod", CourierCodes: []string{"jne"},
+		ServiceGroups: []string{"regular"},
+	}
+}
+
 type stubCatalog struct{ code string }
 
 func (s stubCatalog) ActiveProviderCode(context.Context, string) (string, error) { return s.code, nil }
@@ -163,14 +228,20 @@ func (s stubCredentials) ResolveProviderCredentialForCapability(context.Context,
 
 type stubAdapter struct {
 	create      ProviderCreateResult
+	quotes      []ProviderQuote
 	createCalls int
 	pickupCalls int
+	lastCreate  CreateRequest
 }
 
 func (s *stubAdapter) Code() string { return "rajaongkir" }
-func (s *stubAdapter) Create(context.Context, string, CreateRequest) (ProviderCreateResult, error) {
+func (s *stubAdapter) Create(_ context.Context, _ string, request CreateRequest) (ProviderCreateResult, error) {
+	s.lastCreate = request
 	s.createCalls++
 	return s.create, nil
+}
+func (s *stubAdapter) Quote(context.Context, string, QuoteRequest) ([]ProviderQuote, error) {
+	return s.quotes, nil
 }
 func (s *stubAdapter) Pickup(context.Context, string, Shipment, PickupRequest) (ProviderPickupResult, error) {
 	s.pickupCalls++
@@ -183,7 +254,28 @@ func (s *stubAdapter) Cancel(context.Context, string, Shipment, CancelRequest) (
 	return ProviderCancelResult{}, nil
 }
 
-type memoryRepository struct{ shipment *Shipment }
+type memoryRepository struct {
+	shipment *Shipment
+	quotes   map[string]Quote
+}
+
+func (r *memoryRepository) SaveQuotes(_ context.Context, _ string, quotes []Quote) error {
+	if r.quotes == nil {
+		r.quotes = make(map[string]Quote)
+	}
+	for _, quote := range quotes {
+		r.quotes[quote.ID] = quote
+	}
+	return nil
+}
+
+func (r *memoryRepository) GetQuote(_ context.Context, _ string, quoteID string) (Quote, error) {
+	quote, ok := r.quotes[quoteID]
+	if !ok {
+		return Quote{}, ErrQuoteNotFound
+	}
+	return quote, nil
+}
 
 func (r *memoryRepository) ReserveCreate(_ context.Context, input ReserveCreateInput) (Shipment, bool, error) {
 	if r.shipment != nil {

@@ -356,6 +356,7 @@ func registerTenantIntegrationRoutes(
 		"/shipping-services",
 		tenantShippingServiceUpdateHandler(merchantShippingService),
 	)
+	integrationGroup.POST("/shipping-quotes", fulfillmentQuoteHandler(fulfillmentService))
 	integrationGroup.POST(
 		"/tracking/subscriptions",
 		trackingSubscriptionCreateHandler(trackingService),

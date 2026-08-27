@@ -192,6 +192,42 @@ paths:
         "504":
           $ref: "#/components/responses/ProviderTimeout"
 
+  /fulfillment/quotes:
+    post:
+      tags: [Rates, Shipments]
+      operationId: getPartnerFulfillmentQuotes
+      summary: Mengambil quote yang dapat langsung dipakai membuat shipment
+      description: >-
+        Wajib untuk provider yang mendeklarasikan capability shipments. Quote
+        harus berasal dari produk/API yang sama dengan create shipment, bukan
+        produk cek ongkir terpisah. API Kurir menyimpan service code native dan
+        menerbitkan service code canonical ke Emisell.
+      parameters:
+        - $ref: "#/components/parameters/XRequestID"
+        - $ref: "#/components/parameters/XSignatureVersion"
+        - $ref: "#/components/parameters/XSignatureTimestamp"
+        - $ref: "#/components/parameters/XSignatureNonce"
+        - $ref: "#/components/parameters/XSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FulfillmentQuoteRequest"
+      responses:
+        "200":
+          description: Quote fulfillment tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentQuoteResponse"
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/TemporarilyUnavailable" }
+
   /shipments/{partner_shipment_id}:
     get:
       tags: [Shipments]
@@ -1055,6 +1091,80 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Quote"
+
+    FulfillmentQuoteRequest:
+      type: object
+      required: [origin, destination, package, payment_type]
+      properties:
+        provider_code: { type: string }
+        courier_codes:
+          type: array
+          maxItems: 20
+          items: { type: string }
+        service_groups:
+          type: array
+          maxItems: 4
+          items: { type: string, enum: [regular, next_day, economy, cargo] }
+        origin:
+          type: object
+          required: [destination_id]
+          properties:
+            destination_id: { type: integer, minimum: 1 }
+            latitude: { type: number }
+            longitude: { type: number }
+        destination:
+          type: object
+          required: [destination_id]
+          properties:
+            destination_id: { type: integer, minimum: 1 }
+            latitude: { type: number }
+            longitude: { type: number }
+        package:
+          type: object
+          required: [weight_grams, length_cm, width_cm, height_cm, item_value]
+          properties:
+            weight_grams: { type: integer, minimum: 1 }
+            length_cm: { type: integer, minimum: 1 }
+            width_cm: { type: integer, minimum: 1 }
+            height_cm: { type: integer, minimum: 1 }
+            item_value: { type: integer, minimum: 0 }
+        payment_type: { type: string, enum: [non_cod, cod] }
+
+    FulfillmentProviderQuote:
+      type: object
+      required: [courier_code, service_code, service_group, delivery_mode, shipping_cost, grand_total, currency, expires_at]
+      properties:
+        provider_quote_id: { type: string }
+        courier_code: { type: string }
+        courier_name: { type: string }
+        service_code:
+          type: string
+          description: Kode native provider; hanya API Kurir yang menggunakannya.
+        service_name: { type: string }
+        service_group: { type: string, enum: [regular, next_day, economy, cargo] }
+        delivery_mode: { type: string, enum: [regular, next_day, economy, cargo] }
+        shipping_cost: { type: integer, minimum: 0 }
+        shipping_cashback: { type: integer, minimum: 0 }
+        service_fee: { type: integer, minimum: 0 }
+        additional_cost: { type: integer, minimum: 0 }
+        grand_total: { type: integer, minimum: 0 }
+        cod_value: { type: integer, minimum: 0 }
+        insurance_value: { type: integer, minimum: 0 }
+        currency: { type: string, example: IDR }
+        etd: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    FulfillmentQuoteResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [quotes]
+          properties:
+            quotes:
+              type: array
+              items: { $ref: "#/components/schemas/FulfillmentProviderQuote" }
 
     Quote:
       type: object
