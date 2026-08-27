@@ -2081,6 +2081,7 @@ Content-Type: application/json
       "Nama field wajib mengikuti credential_fields dari GET /api/v1/integrations/providers.",
       "environment menerima live atau sandbox; default live. Secret kedua mode tidak pernah dicampur.",
       `Credential fulfillment sandbox disimpan terpisah: { "provider_code": "rajaongkir", "environment": "sandbox", "credentials": { "delivery_api_key": "..." } }`,
+      "Credential Shipping Delivery-only tidak diuji melalui endpoint Shipping Cost. Format dan penyimpanannya divalidasi saat instalasi; otorisasi provider dipastikan pada request fulfillment sandbox pertama.",
     ],
     response: `{
   "data": {

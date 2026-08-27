@@ -309,7 +309,10 @@ func credentialDisplaySource(
 	case CredentialTypeAPIKeySecret:
 		return values["api_key"]
 	case CredentialTypeCapabilityAPIKeys:
-		return values["shipping_api_key"]
+		if value := values["shipping_api_key"]; value != "" {
+			return value
+		}
+		return values["delivery_api_key"]
 	case CredentialTypeBearerToken:
 		return values["token"]
 	default:

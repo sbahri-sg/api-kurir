@@ -56,6 +56,13 @@ func (r *ValidatorRegistry) ValidateCredentials(
 		secret = values["api_key"]
 	case CredentialTypeCapabilityAPIKeys:
 		secret = values["shipping_api_key"]
+		if secret == "" && values["delivery_api_key"] != "" {
+			// The legacy RajaOngkir validator checks Shipping Cost by calling
+			// its destination endpoint. A Shipping Delivery-only credential
+			// (especially sandbox) cannot be validated through that product.
+			// Its first fulfillment request performs the authoritative check.
+			return nil
+		}
 	case CredentialTypeBearerToken:
 		secret = values["token"]
 	default:

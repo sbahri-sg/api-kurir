@@ -70,7 +70,9 @@ diganti. Main Service memilihnya melalui header
 `X-Emisell-Execution-Mode: live|sandbox` (default `live`). Credential sandbox
 disimpan sebagai record terpisah dengan `environment: sandbox` dan hanya perlu
 memuat `delivery_api_key`; Shipping Cost tetap memakai credential live karena
-rate dan tracking RajaOngkir tidak mempunyai sandbox terpisah.
+rate dan tracking RajaOngkir tidak mempunyai sandbox terpisah. Validator lama
+Shipping Cost tidak dipakai untuk menolak key Delivery-only. Key tersebut
+divalidasi secara otoritatif oleh request fulfillment sandbox pertama.
 
 ## Perlindungan data
 

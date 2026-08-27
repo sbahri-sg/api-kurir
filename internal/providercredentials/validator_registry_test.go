@@ -112,3 +112,20 @@ func TestValidatorRegistryValidatesCapabilityShippingKey(t *testing.T) {
 		t.Fatalf("expected one shipping key validation, got %d", shipping.calls)
 	}
 }
+
+func TestValidatorRegistryDefersDeliveryOnlyCredentialValidation(t *testing.T) {
+	t.Parallel()
+	delivery := &registryValidatorStub{}
+	registry := NewValidatorRegistry(map[string]Validator{"rajaongkir": delivery})
+	if err := registry.ValidateCredentials(
+		context.Background(),
+		"rajaongkir",
+		CredentialTypeCapabilityAPIKeys,
+		map[string]string{"delivery_api_key": "sandbox-delivery-key"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if delivery.calls != 0 {
+		t.Fatalf("delivery-only credential used Shipping Cost validator %d times", delivery.calls)
+	}
+}

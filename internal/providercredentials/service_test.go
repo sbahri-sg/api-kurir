@@ -330,6 +330,43 @@ func TestCapabilityAPIKeysDoNotReuseShippingKeyForDelivery(t *testing.T) {
 	}
 }
 
+func TestCapabilityDeliveryOnlyCredentialCanBeStoredForSandbox(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryRepository{credentialTypes: map[string]string{
+		"rajaongkir": CredentialTypeCapabilityAPIKeys,
+	}}
+	validator := &acceptingValidator{}
+	service := NewService(repository, cipher, validator)
+	credential, err := service.AddForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentSandbox,
+		map[string]string{"delivery_api_key": "sandbox-delivery-key"},
+		50_000, "tenant:merchant_123", "req_sandbox_delivery",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.Environment != EnvironmentSandbox || credential.DisplayKey == "" {
+		t.Fatalf("unexpected sandbox credential: %#v", credential)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("delivery-only credential used Shipping Cost validator %d times", validator.calls)
+	}
+	value, credentialType, _, _, err := service.ResolveProviderCredentialValues(
+		WithExecutionEnvironment(context.Background(), EnvironmentSandbox), "rajaongkir",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credentialType != CredentialTypeCapabilityAPIKeys || value["delivery_api_key"] != "sandbox-delivery-key" {
+		t.Fatalf("unexpected resolved credential: type=%q values=%#v", credentialType, value)
+	}
+}
+
 func TestProviderDeclaredSandboxCredentialUsesSandboxFieldOnly(t *testing.T) {
 	t.Parallel()
 
