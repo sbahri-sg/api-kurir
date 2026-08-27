@@ -735,7 +735,7 @@ func (r *PostgresRepository) FailLifecycleJob(
 	if _, err := tx.Exec(ctx, `
 		UPDATE fulfillment_shipments
 		SET reconcile_error = left($3, 500),
-		    next_reconcile_at = CASE WHEN $4 = 'dead' THEN NULL ELSE $5 END,
+		    next_reconcile_at = CASE WHEN $4 = 'dead' THEN NULL ELSE $5::timestamptz END,
 		    tracking_registration_status = CASE
 		        WHEN $6 = 'register_tracking' THEN $7
 		        ELSE tracking_registration_status
