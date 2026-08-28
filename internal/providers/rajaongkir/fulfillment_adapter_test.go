@@ -60,6 +60,56 @@ func TestFulfillmentAdapterMapsUnauthorizedWithoutLeakingBody(t *testing.T) {
 	}
 }
 
+func TestPickupVehicleIsDerivedFromShipmentWeight(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		weight int64
+		want   string
+	}{
+		{weight: 500, want: "Motor"},
+		{weight: 5_000, want: "Motor"},
+		{weight: 5_001, want: "Mobil"},
+		{weight: 9_999, want: "Mobil"},
+		{weight: 10_000, want: "Truk"},
+	}
+	for _, item := range tests {
+		if got := pickupVehicleForWeight(item.weight); got != item.want {
+			t.Fatalf("weight %d: got %q want %q", item.weight, got, item.want)
+		}
+	}
+}
+
+func TestFulfillmentAdapterPickupMapsGatewayContext(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/order/api/v1/pickup/request" {
+			t.Fatalf("unexpected pickup path: %s", request.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["pickup_date"] != "2026-08-28" || payload["pickup_time"] != "09:30:00" ||
+			payload["pickup_vehicle"] != "Truk" {
+			t.Fatalf("unexpected pickup payload: %#v", payload)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"meta":{"message":"success"},"data":[{"status":"success","order_no":"KOM-200","awb":"JNE200"}]}`))
+	}))
+	defer server.Close()
+
+	adapter := NewFulfillmentAdapter(server.URL, time.Second)
+	result, err := adapter.Pickup(context.Background(), "delivery-key", fulfillment.Shipment{
+		ProviderShipmentID: "KOM-200",
+	}, fulfillment.PickupRequest{
+		Mode: "scheduled", ScheduledAt: time.Date(2026, 8, 28, 2, 30, 0, 0, time.UTC),
+		PackageWeightGrams: 12_000,
+	})
+	if err != nil || result.AWB != "JNE200" {
+		t.Fatalf("pickup result=%+v err=%v", result, err)
+	}
+}
+
 func TestFulfillmentAdapterDetailMapsAWBAndDeliveryStatus(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

@@ -181,7 +181,7 @@ func TestPickupRejectsShipmentWithoutSuccessfulBooking(t *testing.T) {
 	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
 
 	_, replayed, err := service.Pickup(ctx, repository.shipment.ID, "shipment:pickup:failed", PickupRequest{
-		ScheduledAt: time.Now().Add(time.Hour), Vehicle: "motor",
+		Mode: "scheduled", ScheduledAt: time.Now().Add(time.Hour),
 	})
 	if !errors.Is(err, ErrPickupNotAllowed) {
 		t.Fatalf("expected pickup guard, got %v", err)
@@ -202,7 +202,7 @@ func TestPickupRejectsBookedShipmentWithoutProviderID(t *testing.T) {
 	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
 
 	_, _, err := service.Pickup(ctx, repository.shipment.ID, "shipment:pickup:missing-provider-id", PickupRequest{
-		ScheduledAt: time.Now().Add(time.Hour), Vehicle: "motor",
+		Mode: "scheduled", ScheduledAt: time.Now().Add(time.Hour),
 	})
 	if !errors.Is(err, ErrPickupNotAllowed) || adapter.pickupCalls != 0 {
 		t.Fatalf("expected local pickup rejection without provider call, err=%v calls=%d", err, adapter.pickupCalls)
@@ -220,10 +220,44 @@ func TestPickupRequestedShipmentReturnsReplayWithoutProviderCall(t *testing.T) {
 	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
 
 	shipment, replayed, err := service.Pickup(ctx, repository.shipment.ID, "shipment:pickup:replay", PickupRequest{
-		ScheduledAt: time.Now().Add(time.Hour), Vehicle: "motor",
+		Mode: "scheduled", ScheduledAt: time.Now().Add(time.Hour),
 	})
 	if err != nil || !replayed || shipment.ID != repository.shipment.ID || adapter.pickupCalls != 0 {
 		t.Fatalf("expected safe replay without provider call, shipment=%+v replayed=%v err=%v calls=%d", shipment, replayed, err, adapter.pickupCalls)
+	}
+}
+
+func TestPickupNowHidesProviderContextFromMerchantRequest(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{shipment: &Shipment{
+		ID: "47d5c048-c6a0-4c99-a1bf-5eef477a8684", ProviderCode: "rajaongkir",
+		ProviderShipmentID: "KOM-102", Fulfillment: "pickup", Status: StatusBooked,
+		PackageWeightGrams: 12_000,
+	}}
+	adapter := &stubAdapter{}
+	service := NewService(repository, stubCatalog{code: "rajaongkir"}, stubCredentials{}, adapter)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
+
+	before := time.Now().UTC()
+	_, replayed, err := service.Pickup(ctx, repository.shipment.ID, "shipment:pickup:now", PickupRequest{Mode: "now"})
+	if err != nil || replayed || adapter.pickupCalls != 1 {
+		t.Fatalf("pickup now failed: replayed=%v err=%v calls=%d", replayed, err, adapter.pickupCalls)
+	}
+	if adapter.lastPickup.PackageWeightGrams != 12_000 ||
+		adapter.lastPickup.ScheduledAt.Before(before.Add(14*time.Minute)) {
+		t.Fatalf("provider context not derived by gateway: %+v", adapter.lastPickup)
+	}
+}
+
+func TestPickupScheduledRejectsPastTimestamp(t *testing.T) {
+	t.Parallel()
+	service := NewService(&memoryRepository{}, stubCatalog{code: "rajaongkir"}, stubCredentials{}, &stubAdapter{})
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
+	_, _, err := service.Pickup(ctx, "47d5c048-c6a0-4c99-a1bf-5eef477a8684", "shipment:pickup:past", PickupRequest{
+		Mode: "scheduled", ScheduledAt: time.Now().Add(-time.Minute),
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected invalid scheduled pickup, got %v", err)
 	}
 }
 
@@ -274,6 +308,7 @@ type stubAdapter struct {
 	createCalls int
 	pickupCalls int
 	lastCreate  CreateRequest
+	lastPickup  PickupRequest
 }
 
 func (s *stubAdapter) Code() string { return "rajaongkir" }
@@ -285,8 +320,9 @@ func (s *stubAdapter) Create(_ context.Context, _ string, request CreateRequest)
 func (s *stubAdapter) Quote(context.Context, string, QuoteRequest) ([]ProviderQuote, error) {
 	return s.quotes, nil
 }
-func (s *stubAdapter) Pickup(context.Context, string, Shipment, PickupRequest) (ProviderPickupResult, error) {
+func (s *stubAdapter) Pickup(_ context.Context, _ string, _ Shipment, request PickupRequest) (ProviderPickupResult, error) {
 	s.pickupCalls++
+	s.lastPickup = request
 	return ProviderPickupResult{}, nil
 }
 func (s *stubAdapter) Label(context.Context, string, Shipment, string) (Label, error) {
@@ -330,7 +366,8 @@ func (r *memoryRepository) ReserveCreate(_ context.Context, input ReserveCreateI
 		CourierCode: input.CourierCode, ServiceCode: input.ServiceCode,
 		DeliveryMode: input.DeliveryMode, Fulfillment: input.Fulfillment,
 		Status: StatusBookingPending, ShippingCost: input.ShippingCost,
-		Currency: input.Currency, CreatedAt: now, UpdatedAt: now,
+		Currency: input.Currency, PackageWeightGrams: input.PackageWeightGrams,
+		CreatedAt: now, UpdatedAt: now,
 	}
 	r.shipment = &shipment
 	return shipment, true, nil

@@ -95,7 +95,7 @@ RajaOngkir BYOK tidak pernah memakai credential atau saldo Biteship platform.
 | `DELETE /api/v1/integrations/tracking/subscriptions/{fulfillment_id}` | Hentikan tracking fulfillment merchant; snapshot tetap disimpan |
 | `POST /api/v1/integrations/shipments` | Buat booking shipment secara idempotent pada provider aktif |
 | `GET /api/v1/integrations/shipments/{shipment_id}` | Baca snapshot fulfillment tanpa membuat transaksi baru |
-| `POST /api/v1/integrations/shipments/{shipment_id}/pickup` | Jadwalkan pickup secara idempotent |
+| `POST /api/v1/integrations/shipments/{shipment_id}/pickup` | Jadwalkan pickup `now` atau `scheduled` secara idempotent; detail provider ditentukan adapter |
 | `GET /api/v1/integrations/shipments/{shipment_id}/label` | Ambil label secara cache-first |
 | `POST /api/v1/integrations/shipments/{shipment_id}/cancel` | Minta pembatalan secara idempotent |
 | `GET /api/v1/integrations/shipments/{shipment_id}/history` | Baca timeline audit fulfillment |

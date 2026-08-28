@@ -123,16 +123,16 @@ func (r *PostgresRepository) ReserveCreate(
 		INSERT INTO fulfillment_shipments (
 			id, tenant_id, provider_code, merchant_reference, quote_id,
 			courier_code, service_code, delivery_mode, fulfillment_mode,
-			shipping_cost, currency, create_idempotency_key,
+			shipping_cost, currency, package_weight_grams, create_idempotency_key,
 			create_request_hash, request_ciphertext
 		) VALUES (
 			$1::uuid, $2, $3, $4, $5, $6, $7, $8, $9,
-			$10, $11, $12, $13, $14
+			$10, $11, $12, $13, $14, $15
 		)
 	`, input.ID, input.TenantID, input.ProviderCode, input.MerchantReference,
 		input.QuoteID, input.CourierCode, input.ServiceCode, input.DeliveryMode,
 		input.Fulfillment, input.ShippingCost, input.Currency,
-		input.IdempotencyKey, input.RequestHash, requestCiphertext)
+		input.PackageWeightGrams, input.IdempotencyKey, input.RequestHash, requestCiphertext)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return Shipment{}, false, ErrIdempotencyConflict
@@ -860,6 +860,7 @@ const shipmentSelect = `
 		coalesce(provider_shipment_id, ''), quote_id, courier_code,
 		service_code, delivery_mode, fulfillment_mode, coalesce(awb, ''),
 		normalized_status, provider_status, shipping_cost, currency,
+		package_weight_grams,
 		label_available, created_at, updated_at, cancelled_at,
 		tracking_registration_status, coalesce(tracking_shipment_id::text, ''),
 		live_tracking_url, last_reconciled_at, next_reconcile_at,
@@ -881,7 +882,8 @@ func scanShipment(row rowScanner, requestHash *[]byte, idempotencyKey *string) (
 		&shipment.ProviderShipmentID, &shipment.QuoteID, &shipment.CourierCode,
 		&shipment.ServiceCode, &shipment.DeliveryMode, &shipment.Fulfillment,
 		&shipment.AWB, &shipment.Status, &shipment.ProviderStatus,
-		&shipment.ShippingCost, &shipment.Currency, &shipment.LabelAvailable,
+		&shipment.ShippingCost, &shipment.Currency, &shipment.PackageWeightGrams,
+		&shipment.LabelAvailable,
 		&shipment.CreatedAt, &shipment.UpdatedAt, &shipment.CancelledAt,
 		&shipment.TrackingRegistrationStatus, &shipment.TrackingShipmentID,
 		&shipment.LiveTrackingURL, &shipment.LastReconciledAt,

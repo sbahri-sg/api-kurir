@@ -111,7 +111,8 @@ func (s *Service) Create(
 		CourierCode: request.CourierCode, ServiceCode: publicServiceCode,
 		DeliveryMode: request.DeliveryMode, Fulfillment: request.Fulfillment,
 		ShippingCost: request.Payment.ShippingCost, Currency: "IDR",
-		IdempotencyKey: idempotencyKey, RequestHash: requestHash,
+		PackageWeightGrams: request.Package.WeightGrams,
+		IdempotencyKey:     idempotencyKey, RequestHash: requestHash,
 		RequestCiphertext: payload,
 	})
 	if err != nil {
@@ -224,8 +225,22 @@ func (s *Service) Pickup(
 	if err != nil {
 		return Shipment{}, false, err
 	}
-	request.Vehicle = strings.ToLower(strings.TrimSpace(request.Vehicle))
-	if request.ScheduledAt.IsZero() || !oneOf(request.Vehicle, "motor", "mobil", "truk") {
+	request.Mode = strings.ToLower(strings.TrimSpace(request.Mode))
+	logicalRequest := request
+	now := time.Now().UTC()
+	switch request.Mode {
+	case "now":
+		if !request.ScheduledAt.IsZero() {
+			return Shipment{}, false, ErrInvalidRequest
+		}
+		// Provider pickup APIs still require a concrete timestamp. Keep that
+		// provider detail behind the gateway and give upstream a short lead time.
+		request.ScheduledAt = now.Add(15 * time.Minute).Truncate(time.Minute)
+	case "scheduled":
+		if request.ScheduledAt.IsZero() || !request.ScheduledAt.After(now) {
+			return Shipment{}, false, ErrInvalidRequest
+		}
+	default:
 		return Shipment{}, false, ErrInvalidRequest
 	}
 	shipmentID, err = normalizeShipmentID(shipmentID)
@@ -246,11 +261,12 @@ func (s *Service) Pickup(
 	if shipment.Status == StatusPickupRequested || shipment.AWB != "" {
 		return shipment, true, nil
 	}
+	request.PackageWeightGrams = shipment.PackageWeightGrams
 	adapter, credential, err := s.adapterCredential(ctx, shipment.ProviderCode, "pickup:write")
 	if err != nil {
 		return Shipment{}, false, err
 	}
-	_, requestHash, err := requestPayload(request)
+	_, requestHash, err := requestPayload(logicalRequest)
 	if err != nil {
 		return Shipment{}, false, err
 	}

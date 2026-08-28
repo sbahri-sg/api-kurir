@@ -59,7 +59,7 @@ func TestFulfillmentRepositoryTenantIsolationAndEncryptedPayloadIntegration(t *t
 		ID: quoteShipmentID, TenantID: tenantID, ProviderCode: "rajaongkir",
 		MerchantReference: "ORDER-QUOTE-" + fmt.Sprint(suffix), QuoteID: quoteID,
 		CourierCode: "jne", ServiceCode: "svc_test", DeliveryMode: "regular",
-		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR",
+		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR", PackageWeightGrams: 1000,
 		IdempotencyKey: "shipment:quote:" + fmt.Sprint(suffix),
 		RequestHash:    []byte("quote-request-hash"), RequestCiphertext: []byte(`{"quote":true}`),
 	})
@@ -70,7 +70,7 @@ func TestFulfillmentRepositoryTenantIsolationAndEncryptedPayloadIntegration(t *t
 		ID: secondQuoteShipmentID, TenantID: tenantID, ProviderCode: "rajaongkir",
 		MerchantReference: "ORDER-QUOTE-SECOND-" + fmt.Sprint(suffix), QuoteID: quoteID,
 		CourierCode: "jne", ServiceCode: "svc_test", DeliveryMode: "regular",
-		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR",
+		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR", PackageWeightGrams: 1000,
 		IdempotencyKey: "shipment:quote:second:" + fmt.Sprint(suffix),
 		RequestHash:    []byte("quote-request-hash-second"), RequestCiphertext: []byte(`{"quote":true}`),
 	})
@@ -83,7 +83,7 @@ func TestFulfillmentRepositoryTenantIsolationAndEncryptedPayloadIntegration(t *t
 		ID: shipmentID, TenantID: tenantID, ProviderCode: "rajaongkir",
 		MerchantReference: "ORDER-" + fmt.Sprint(suffix), QuoteID: "quote-1",
 		CourierCode: "jne", ServiceCode: "REG", DeliveryMode: "regular",
-		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR",
+		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR", PackageWeightGrams: 1200,
 		IdempotencyKey: "shipment:create:" + fmt.Sprint(suffix),
 		RequestHash:    []byte("request-hash"), RequestCiphertext: plaintext,
 	})
@@ -130,7 +130,7 @@ func TestFulfillmentRepositoryTenantIsolationAndEncryptedPayloadIntegration(t *t
 		ID: shipmentWithAWBID, TenantID: tenantID, ProviderCode: "rajaongkir",
 		MerchantReference: "ORDER-AWB-" + fmt.Sprint(suffix), QuoteID: "quote-awb",
 		CourierCode: "jne", ServiceCode: "REG", DeliveryMode: "regular",
-		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR",
+		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR", PackageWeightGrams: 1000,
 		IdempotencyKey: "shipment:create:awb:" + fmt.Sprint(suffix),
 		RequestHash:    []byte("request-hash-awb"), RequestCiphertext: plaintext,
 	})

@@ -251,7 +251,7 @@ func TestHostedPickupForwardsSandboxModeAndMapsWaybill(t *testing.T) {
 	result, err := adapter.Pickup(ctx, "delivery-key", fulfillment.Shipment{
 		ProviderShipmentID: "KOM-1",
 	}, fulfillment.PickupRequest{
-		ScheduledAt: time.Now().Add(time.Hour), Vehicle: "motor",
+		Mode: "scheduled", ScheduledAt: time.Now().Add(time.Hour), PackageWeightGrams: 1_000,
 	})
 	if err != nil {
 		t.Fatal(err)

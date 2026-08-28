@@ -199,6 +199,32 @@ HTTP 2xx dari envelope tidak dianggap berhasil bila item order berstatus
 `failed`; API mengembalikan `422 PROVIDER_REJECTED`, shipment tetap `booked`,
 dan operator dapat memperbaiki jadwal atau data lalu mencoba kembali.
 
+Endpoint tetap `POST /api/v1/integrations/shipments/{shipment_id}/pickup` agar
+Main Service tidak perlu mengikuti kontrak native setiap provider. Body
+canonical hanya mempunyai dua bentuk:
+
+```json
+{ "mode": "now" }
+```
+
+atau:
+
+```json
+{
+  "mode": "scheduled",
+  "scheduled_at": "2026-08-28T09:00:00+07:00"
+}
+```
+
+`scheduled_at` wajib berada di masa depan untuk mode `scheduled` dan tidak
+boleh dikirim pada mode `now`. API Kurir memberi lead time singkat untuk mode
+`now`. Emisell tidak mengirim `vehicle`, alamat pickup, berat, maupun rincian
+paket lagi karena semuanya sudah terkunci pada snapshot shipment. Adapter
+provider menerjemahkan snapshot tersebut. Untuk RajaOngkir, kendaraan dipilih
+dari berat paket: sampai 5 kg `Motor`, di atas 5 kg dan di bawah 10 kg `Mobil`,
+serta mulai 10 kg `Truk`. Aturan provider lain tetap berada di adapter masing-
+masing tanpa mengubah endpoint Emisell.
+
 ## Lifecycle otomatis setelah booking
 
 Snapshot `shipment` juga mengembalikan field operasional berikut:

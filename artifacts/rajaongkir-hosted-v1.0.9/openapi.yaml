@@ -1,0 +1,663 @@
+openapi: 3.0.3
+info:
+  title: RajaOngkir Hosted Connector
+  version: 1.0.9
+  description: >-
+    Connector yang di-host API Kurir untuk menormalisasi RajaOngkir Shipping
+    Cost dan Shipping Delivery ke Partner API Kurir v1.
+servers:
+  - url: https://api-kurir.emisell.com/connectors/rajaongkir/v1
+    description: Hosted connector API Kurir
+tags:
+  - name: Platform
+  - name: Rates
+  - name: Tracking
+  - name: Shipments
+  - name: Pickup
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [Platform]
+      summary: Periksa kesiapan connector
+      responses:
+        "200":
+          description: Connector siap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /capabilities:
+    get:
+      operationId: getCapabilities
+      tags: [Platform]
+      summary: Ambil capability RajaOngkir Hosted
+      responses:
+        "200":
+          description: Capability aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilitiesResponse"
+  /services:
+    get:
+      operationId: getServices
+      tags: [Platform]
+      summary: Ambil kelompok layanan checkout
+      responses:
+        "200":
+          description: Kelompok layanan aktif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicesResponse"
+  /rates:
+    post:
+      operationId: getRates
+      tags: [Rates]
+      summary: Ambil ongkir RajaOngkir
+      description: Operasi read-only yang memakai quota Shipping Cost.
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
+      security:
+        - shipping_cost: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RateRequest"
+            example:
+              origin: { district_id: "1391" }
+              destination: { district_id: "1376" }
+              weight_grams: 1000
+              courier_codes: [jne, jnt, sicepat, anteraja]
+              service_groups: [regular, next_day, economy, cargo]
+      responses:
+        "200":
+          description: Quote canonical
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateResponse"
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "429": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /fulfillment/quotes:
+    post:
+      operationId: getFulfillmentQuotes
+      tags: [Rates, Shipments]
+      summary: Ambil quote yang kompatibel dengan booking Shipping Delivery
+      description: >-
+        Quote berasal dari Calculate Shipping Delivery, bukan Shipping Cost.
+        Service code native hanya dipakai API Kurir dan dikunci ke quote canonical.
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
+      security:
+        - shipping_delivery: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FulfillmentQuoteRequest"
+      responses:
+        "200":
+          description: Quote fulfillment provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FulfillmentQuoteResponse"
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /tracking/waybills:
+    post:
+      operationId: trackWaybill
+      tags: [Tracking]
+      summary: Lacak AWB melalui RajaOngkir
+      description: Operasi read-only yang memakai quota Shipping Cost.
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
+      security:
+        - shipping_cost: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingRequest"
+            example:
+              waybill_number: MT685U91
+              courier_code: wahana
+      responses:
+        "200":
+          description: Snapshot tracking canonical
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingResponse"
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "429": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /shipments:
+    post:
+      operationId: createShipment
+      tags: [Shipments]
+      summary: Membuat order Shipping Delivery
+      description: Memakai Shipping Delivery live atau sandbox sesuai execution mode.
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
+      security:
+        - shipping_delivery: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentRequest"
+      responses:
+        "201":
+          description: Shipment dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShipmentResponse"
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /shipments/{partner_shipment_id}:
+    get:
+      operationId: getShipment
+      tags: [Shipments]
+      summary: Mengambil detail order Shipping Delivery
+      security:
+        - shipping_delivery: []
+      parameters:
+        - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/ExecutionMode"
+      responses:
+        "200":
+          description: Detail shipment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShipmentResponse"
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /shipments/{partner_shipment_id}/cancel:
+    post:
+      operationId: cancelShipment
+      tags: [Shipments]
+      summary: Membatalkan order Shipping Delivery
+      description: Transaksi live; hanya dapat dilakukan sebelum shipment berjalan.
+      security:
+        - shipping_delivery: []
+      parameters:
+        - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/ExecutionMode"
+      responses:
+        "200":
+          description: Shipment dibatalkan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShipmentResponse"
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /shipments/{partner_shipment_id}/label:
+    get:
+      operationId: getShipmentLabel
+      tags: [Shipments]
+      summary: Mengambil label shipment
+      security:
+        - shipping_delivery: []
+      parameters:
+        - $ref: "#/components/parameters/PartnerShipmentID"
+        - $ref: "#/components/parameters/ExecutionMode"
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [page_1, page_2, page_4, page_5, page_6]
+            default: page_5
+      responses:
+        "200":
+          description: Label PDF
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabelResponse"
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "404": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+  /pickups:
+    post:
+      operationId: requestPickup
+      tags: [Pickup]
+      summary: Meminta pickup Shipping Delivery
+      description: Memakai Shipping Delivery live atau sandbox sesuai execution mode.
+      security:
+        - shipping_delivery: []
+      parameters:
+        - $ref: "#/components/parameters/ExecutionMode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PickupRequest"
+      responses:
+        "201":
+          description: Pickup diminta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PickupResponse"
+        "401": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "502": { $ref: "#/components/responses/ErrorResponse" }
+components:
+  securitySchemes:
+    shipping_cost:
+      type: apiKey
+      in: header
+      name: key
+      description: API key RajaOngkir Shipping Cost untuk rate dan tracking.
+      x-emisell-credential-code: shipping_cost
+      x-emisell-label: RajaOngkir Shipping Cost
+    shipping_delivery:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API key RajaOngkir Shipping Delivery untuk order dan pickup.
+      x-emisell-credential-code: shipping_delivery
+      x-emisell-label: RajaOngkir Shipping Delivery
+  parameters:
+    ExecutionMode:
+      name: X-Emisell-Execution-Mode
+      in: header
+      required: false
+      description: Live adalah default; sandbox hanya digunakan sesuai capability policy manifest.
+      schema:
+        type: string
+        enum: [live, sandbox]
+        default: live
+    PartnerShipmentID:
+      name: partner_shipment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+      example: KOMXXXXXXXXXXXXXXXXX
+  responses:
+    ErrorResponse:
+      description: Request gagal
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, version, upstream]
+      properties:
+        status: { type: string, example: ok }
+        version: { type: string, example: 1.0.0 }
+        upstream: { type: string, example: rajaongkir }
+    CapabilitiesResponse:
+      type: object
+      required: [provider_code, provider_name, contract_version, capabilities, environments]
+      properties:
+        provider_code: { type: string, example: rajaongkir }
+        provider_name: { type: string, example: RajaOngkir }
+        contract_version: { type: string, example: v1 }
+        environments:
+          type: array
+          items: { type: string, enum: [live, sandbox] }
+        capabilities:
+          type: object
+          additionalProperties: { type: boolean }
+          example: { rates: true, fulfillment_quotes: true, shipments: true, pickup: true, tracking: true }
+    ServicesResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required: [group, enabled]
+            properties:
+              group:
+                type: string
+                enum: [regular, next_day, economy, cargo]
+              enabled: { type: boolean }
+    LocationReference:
+      type: object
+      additionalProperties: false
+      required: [district_id]
+      properties:
+        district_id: { type: string, example: "1391" }
+    RateRequest:
+      type: object
+      additionalProperties: false
+      required: [origin, destination, weight_grams]
+      properties:
+        origin: { $ref: "#/components/schemas/LocationReference" }
+        destination: { $ref: "#/components/schemas/LocationReference" }
+        weight_grams: { type: integer, minimum: 1, maximum: 1000000 }
+        courier_codes:
+          type: array
+          maxItems: 20
+          items: { type: string }
+        service_groups:
+          type: array
+          items:
+            type: string
+            enum: [regular, next_day, economy, cargo]
+        price:
+          type: string
+          enum: [lowest, highest]
+          default: lowest
+    RateQuote:
+      type: object
+      required: [provider_code, courier_code, service_code, service_group, price, currency]
+      properties:
+        provider_code: { type: string }
+        courier_code: { type: string }
+        courier_name: { type: string }
+        service_code: { type: string }
+        service_name: { type: string }
+        service_group:
+          type: string
+          enum: [regular, next_day, economy, cargo]
+        price: { type: integer }
+        currency: { type: string, example: IDR }
+        etd: { type: string }
+    SourceMeta:
+      type: object
+      required: [provider_code, upstream, product]
+      properties:
+        provider_code: { type: string, example: rajaongkir }
+        upstream: { type: string, example: rajaongkir }
+        product: { type: string, enum: [shipping_cost, shipping_delivery] }
+    RateResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [quotes]
+          properties:
+            quotes:
+              type: array
+              items: { $ref: "#/components/schemas/RateQuote" }
+        meta: { $ref: "#/components/schemas/SourceMeta" }
+    FulfillmentQuoteLocation:
+      type: object
+      additionalProperties: false
+      required: [destination_id]
+      properties:
+        destination_id: { type: integer, minimum: 1 }
+        latitude: { type: number }
+        longitude: { type: number }
+    FulfillmentQuotePackage:
+      type: object
+      additionalProperties: false
+      required: [weight_grams, length_cm, width_cm, height_cm, item_value]
+      properties:
+        weight_grams: { type: integer, minimum: 1, maximum: 1000000 }
+        length_cm: { type: integer, minimum: 1 }
+        width_cm: { type: integer, minimum: 1 }
+        height_cm: { type: integer, minimum: 1 }
+        item_value: { type: integer, minimum: 0 }
+    FulfillmentQuoteRequest:
+      type: object
+      additionalProperties: false
+      required: [origin, destination, package, payment_type]
+      properties:
+        provider_code: { type: string }
+        origin: { $ref: "#/components/schemas/FulfillmentQuoteLocation" }
+        destination: { $ref: "#/components/schemas/FulfillmentQuoteLocation" }
+        package: { $ref: "#/components/schemas/FulfillmentQuotePackage" }
+        payment_type: { type: string, enum: [non_cod, cod] }
+        courier_codes:
+          type: array
+          maxItems: 20
+          items: { type: string }
+        service_groups:
+          type: array
+          items: { type: string, enum: [regular, next_day, economy, cargo] }
+    FulfillmentProviderQuote:
+      type: object
+      required: [courier_code, service_code, service_group, delivery_mode, shipping_cost, grand_total, currency, expires_at]
+      properties:
+        provider_quote_id: { type: string }
+        courier_code: { type: string }
+        courier_name: { type: string }
+        service_code: { type: string, description: Native code; API Kurir tidak meneruskannya ke Emisell. }
+        service_name: { type: string }
+        service_group: { type: string, enum: [regular, next_day, economy, cargo] }
+        delivery_mode: { type: string, enum: [regular, next_day, economy, cargo] }
+        shipping_cost: { type: integer, minimum: 0 }
+        shipping_cashback: { type: integer, minimum: 0 }
+        service_fee: { type: integer, minimum: 0 }
+        additional_cost: { type: integer, minimum: 0 }
+        grand_total: { type: integer, minimum: 0 }
+        cod_value: { type: integer, minimum: 0 }
+        insurance_value: { type: integer, minimum: 0 }
+        currency: { type: string, example: IDR }
+        etd: { type: string }
+        expires_at: { type: string, format: date-time }
+    FulfillmentQuoteResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [quotes]
+          properties:
+            quotes:
+              type: array
+              items: { $ref: "#/components/schemas/FulfillmentProviderQuote" }
+        meta: { $ref: "#/components/schemas/SourceMeta" }
+    TrackingRequest:
+      type: object
+      additionalProperties: false
+      required: [waybill_number, courier_code]
+      properties:
+        waybill_number: { type: string, minLength: 6, maxLength: 64 }
+        courier_code: { type: string, minLength: 2, maxLength: 32 }
+        last_phone_number: { type: string, minLength: 4, maxLength: 8 }
+    TrackingHistory:
+      type: object
+      required: [code, description, event_at, location]
+      properties:
+        code: { type: string }
+        description: { type: string }
+        event_at: { type: string }
+        location: { type: string }
+    TrackingResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [waybill_number, courier_code, status, delivered, history]
+          properties:
+            waybill_number: { type: string }
+            courier_code: { type: string }
+            courier_name: { type: string }
+            service_code: { type: string }
+            status: { type: string }
+            delivered: { type: boolean }
+            origin: { type: string }
+            destination: { type: string }
+            history:
+              type: array
+              items: { $ref: "#/components/schemas/TrackingHistory" }
+        meta: { $ref: "#/components/schemas/SourceMeta" }
+    Address:
+      type: object
+      additionalProperties: false
+      required: [name, phone, address, destination_id]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        phone: { type: string, minLength: 6, maxLength: 32 }
+        email: { type: string, maxLength: 254 }
+        address: { type: string, minLength: 3, maxLength: 1000 }
+        address_note: { type: string, maxLength: 255 }
+        destination_id: { type: integer, minimum: 1 }
+        postal_code: { type: string, maxLength: 10 }
+        latitude: { type: number }
+        longitude: { type: number }
+    ShipmentItem:
+      type: object
+      additionalProperties: false
+      required: [name, quantity, unit_price, subtotal, weight_grams]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        variant: { type: string, maxLength: 255 }
+        quantity: { type: integer, minimum: 1 }
+        unit_price: { type: integer, minimum: 0 }
+        subtotal: { type: integer, minimum: 0 }
+        weight_grams: { type: integer, minimum: 1 }
+    ShipmentPackage:
+      type: object
+      additionalProperties: false
+      required: [weight_grams, length_cm, width_cm, height_cm, items]
+      properties:
+        weight_grams: { type: integer, minimum: 1 }
+        length_cm: { type: integer, minimum: 1 }
+        width_cm: { type: integer, minimum: 1 }
+        height_cm: { type: integer, minimum: 1 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/ShipmentItem" }
+    ShipmentPayment:
+      type: object
+      additionalProperties: false
+      required: [type, items_subtotal, order_discount, tax_amount, shipping_cost, shipping_discount, additional_cost, grand_total]
+      properties:
+        type: { type: string, enum: [non_cod, cod] }
+        items_subtotal: { type: integer, minimum: 0 }
+        order_discount: { type: integer, minimum: 0 }
+        tax_amount: { type: integer, minimum: 0 }
+        shipping_cost: { type: integer, minimum: 0 }
+        shipping_discount: { type: integer, minimum: 0 }
+        service_fee:
+          type: integer
+          minimum: 0
+          description: Biaya provider yang diisi API Kurir dari quote terkunci; bukan input merchant.
+        additional_cost: { type: integer, minimum: 0 }
+        grand_total: { type: integer, minimum: 0 }
+        cod_value: { type: integer, minimum: 0 }
+        insurance_value: { type: integer, minimum: 0 }
+    ShipmentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - merchant_reference
+        - courier_code
+        - service_code
+        - sender
+        - recipient
+        - package
+        - payment
+      properties:
+        merchant_reference: { type: string, minLength: 1, maxLength: 128 }
+        quote_id: { type: string, maxLength: 128 }
+        brand_name: { type: string, maxLength: 128 }
+        courier_code: { type: string, minLength: 2, maxLength: 32 }
+        service_code: { type: string, minLength: 1, maxLength: 64 }
+        delivery_mode: { type: string, maxLength: 32 }
+        fulfillment: { type: string, maxLength: 32 }
+        sender: { $ref: "#/components/schemas/Address" }
+        recipient: { $ref: "#/components/schemas/Address" }
+        package: { $ref: "#/components/schemas/ShipmentPackage" }
+        payment: { $ref: "#/components/schemas/ShipmentPayment" }
+        notes: { type: string, maxLength: 500 }
+    PickupRequest:
+      type: object
+      additionalProperties: false
+      required: [provider_shipment_id, mode, scheduled_at, package_weight_grams]
+      properties:
+        provider_shipment_id: { type: string, minLength: 1, maxLength: 128 }
+        mode: { type: string, enum: [now, scheduled] }
+        scheduled_at: { type: string, format: date-time }
+        package_weight_grams:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
+          description: Snapshot immutable dari shipment; connector menentukan kendaraan native provider.
+    ShipmentData:
+      type: object
+      required: [partner_shipment_id, status]
+      properties:
+        partner_shipment_id: { type: string }
+        provider_shipment_id: { type: string }
+        waybill_number: { type: string }
+        status: { type: string }
+        courier_code: { type: string }
+        service_code: { type: string }
+        live_tracking_url: { type: string }
+        provider_payload: { type: object, additionalProperties: true }
+    ShipmentResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: "#/components/schemas/ShipmentData" }
+        meta: { $ref: "#/components/schemas/SourceMeta" }
+    LabelResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [partner_shipment_id, format, content_type]
+          properties:
+            partner_shipment_id: { type: string }
+            format: { type: string }
+            content_type: { type: string, example: application/pdf }
+            file_url: { type: string }
+            base64: { type: string }
+        meta: { $ref: "#/components/schemas/SourceMeta" }
+    PickupResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [pickup_id, status]
+          properties:
+            pickup_id: { type: string }
+            partner_shipment_id: { type: string }
+            waybill_number: { type: string }
+            status: { type: string }
+            provider_payload: { type: object, additionalProperties: true }
+        meta: { $ref: "#/components/schemas/SourceMeta" }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { nullable: true }
+            request_id: { type: string }

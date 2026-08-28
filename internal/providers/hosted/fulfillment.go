@@ -109,8 +109,9 @@ func hostedCreateRequest(request fulfillment.CreateRequest) map[string]any {
 func (a *FulfillmentAdapter) Pickup(ctx context.Context, credential string, shipment fulfillment.Shipment, request fulfillment.PickupRequest) (fulfillment.ProviderPickupResult, error) {
 	input := map[string]any{
 		"provider_shipment_id": shipment.ProviderShipmentID,
+		"mode":                 request.Mode,
 		"scheduled_at":         request.ScheduledAt,
-		"vehicle":              request.Vehicle,
+		"package_weight_grams": request.PackageWeightGrams,
 	}
 	var response struct {
 		Data struct {

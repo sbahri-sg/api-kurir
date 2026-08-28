@@ -181,8 +181,12 @@ type CreateRequest struct {
 }
 
 type PickupRequest struct {
-	ScheduledAt time.Time `json:"scheduled_at"`
-	Vehicle     string    `json:"vehicle"`
+	Mode        string    `json:"mode"`
+	ScheduledAt time.Time `json:"scheduled_at,omitempty"`
+
+	// PackageWeightGrams is internal provider context populated from the
+	// immutable shipment snapshot. It is never accepted from merchant input.
+	PackageWeightGrams int64 `json:"-"`
 }
 
 type CancelRequest struct {
@@ -205,6 +209,7 @@ type Shipment struct {
 	ProviderStatus             string     `json:"provider_status,omitempty"`
 	ShippingCost               int64      `json:"shipping_cost"`
 	Currency                   string     `json:"currency"`
+	PackageWeightGrams         int64      `json:"-"`
 	LabelAvailable             bool       `json:"label_available"`
 	TrackingRegistrationStatus string     `json:"tracking_registration_status"`
 	TrackingShipmentID         string     `json:"tracking_shipment_id,omitempty"`
@@ -366,20 +371,21 @@ type Repository interface {
 }
 
 type ReserveCreateInput struct {
-	ID                string
-	TenantID          string
-	ProviderCode      string
-	MerchantReference string
-	QuoteID           string
-	CourierCode       string
-	ServiceCode       string
-	DeliveryMode      string
-	Fulfillment       string
-	ShippingCost      int64
-	Currency          string
-	IdempotencyKey    string
-	RequestHash       []byte
-	RequestCiphertext []byte
+	ID                 string
+	TenantID           string
+	ProviderCode       string
+	MerchantReference  string
+	QuoteID            string
+	CourierCode        string
+	ServiceCode        string
+	DeliveryMode       string
+	Fulfillment        string
+	ShippingCost       int64
+	Currency           string
+	PackageWeightGrams int64
+	IdempotencyKey     string
+	RequestHash        []byte
+	RequestCiphertext  []byte
 }
 
 type ReserveOperationInput struct {

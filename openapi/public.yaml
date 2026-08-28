@@ -1299,7 +1299,9 @@ paths:
         provider_shipment_id tersedia. Booking gagal atau belum selesai
         menghasilkan 409 PICKUP_NOT_ALLOWED tanpa hit ke provider. Respons
         envelope 2xx dari provider hanya dianggap berhasil ketika item order
-        pickup juga berstatus sukses.
+        pickup juga berstatus sukses. Merchant hanya memilih pickup sekarang
+        atau terjadwal; kendaraan dan field native lain ditentukan adapter
+        dari snapshot shipment yang sudah tersimpan.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -3449,10 +3451,16 @@ components:
     FulfillmentPickupRequest:
       type: object
       additionalProperties: false
-      required: [scheduled_at, vehicle]
+      required: [mode]
       properties:
-        scheduled_at: { type: string, format: date-time }
-        vehicle: { type: string, enum: [motor, mobil, truk] }
+        mode:
+          type: string
+          enum: [now, scheduled]
+          description: now dijadwalkan gateway dengan lead time aman; scheduled memakai scheduled_at.
+        scheduled_at:
+          type: string
+          format: date-time
+          description: Wajib dan harus di masa depan hanya ketika mode=scheduled.
 
     FulfillmentCancelRequest:
       type: object

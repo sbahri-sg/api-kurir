@@ -2663,7 +2663,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/shipments/{shipment_id}/pickup",
     title: "Jadwalkan pickup shipment",
     description:
-      "Menjadwalkan pickup hanya setelah shipment berstatus booked dan provider_shipment_id tersedia. Booking yang pending atau gagal ditolak lokal dengan 409 PICKUP_NOT_ALLOWED tanpa membuang hit provider. RajaOngkir mensyaratkan jadwal valid dan vehicle motor, mobil, atau truk. Connector memeriksa status setiap order; envelope HTTP sukses dengan item failed tetap ditolak.",
+      "Menjadwalkan pickup hanya setelah shipment berstatus booked dan provider_shipment_id tersedia. Booking yang pending atau gagal ditolak lokal dengan 409 PICKUP_NOT_ALLOWED tanpa membuang hit provider. Emisell cukup memilih pickup sekarang atau terjadwal; kendaraan dan field khusus provider ditentukan adapter dari snapshot shipment. Connector tetap memeriksa status setiap order sehingga envelope HTTP sukses dengan item failed akan ditolak.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
     request: `POST {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}/pickup
 key: {{api_key}}
@@ -2673,14 +2673,16 @@ Idempotency-Key: shipment:pickup:ORDER-10001
 Content-Type: application/json
 
 {
-  "scheduled_at": "2026-08-27T09:00:00+07:00",
-  "vehicle": "motor"
+  "mode": "scheduled",
+  "scheduled_at": "2026-08-28T09:00:00+07:00"
 }`,
-    response: `HTTP 202 untuk request baru atau 200 untuk replay. Shipment berstatus pickup_requested. Ketika provider mengembalikan AWB, tracking_registration_status menjadi pending lalu worker otomatis mendaftarkannya ke pipeline tracking.
+    response: `Untuk pickup secepatnya kirim { "mode": "now" } tanpa scheduled_at. Gateway memberi lead time aman sebelum menerjemahkannya ke format provider.
+
+HTTP 202 untuk request baru atau 200 untuk replay. Shipment berstatus pickup_requested. Ketika provider mengembalikan AWB, tracking_registration_status menjadi pending lalu worker otomatis mendaftarkannya ke pipeline tracking.
 
 HTTP 409 PICKUP_NOT_ALLOWED bila booking provider belum berhasil atau provider_shipment_id belum tersedia.
 
-HTTP 422 PROVIDER_REJECTED bila provider menerima request tetapi hasil order pickup berstatus failed. Shipment tetap booked sehingga dapat dicoba ulang setelah data diperbaiki. Gunakan mode live untuk produksi; header sandbox hanya ketika credential Shipping Delivery sandbox sudah tersimpan.`,
+HTTP 422 PROVIDER_REJECTED bila provider menerima request tetapi hasil order pickup berstatus failed. Shipment tetap booked sehingga dapat dicoba ulang setelah data diperbaiki. scheduled_at wajib di masa depan untuk mode scheduled. Gunakan mode live untuk produksi; header sandbox hanya ketika credential Shipping Delivery sandbox sudah tersimpan.`,
   },
   {
     contract: "gateway",

@@ -107,10 +107,11 @@ func (a *FulfillmentAdapter) Pickup(
 	shipment fulfillment.Shipment,
 	request fulfillment.PickupRequest,
 ) (fulfillment.ProviderPickupResult, error) {
+	pickupAt := request.ScheduledAt.In(time.FixedZone("WIB", 7*60*60))
 	payload := map[string]any{
-		"pickup_date":    request.ScheduledAt.Format("2006-01-02"),
-		"pickup_time":    request.ScheduledAt.Format("15:04:05"),
-		"pickup_vehicle": titleVehicle(request.Vehicle),
+		"pickup_date":    pickupAt.Format("2006-01-02"),
+		"pickup_time":    pickupAt.Format("15:04:05"),
+		"pickup_vehicle": pickupVehicleForWeight(request.PackageWeightGrams),
 		"orders":         []map[string]string{{"order_no": shipment.ProviderShipmentID}},
 	}
 	var response struct {
@@ -291,12 +292,12 @@ func requestDate(now time.Time) string {
 	return now.In(time.FixedZone("WIB", 7*60*60)).Format("2006-01-02")
 }
 
-func titleVehicle(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "mobil":
-		return "Mobil"
-	case "truk":
+func pickupVehicleForWeight(weightGrams int64) string {
+	switch {
+	case weightGrams >= 10_000:
 		return "Truk"
+	case weightGrams > 5_000:
+		return "Mobil"
 	default:
 		return "Motor"
 	}

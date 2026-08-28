@@ -19,7 +19,7 @@ func TestRajaOngkirHostedArtifactPassesPackageValidator(t *testing.T) {
 		t.Fatal("resolve test path")
 	}
 	root := filepath.Clean(filepath.Join(
-		filepath.Dir(currentFile), "..", "..", "artifacts", "rajaongkir-hosted-v1.0.8",
+		filepath.Dir(currentFile), "..", "..", "artifacts", "rajaongkir-hosted-v1.0.9",
 	))
 	var buffer bytes.Buffer
 	archive := zip.NewWriter(&buffer)
