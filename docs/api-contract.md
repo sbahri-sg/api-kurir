@@ -470,6 +470,8 @@ provider merchant melalui:
 | Method | Endpoint | Scope |
 |---|---|---|
 | GET | `/api/v1/integrations/providers` | `shipping:read` |
+| GET | `/api/v1/integrations/providers/{provider_code}` | `shipping:read` |
+| PATCH | `/api/v1/integrations/provider-credentials/{provider_code}` | `shipping:write` |
 | POST | `/api/v1/integrations/providers/{provider_code}/activate` | `shipping:write` |
 | POST | `/api/v1/integrations/providers/{provider_code}/deactivate` | `shipping:write` |
 
@@ -480,9 +482,11 @@ rate bertenant mengembalikan `SHIPPING_DISABLED`. Detail state, optimistic
 concurrency, dan lifecycle credential dijelaskan pada
 [`merchant-shipping-providers.md`](merchant-shipping-providers.md).
 
-Setiap item katalog provider membawa `logo` berupa URL HTTPS permanen dan
+Setiap item listing provider membawa `logo` berupa URL HTTPS permanen dan
 `description` berupa teks biasa. Metadata presentasi tersebut dikelola satu kali
-di master API Kurir dan tidak diduplikasiasikan per merchant.
+di master API Kurir dan tidak diduplikasiasikan per merchant. Kontrak form
+credential, environment, capability, dan status auto-pickup dibaca dari endpoint
+detail provider agar payload listing tetap ringan.
 
 Request bertenant dapat mengatur layanan yang boleh muncul melalui
 `GET/PUT /api/v1/integrations/shipping-services`. Rate engine menormalisasi kode

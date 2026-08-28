@@ -1024,7 +1024,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"provider_code\": \"rajaongkir\",\n  \"api_key\": \"{{seller_rajaongkir_api_key}}\",\n  \"daily_limit\": 50000\n}",
+              "raw": "{\n  \"provider_code\": \"rajaongkir\",\n  \"environment\": \"live\",\n  \"credentials\": {\n    \"shipping_api_key\": \"{{seller_rajaongkir_shipping_key}}\"\n  },\n  \"daily_limit\": 50000\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1043,7 +1043,62 @@
                 "provider-credentials"
               ]
             },
-            "description": "Memvalidasi dan menyimpan key RajaOngkir. Key baru menggantikan key aktif lama untuk merchant yang sama. Key yang pernah dinonaktifkan dapat ditambahkan kembali; provider shipping tetap perlu diaktifkan secara eksplisit."
+            "description": "Memvalidasi dan menyimpan Shipping Cost key RajaOngkir untuk live. Field credential mengikuti endpoint detail provider. Delivery key dapat ditambahkan kemudian tanpa menghapus shipping key melalui request PATCH berikutnya."
+          },
+          "response": []
+        },
+        {
+          "name": "Add Seller RajaOngkir Delivery Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivery key ditambahkan tanpa mengganti bundle lain', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"environment\": \"live\",\n  \"credentials\": {\n    \"delivery_api_key\": \"{{seller_rajaongkir_delivery_key}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/provider-credentials/rajaongkir",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "provider-credentials",
+                "rajaongkir"
+              ]
+            },
+            "description": "Menggabungkan Delivery key ke credential live aktif. Shipping key yang tidak dikirim tetap dipertahankan. Ulangi dengan environment sandbox dan seller_rajaongkir_sandbox_delivery_key untuk mode sandbox."
           },
           "response": []
         },
@@ -1088,12 +1143,14 @@
                   "  pm.response.to.have.status(200);",
                   "});",
                   "const payload = pm.response.json();",
-                  "pm.test('Metadata tampilan provider lengkap', function () {",
+                  "pm.test('Metadata listing provider ringkas', function () {",
                   "  pm.expect(payload.data.providers).to.be.an('array').that.is.not.empty;",
                   "  payload.data.providers.forEach(function (provider) {",
                   "    pm.expect(provider.available).to.eql(true);",
                   "    pm.expect(provider.logo).to.match(/^https:\\/\\//);",
                   "    pm.expect(provider.description).to.be.a('string').and.not.empty;",
+                  "    pm.expect(provider).not.to.have.property('credential_fields');",
+                  "    pm.expect(provider).not.to.have.property('available_credentials');",
                   "  });",
                   "});",
                   "if (payload.data) {",
@@ -1124,7 +1181,52 @@
                 "providers"
               ]
             },
-            "description": "Mengembalikan hanya provider berstatus tersedia, lengkap dengan logo/deskripsi dan maksimal satu provider efektif aktif. Provider yang dimatikan admin otomatis tidak muncul di dashboard Emisell."
+            "description": "Mengembalikan listing provider yang ringan: identitas, status instalasi, dan provider aktif. Form credential dan kesiapan auto-pickup dibaca dari endpoint detail."
+          },
+          "response": []
+        },
+        {
+          "name": "Get RajaOngkir Provider Detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Kontrak instalasi provider tersedia', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const provider = pm.response.json().data;",
+                  "  pm.expect(provider.credential_fields).to.be.an('array').that.is.not.empty;",
+                  "  pm.expect(provider.available_credentials).to.be.an('object');",
+                  "  pm.expect(provider.auto_pickup_status).to.be.oneOf(['unavailable', 'not_configured', 'configured', 'invalid']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Emisell-Merchant-ID",
+                "value": "{{merchant_id}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/integrations/providers/rajaongkir",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "integrations",
+                "providers",
+                "rajaongkir"
+              ]
+            },
+            "description": "Mengambil credential_fields, environment, capability, nama credential yang telah tersedia, dan kesiapan auto-pickup. Nilai secret tidak pernah dikembalikan."
           },
           "response": []
         },

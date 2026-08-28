@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/tenancy"
 )
 
@@ -21,11 +22,26 @@ var (
 )
 
 type Service struct {
-	repository Repository
+	repository             Repository
+	credentialAvailability CredentialAvailabilityResolver
 }
 
-func NewService(repository Repository) *Service {
-	return &Service{repository: repository}
+type CredentialAvailabilityResolver interface {
+	AvailableCredentialFieldsForTenant(
+		ctx context.Context,
+		tenantID, providerCode string,
+	) (providercredentials.Availability, error)
+}
+
+func NewService(
+	repository Repository,
+	availability ...CredentialAvailabilityResolver,
+) *Service {
+	service := &Service{repository: repository}
+	if len(availability) > 0 {
+		service.credentialAvailability = availability[0]
+	}
+	return service
 }
 
 func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error) {
@@ -34,6 +50,99 @@ func (s *Service) Catalog(ctx context.Context, tenantID string) (Catalog, error)
 		return Catalog{}, ErrInvalidTenant
 	}
 	return s.repository.Catalog(ctx, tenantID)
+}
+
+func (s *Service) Provider(
+	ctx context.Context,
+	tenantID, providerCode string,
+) (Detail, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
+	if !validTenantID(tenantID) {
+		return Detail{}, ErrInvalidTenant
+	}
+	if !validProviderCode(providerCode) {
+		return Detail{}, ErrInvalidProvider
+	}
+	catalog, err := s.repository.Catalog(ctx, tenantID)
+	if err != nil {
+		return Detail{}, err
+	}
+	var provider *Provider
+	for index := range catalog.Providers {
+		if catalog.Providers[index].Code == providerCode {
+			provider = &catalog.Providers[index]
+			break
+		}
+	}
+	if provider == nil {
+		return Detail{}, ErrProviderNotFound
+	}
+	detail := Detail{
+		Provider:             *provider,
+		AutoPickupStatus:     "unavailable",
+		AvailableCredentials: make(map[string][]string),
+	}
+	for _, environment := range provider.Environments {
+		detail.AvailableCredentials[environment.Code] = []string{}
+	}
+	availability := providercredentials.Availability{
+		FieldsByEnvironment: map[string][]string{},
+		StatusByEnvironment: map[string]string{},
+	}
+	if provider.RequiresCredential && s.credentialAvailability != nil {
+		availability, err = s.credentialAvailability.AvailableCredentialFieldsForTenant(
+			ctx, tenantID, providerCode,
+		)
+		if errors.Is(err, providercredentials.ErrNotFound) {
+			err = nil
+		}
+		if err != nil {
+			return Detail{}, err
+		}
+	}
+	for environment, fields := range availability.FieldsByEnvironment {
+		detail.AvailableCredentials[environment] = append([]string(nil), fields...)
+	}
+	pickupCredentialFields := make([]string, 0)
+	for _, field := range provider.CredentialFields {
+		if contains(field.Capabilities, "pickup:write") {
+			pickupCredentialFields = append(pickupCredentialFields, field.Code)
+		}
+	}
+	pickupSupported := len(pickupCredentialFields) > 0 ||
+		contains(provider.RequiredScopes, "pickup:write")
+	if !pickupSupported {
+		return detail, nil
+	}
+	if !provider.RequiresCredential {
+		detail.AutoPickup = true
+		detail.AutoPickupStatus = "configured"
+		return detail, nil
+	}
+	detail.AutoPickupStatus = "not_configured"
+	for _, code := range pickupCredentialFields {
+		if !contains(detail.AvailableCredentials[providercredentials.EnvironmentLive], code) {
+			continue
+		}
+		if availability.StatusByEnvironment[providercredentials.EnvironmentLive] == "invalid" {
+			detail.AutoPickupStatus = "invalid"
+			return detail, nil
+		}
+		detail.AutoPickup = true
+		detail.AutoPickupStatus = "configured"
+		return detail, nil
+	}
+	return detail, nil
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) HasActiveProvider(ctx context.Context, tenantID string) (bool, error) {

@@ -2272,6 +2272,11 @@ label {
   background: #fff1d6;
 }
 
+.method-patch {
+  color: #6b3f91;
+  background: #f2e8fa;
+}
+
 .method-delete {
   color: #9b3f38;
   background: #f9e8e6;

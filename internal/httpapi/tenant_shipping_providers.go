@@ -14,6 +14,52 @@ type changeTenantShippingProviderRequest struct {
 	ExpectedVersion *int64 `json:"expected_version"`
 }
 
+type tenantShippingProviderSummary struct {
+	Code               string `json:"code"`
+	Name               string `json:"name"`
+	Logo               string `json:"logo"`
+	Description        string `json:"description"`
+	BuiltIn            bool   `json:"built_in"`
+	IntegrationType    string `json:"integration_type"`
+	DistributionType   string `json:"distribution_type"`
+	RequiresCredential bool   `json:"requires_credential"`
+	Available          bool   `json:"available"`
+	Installed          bool   `json:"installed"`
+	Active             bool   `json:"active"`
+}
+
+type tenantShippingProviderCatalogResponse struct {
+	ActiveProviderCode *string                         `json:"active_provider_code"`
+	Version            int64                           `json:"version"`
+	Providers          []tenantShippingProviderSummary `json:"providers"`
+}
+
+func tenantShippingProviderCatalog(
+	catalog merchantproviders.Catalog,
+) tenantShippingProviderCatalogResponse {
+	result := tenantShippingProviderCatalogResponse{
+		ActiveProviderCode: catalog.ActiveProviderCode,
+		Version:            catalog.Version,
+		Providers:          make([]tenantShippingProviderSummary, 0, len(catalog.Providers)),
+	}
+	for _, provider := range catalog.Providers {
+		result.Providers = append(result.Providers, tenantShippingProviderSummary{
+			Code:               provider.Code,
+			Name:               provider.Name,
+			Logo:               provider.Logo,
+			Description:        provider.Description,
+			BuiltIn:            provider.BuiltIn,
+			IntegrationType:    provider.IntegrationType,
+			DistributionType:   provider.DistributionType,
+			RequiresCredential: provider.RequiresCredential,
+			Available:          provider.Available,
+			Installed:          provider.Installed,
+			Active:             provider.Active,
+		})
+	}
+	return result
+}
+
 func tenantShippingProviderCatalogHandler(
 	service *merchantproviders.Service,
 ) echo.HandlerFunc {
@@ -22,6 +68,24 @@ func tenantShippingProviderCatalogHandler(
 		result, err := service.Catalog(c.Request().Context(), identity.TenantID)
 		if err != nil {
 			return err
+		}
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.JSON(http.StatusOK, adminResponse(c, tenantShippingProviderCatalog(result)))
+	}
+}
+
+func tenantShippingProviderDetailHandler(
+	service *merchantproviders.Service,
+) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		identity, _ := tenancy.FromContext(c.Request().Context())
+		result, err := service.Provider(
+			c.Request().Context(),
+			identity.TenantID,
+			strings.TrimSpace(c.Param("provider_code")),
+		)
+		if response := writeTenantShippingProviderError(c, err); response != nil {
+			return response
 		}
 		c.Response().Header().Set("Cache-Control", "no-store")
 		return c.JSON(http.StatusOK, adminResponse(c, result))
@@ -49,7 +113,7 @@ func tenantShippingProviderActivateHandler(
 		if response := writeTenantShippingProviderError(c, err); response != nil {
 			return response
 		}
-		return c.JSON(http.StatusOK, adminResponse(c, result))
+		return c.JSON(http.StatusOK, adminResponse(c, tenantShippingProviderCatalog(result)))
 	}
 }
 
@@ -74,7 +138,7 @@ func tenantShippingProviderDeactivateHandler(
 		if response := writeTenantShippingProviderError(c, err); response != nil {
 			return response
 		}
-		return c.JSON(http.StatusOK, adminResponse(c, result))
+		return c.JSON(http.StatusOK, adminResponse(c, tenantShippingProviderCatalog(result)))
 	}
 }
 

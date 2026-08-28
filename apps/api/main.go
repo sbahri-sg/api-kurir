@@ -92,9 +92,6 @@ func run(logger *slog.Logger) error {
 			cfg.MerchantShipping.MaxSelectedServices,
 		),
 	)
-	merchantProviderService := merchantproviders.NewService(
-		merchantproviders.NewPostgresRepository(pool),
-	)
 	providerCredentialCipher, err := providercredentials.NewCipher(
 		cfg.ProviderCredentials.EncryptionKey,
 	)
@@ -115,6 +112,10 @@ func run(logger *slog.Logger) error {
 				cfg.Biteship.Timeout,
 			),
 		}),
+	)
+	merchantProviderService := merchantproviders.NewService(
+		merchantproviders.NewPostgresRepository(pool),
+		providerCredentialService,
 	)
 	webhookSettingsService := webhooksettings.NewService(
 		webhooksettings.NewPostgresRepository(pool),

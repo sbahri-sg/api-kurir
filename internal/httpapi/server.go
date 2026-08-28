@@ -332,6 +332,10 @@ func registerTenantIntegrationRoutes(
 		"/provider-credentials",
 		tenantProviderCredentialCreateHandler(providerCredentialService),
 	)
+	integrationGroup.PATCH(
+		"/provider-credentials/:provider_code",
+		tenantProviderCredentialPatchHandler(providerCredentialService),
+	)
 	integrationGroup.POST(
 		"/provider-credentials/:provider_code/disable",
 		tenantProviderCredentialDisableHandler(providerCredentialService),
@@ -339,6 +343,10 @@ func registerTenantIntegrationRoutes(
 	integrationGroup.GET(
 		"/providers",
 		tenantShippingProviderCatalogHandler(merchantProviderService),
+	)
+	integrationGroup.GET(
+		"/providers/:provider_code",
+		tenantShippingProviderDetailHandler(merchantProviderService),
 	)
 	integrationGroup.POST(
 		"/providers/:provider_code/activate",
@@ -642,7 +650,7 @@ func developmentCORSMiddleware() echo.MiddlewareFunc {
 				headers := c.Response().Header()
 				headers.Set("Access-Control-Allow-Origin", origin)
 				headers.Set("Access-Control-Allow-Headers", "Authorization, key, Content-Type, X-Request-Id, X-Admin-Actor")
-				headers.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				headers.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				headers.Set("Vary", "Origin")
 			}
 			if c.Request().Method == http.MethodOptions {

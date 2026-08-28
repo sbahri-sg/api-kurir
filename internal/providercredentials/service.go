@@ -143,7 +143,8 @@ func (s *Service) AddForTenantEnvironmentCredentials(
 	if err != nil {
 		return Credential{}, err
 	}
-	if credentialType == CredentialTypeCapabilityAPIKeys {
+	if credentialType == CredentialTypeCapabilityAPIKeys ||
+		(credentialType == CredentialTypeProviderDeclared && providerCode == "rajaongkir") {
 		values = normalizeLegacyShippingAPIKey(values)
 		if values == nil {
 			return Credential{}, ErrInvalidSecret
@@ -167,6 +168,77 @@ func (s *Service) AddForTenantEnvironmentCredentials(
 	return s.store(
 		ctx, tenantID, providerCode, environment, payload, displaySource,
 		dailyLimit, actor, requestID,
+	)
+}
+
+func (s *Service) PatchForTenantEnvironmentCredentials(
+	ctx context.Context,
+	tenantID, providerCode, environment string,
+	values map[string]string,
+	dailyLimit *int64,
+	actor, requestID string,
+) (Credential, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
+	var validEnvironment bool
+	environment, validEnvironment = NormalizeEnvironmentStrict(environment)
+	if !validEnvironment {
+		return Credential{}, ErrEnvironmentUnavailable
+	}
+	if !validTenantID(tenantID) {
+		return Credential{}, ErrInvalidTenant
+	}
+	if len(values) == 0 {
+		return Credential{}, ErrInvalidSecret
+	}
+	stored, err := s.repository.ActiveStoredForTenantProvider(
+		ctx, tenantID, providerCode, environment,
+	)
+	if err != nil {
+		return Credential{}, err
+	}
+	credentialType, fields, err := s.credentialDefinition(ctx, providerCode)
+	if err != nil {
+		return Credential{}, err
+	}
+	existing, _, err := s.decryptStoredCredential(stored)
+	if err != nil {
+		return Credential{}, err
+	}
+	merged := make(map[string]string, len(existing)+len(values))
+	for code, value := range existing {
+		merged[code] = value
+	}
+	for code, value := range values {
+		merged[code] = value
+	}
+	normalized, err := NormalizeCredentialValuesForFields(fields, environment, merged)
+	if err != nil {
+		return Credential{}, ErrInvalidSecret
+	}
+	validationContext := WithExecutionEnvironment(ctx, environment)
+	if err := s.validatePatchedCredentialValues(
+		validationContext, providerCode, credentialType, normalized, values,
+	); err != nil {
+		return Credential{}, fmt.Errorf("%w: %v", ErrInvalidSecret, err)
+	}
+	payload, err := json.Marshal(encryptedCredentialBundle{
+		Version: 1, Type: credentialType, Values: normalized,
+	})
+	if err != nil {
+		return Credential{}, err
+	}
+	limit := stored.DailyLimit
+	if dailyLimit != nil {
+		limit = *dailyLimit
+	}
+	if limit < 1 || limit > 100_000_000 {
+		return Credential{}, ErrInvalidDailyLimit
+	}
+	displaySource := credentialDisplaySource(credentialType, fields, normalized)
+	return s.store(
+		ctx, tenantID, providerCode, environment, payload, displaySource,
+		limit, actor, requestID,
 	)
 }
 
@@ -296,6 +368,66 @@ func (s *Service) validateCredentialValues(
 		return ErrUnsupportedProvider
 	}
 	return s.validator.Validate(ctx, providerCode, secret)
+}
+
+func (s *Service) validatePatchedCredentialValues(
+	ctx context.Context,
+	providerCode string,
+	credentialType string,
+	values map[string]string,
+	changed map[string]string,
+) error {
+	if credentialType == CredentialTypeProviderDeclared && providerCode == "rajaongkir" {
+		if _, shippingChanged := changed["shipping_api_key"]; !shippingChanged {
+			// Adding the optional Shipping Delivery key must not spend another
+			// Shipping Cost validation hit or reject a valid stored shipping key.
+			return nil
+		}
+	}
+	return s.validateCredentialValues(ctx, providerCode, credentialType, values)
+}
+
+func (s *Service) AvailableCredentialFieldsForTenant(
+	ctx context.Context,
+	tenantID, providerCode string,
+) (Availability, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
+	if !validTenantID(tenantID) {
+		return Availability{}, ErrInvalidTenant
+	}
+	if _, _, err := s.credentialDefinition(ctx, providerCode); err != nil {
+		return Availability{}, err
+	}
+	result := Availability{
+		FieldsByEnvironment: make(map[string][]string),
+		StatusByEnvironment: make(map[string]string),
+	}
+	for _, environment := range []string{EnvironmentLive, EnvironmentSandbox} {
+		stored, err := s.repository.ActiveStoredForTenantProvider(
+			ctx, tenantID, providerCode, environment,
+		)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return Availability{}, err
+		}
+		values, _, err := s.decryptStoredCredential(stored)
+		if err != nil {
+			return Availability{}, err
+		}
+		codes := make([]string, 0, len(values))
+		for code, value := range values {
+			if strings.TrimSpace(value) != "" {
+				codes = append(codes, code)
+			}
+		}
+		sort.Strings(codes)
+		result.FieldsByEnvironment[environment] = codes
+		result.StatusByEnvironment[environment] = stored.ValidationStatus
+	}
+	return result, nil
 }
 
 func credentialDisplaySource(
@@ -463,20 +595,29 @@ func (s *Service) ResolveProviderCredentialValues(
 	if err != nil {
 		return nil, "", "", 0, err
 	}
-	fingerprintHex := hex.EncodeToString(stored.Fingerprint)
-	plaintext, err := s.cipher.Decrypt(
-		stored.SecretCiphertext,
-		[]byte(providerCode+":"+fingerprintHex),
-	)
+	values, credentialType, err := s.decryptStoredCredential(stored)
 	if err != nil {
 		return nil, "", "", 0, err
 	}
+	return values, credentialType, stored.CredentialAlias, stored.DailyLimit, nil
+}
+
+func (s *Service) decryptStoredCredential(
+	stored StoredCredential,
+) (map[string]string, string, error) {
+	fingerprintHex := hex.EncodeToString(stored.Fingerprint)
+	plaintext, err := s.cipher.Decrypt(
+		stored.SecretCiphertext,
+		[]byte(stored.ProviderCode+":"+fingerprintHex),
+	)
+	if err != nil {
+		return nil, "", err
+	}
 	var bundle encryptedCredentialBundle
 	if json.Unmarshal(plaintext, &bundle) == nil && bundle.Version == 1 && bundle.Type != "" {
-		return bundle.Values, bundle.Type, stored.CredentialAlias, stored.DailyLimit, nil
+		return bundle.Values, bundle.Type, nil
 	}
-	return map[string]string{"api_key": string(plaintext)}, CredentialTypeAPIKey,
-		stored.CredentialAlias, stored.DailyLimit, nil
+	return map[string]string{"api_key": string(plaintext)}, CredentialTypeAPIKey, nil
 }
 
 // ActiveCredentialID resolves the credential selected internally for a

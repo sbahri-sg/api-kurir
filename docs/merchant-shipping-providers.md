@@ -11,7 +11,7 @@ Emisell dan API Kurir.
   Emisell Kurir atau provider eksternal bila membutuhkan pengiriman.
 - Maksimal satu provider shipping efektif aktif per merchant; state tanpa
   provider aktif diperbolehkan.
-- Satu merchant mempunyai maksimal satu credential aktif per provider.
+- Satu merchant mempunyai maksimal satu credential aktif per provider dan environment.
 - Credential ID sepenuhnya internal API Kurir.
 - Biteship hanya fallback internal cek ongkir/resi Emisell Kurir dan tidak dapat
   dipilih atau diaktifkan langsung oleh seller.
@@ -59,7 +59,10 @@ Content-Type: application/json
 
 {
   "provider_code": "rajaongkir",
-  "api_key": "<seller-provider-key>",
+  "environment": "live",
+  "credentials": {
+    "shipping_api_key": "<seller-shipping-key>"
+  },
   "daily_limit": 50000
 }
 ```
@@ -80,6 +83,24 @@ Seller dapat memilih Emisell Kurir atau memasang key provider lain setelahnya.
 Key yang sama dapat dipasang kembali oleh merchant yang sama. API Kurir
 mengaktifkan kembali record credential lama agar audit dan kuota tetap
 konsisten; provider shipping tidak ikut aktif sampai endpoint aktivasi dipanggil.
+
+Jika seller kemudian mengaktifkan auto-pickup, tambahkan delivery key tanpa
+menghapus shipping key yang sudah tersimpan:
+
+```http
+PATCH /api/v1/integrations/provider-credentials/rajaongkir
+Content-Type: application/json
+
+{
+  "environment": "live",
+  "credentials": {
+    "delivery_api_key": "<seller-delivery-key>"
+  }
+}
+```
+
+PATCH menggabungkan field ke bundle aktif pada environment yang sama. Field
+yang tidak dikirim tetap dipertahankan dan seluruh bundle dienkripsi ulang.
 
 ## Membaca katalog
 
@@ -118,10 +139,16 @@ GET /api/v1/integrations/providers
 `src` gambar oleh dashboard Emisell. `description` adalah teks biasa tanpa HTML.
 Metadata ini berasal dari master provider API Kurir, bukan disimpan ulang per
 merchant. Seluruh item pada response ini selalu mempunyai `available=true`.
-Response juga membawa `integration_type`, `distribution_type`,
-`active_release_version`, `required_scopes`, dan `granted_scopes`. Main Service
-dapat mengabaikannya untuk kompatibilitas, tetapi sebaiknya mencatat versi
-release dan scope pada log aktivasi.
+Response listing hanya membawa metadata ringkas. Main Service membuka
+`GET /api/v1/integrations/providers/{provider_code}` ketika seller melihat atau
+memasang satu provider. Endpoint detail membawa `credential_fields`, environment,
+capability policy, versi release, scope, `available_credentials`, `auto_pickup`,
+dan `auto_pickup_status`.
+
+`available_credentials` hanya berisi nama field, bukan nilai secret. Status
+auto-pickup bernilai `configured` bila provider mendukung pickup dan credential
+live yang diperlukan tersedia; nilai lain adalah `unavailable`,
+`not_configured`, atau `invalid`.
 
 ## Pengelolaan master provider
 
@@ -184,11 +211,12 @@ memiliki `active=false`. Permintaan ongkir bertenant akan mengembalikan HTTP
 
 ## Alur dashboard Emisell
 
-1. Baca `GET /integrations/providers`.
+1. Baca `GET /integrations/providers` untuk listing ringkas.
 2. Jangan mengaktifkan provider otomatis saat merchant dibuat.
 3. Bila seller mengaktifkan Emisell Kurir, panggil endpoint activate untuk
    `emisell`.
-4. Jika seller memasang RajaOngkir, kirim key ke endpoint credential.
+4. Baca `GET /integrations/providers/{provider_code}`, render
+   `credential_fields`, lalu kirim key ke endpoint credential.
 5. Baca ulang katalog sampai `installed=true`, lalu aktifkan RajaOngkir dengan
    provider code dan version katalog.
 6. Saat seller mematikan extension kurir, panggil endpoint deactivate untuk
@@ -196,6 +224,8 @@ memiliki `active=false`. Permintaan ongkir bertenant akan mengembalikan HTTP
 7. Render kurir/service dari `GET /integrations/shipping-services` hanya ketika
    `active_provider_code` tidak `null`; patuhi `limits` dan `selectable` dari
    response agar checkbox tidak melewati batas merchant.
+8. Ketika seller mengaktifkan auto-pickup setelah instalasi, tambahkan field
+   delivery melalui PATCH credential dan baca ulang endpoint detail.
 
 ## Katalog layanan per provider
 

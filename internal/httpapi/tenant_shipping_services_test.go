@@ -280,8 +280,10 @@ func TestRegisterTenantIntegrationRoutesUsesCanonicalAPIPath(t *testing.T) {
 	for _, expected := range []string{
 		"GET /api/v1/integrations/provider-credentials",
 		"POST /api/v1/integrations/provider-credentials",
+		"PATCH /api/v1/integrations/provider-credentials/:provider_code",
 		"POST /api/v1/integrations/provider-credentials/:provider_code/disable",
 		"GET /api/v1/integrations/providers",
+		"GET /api/v1/integrations/providers/:provider_code",
 		"POST /api/v1/integrations/providers/:provider_code/activate",
 		"POST /api/v1/integrations/providers/:provider_code/deactivate",
 		"GET /api/v1/integrations/shipping-services",

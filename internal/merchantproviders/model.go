@@ -32,6 +32,13 @@ type Catalog struct {
 	Providers          []Provider `json:"providers"`
 }
 
+type Detail struct {
+	Provider
+	AutoPickup           bool                `json:"auto_pickup"`
+	AutoPickupStatus     string              `json:"auto_pickup_status"`
+	AvailableCredentials map[string][]string `json:"available_credentials"`
+}
+
 type ChangeInput struct {
 	ExpectedVersion *int64
 	UpdatedBy       string

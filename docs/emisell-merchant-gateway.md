@@ -69,7 +69,10 @@ tidak dapat mengakses `/api/v1/integrations/*` atau membawa konteks merchant.
    `description` pada setiap item dapat langsung dipakai untuk listing extension.
    Endpoint hanya mengirim provider berstatus tersedia; provider yang dimatikan
    operator otomatis hilang dari daftar dashboard seller.
-6. Aktivasi dilakukan dengan provider code dan `expected_version`; API Kurir
+6. Detail instalasi dan `credential_fields` dibaca dari
+   `GET /api/v1/integrations/providers/{provider_code}`. Endpoint ini juga
+   mengembalikan kesiapan auto-pickup dan nama field credential yang tersedia.
+7. Aktivasi dilakukan dengan provider code dan `expected_version`; API Kurir
    memilih credential aktif secara otomatis.
 
 Merchant dapat memasang beberapa provider, tetapi maksimal satu provider
@@ -85,8 +88,10 @@ RajaOngkir BYOK tidak pernah memakai credential atau saldo Biteship platform.
 |---|---|
 | `GET /api/v1/integrations/provider-credentials` | Metadata key merchant tanpa secret/UUID internal |
 | `POST /api/v1/integrations/provider-credentials` | Validasi dan simpan/ganti key provider |
+| `PATCH /api/v1/integrations/provider-credentials/{provider_code}` | Tambah/rotasi sebagian field tanpa menghapus key lain |
 | `POST /api/v1/integrations/provider-credentials/{provider_code}/disable` | Putuskan key berdasarkan provider code |
-| `GET /api/v1/integrations/providers` | Katalog provider dan provider efektif aktif |
+| `GET /api/v1/integrations/providers` | Listing provider ringkas dan provider efektif aktif |
+| `GET /api/v1/integrations/providers/{provider_code}` | Detail form credential, environment, capability, dan auto-pickup |
 | `POST /api/v1/integrations/providers/{provider_code}/activate` | Aktifkan provider; credential dipilih internal |
 | `POST /api/v1/integrations/providers/{provider_code}/deactivate` | Nonaktifkan shipping merchant bila provider tersebut sedang aktif |
 | `GET/PUT /api/v1/integrations/shipping-services` | Baca limit/selectable dan simpan pilihan custom grup regular, next_day, economy, atau cargo |

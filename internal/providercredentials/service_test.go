@@ -100,6 +100,21 @@ func (r *memoryRepository) DisableForTenantProvider(
 	return nil
 }
 
+func (r *memoryRepository) ActiveStoredForTenantProvider(
+	_ context.Context,
+	tenantID, providerCode, environment string,
+) (StoredCredential, error) {
+	if r.item.ID == "" || r.disabled || r.item.TenantID != tenantID ||
+		r.item.ProviderCode != providerCode || r.item.Environment != NormalizeEnvironment(environment) {
+		return StoredCredential{}, ErrNotFound
+	}
+	return StoredCredential{
+		Credential:       r.item,
+		SecretCiphertext: r.input.SecretCiphertext,
+		Fingerprint:      r.input.SecretFingerprint,
+	}, nil
+}
+
 func TestTenantCannotInstallInternalFallbackProvider(t *testing.T) {
 	t.Parallel()
 
@@ -403,6 +418,93 @@ func TestProviderDeclaredSandboxCredentialUsesSandboxFieldOnly(t *testing.T) {
 	}
 	if value, exists := repository.inputSecretValue(t, cipher, "delivery_api_key"); !exists || value != "sandbox-delivery-key" {
 		t.Fatalf("sandbox delivery credential missing: value=%q exists=%t", value, exists)
+	}
+}
+
+func TestProviderDeclaredRajaOngkirAcceptsLegacyAPIKey(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &declarativeMemoryRepository{fields: []FieldDefinition{{
+		Code: "shipping_api_key", Label: "Shipping key", InputType: "password",
+		Secret: true, Required: true, Capabilities: []string{"rates:read"},
+		Environments: []string{EnvironmentLive},
+	}}}
+	service := NewService(repository, cipher, &acceptingValidator{})
+	_, err = service.AddForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentLive,
+		map[string]string{"api_key": "legacy-shipping-key"},
+		50_000, "tenant:merchant_123", "req_legacy",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, exists := repository.inputSecretValue(t, cipher, "shipping_api_key")
+	if !exists || value != "legacy-shipping-key" {
+		t.Fatalf("shipping credential value=%q exists=%t", value, exists)
+	}
+}
+
+func TestPatchProviderDeclaredCredentialMergesOptionalDeliveryKey(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &declarativeMemoryRepository{fields: []FieldDefinition{
+		{
+			Code: "shipping_api_key", Label: "Shipping key", InputType: "password",
+			Secret: true, Required: true, Capabilities: []string{"rates:read"},
+			Environments: []string{EnvironmentLive},
+		},
+		{
+			Code: "delivery_api_key", Label: "Delivery key", InputType: "password",
+			Secret: true, Required: false, Capabilities: []string{"pickup:write"},
+			Environments: []string{EnvironmentLive, EnvironmentSandbox},
+		},
+	}}
+	validator := &acceptingValidator{}
+	service := NewService(repository, cipher, validator)
+	_, err = service.AddForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentLive,
+		map[string]string{"shipping_api_key": "shipping-live-key"},
+		50_000, "tenant:merchant_123", "req_create",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("initial validation calls=%d want=1", validator.calls)
+	}
+	updated, err := service.PatchForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentLive,
+		map[string]string{"delivery_api_key": "delivery-live-key"},
+		nil, "tenant:merchant_123", "req_patch",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DailyLimit != 50_000 || validator.calls != 1 {
+		t.Fatalf("updated=%#v validation calls=%d", updated, validator.calls)
+	}
+	shipping, shippingExists := repository.inputSecretValue(t, cipher, "shipping_api_key")
+	delivery, deliveryExists := repository.inputSecretValue(t, cipher, "delivery_api_key")
+	if !shippingExists || shipping != "shipping-live-key" ||
+		!deliveryExists || delivery != "delivery-live-key" {
+		t.Fatalf("merged fields shipping=%q/%t delivery=%q/%t", shipping, shippingExists, delivery, deliveryExists)
+	}
+	availability, err := service.AvailableCredentialFieldsForTenant(
+		context.Background(), "merchant_123", "rajaongkir",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := availability.FieldsByEnvironment[EnvironmentLive]; len(got) != 2 || got[0] != "delivery_api_key" || got[1] != "shipping_api_key" {
+		t.Fatalf("available live fields=%#v", got)
 	}
 }
 

@@ -25,6 +25,12 @@ type tenantProviderCredentialResponse struct {
 	DisabledAt       *time.Time `json:"disabled_at"`
 }
 
+type patchTenantProviderCredentialRequest struct {
+	Environment string            `json:"environment,omitempty"`
+	Credentials map[string]string `json:"credentials"`
+	DailyLimit  *int64            `json:"daily_limit,omitempty"`
+}
+
 func tenantProviderCredential(item providercredentials.Credential) tenantProviderCredentialResponse {
 	return tenantProviderCredentialResponse{
 		ProviderCode:     item.ProviderCode,
@@ -134,6 +140,36 @@ func tenantProviderCredentialDisableHandler(
 	}
 }
 
+func tenantProviderCredentialPatchHandler(
+	service *providercredentials.Service,
+) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		identity, _ := tenancy.FromContext(c.Request().Context())
+		providerCode := strings.ToLower(strings.TrimSpace(c.Param("provider_code")))
+		if providerCode == "" {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "Kode provider wajib diisi.", nil)
+		}
+		var request patchTenantProviderCredentialRequest
+		if err := decodeAdminJSON(c, &request); err != nil {
+			return writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), nil)
+		}
+		result, err := service.PatchForTenantEnvironmentCredentials(
+			c.Request().Context(),
+			identity.TenantID,
+			providerCode,
+			request.Environment,
+			request.Credentials,
+			request.DailyLimit,
+			"tenant:"+identity.TenantID,
+			requestID(c),
+		)
+		if response := writeTenantProviderCredentialError(c, err); response != nil {
+			return response
+		}
+		return c.JSON(http.StatusOK, adminResponse(c, tenantProviderCredential(result)))
+	}
+}
+
 func writeTenantProviderCredentialError(c *echo.Context, err error) error {
 	switch {
 	case errors.Is(err, providercredentials.ErrUnsupportedProvider):
@@ -168,6 +204,14 @@ func writeTenantProviderCredentialError(c *echo.Context, err error) error {
 			http.StatusConflict,
 			"PROVIDER_KEY_EXISTS",
 			"API key sudah terikat pada credential lain dan tidak dapat digunakan untuk merchant ini.",
+			nil,
+		)
+	case errors.Is(err, providercredentials.ErrNotFound):
+		return writeError(
+			c,
+			http.StatusNotFound,
+			"PROVIDER_CREDENTIAL_NOT_FOUND",
+			"Credential aktif untuk provider dan environment tersebut belum tersedia.",
 			nil,
 		)
 	case err != nil:

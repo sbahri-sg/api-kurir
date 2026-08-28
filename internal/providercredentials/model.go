@@ -26,6 +26,11 @@ type StoredCredential struct {
 	Fingerprint      []byte
 }
 
+type Availability struct {
+	FieldsByEnvironment map[string][]string `json:"available_credentials"`
+	StatusByEnvironment map[string]string   `json:"-"`
+}
+
 type CreateInput struct {
 	ID                  string
 	TenantID            string

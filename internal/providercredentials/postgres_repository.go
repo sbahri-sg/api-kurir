@@ -472,6 +472,62 @@ func (r *PostgresRepository) DisableForTenantProvider(
 	return nil
 }
 
+func (r *PostgresRepository) ActiveStoredForTenantProvider(
+	ctx context.Context,
+	tenantID, providerCode, environment string,
+) (StoredCredential, error) {
+	environment = NormalizeEnvironment(environment)
+	var item StoredCredential
+	err := r.pool.QueryRow(ctx, `
+		SELECT
+			id::text,
+			tenant_id,
+			provider_code,
+			environment_code,
+			credential_alias,
+			key_prefix || '••••' || key_last_four,
+			daily_limit,
+			active,
+			validation_status,
+			last_validated_at,
+			last_selected_at,
+			created_at,
+			disabled_at,
+			secret_ciphertext,
+			secret_fingerprint
+		FROM provider_credentials
+		WHERE tenant_id = $1
+		  AND provider_code = $2
+		  AND environment_code = $3
+		  AND active
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, tenantID, providerCode, environment).Scan(
+		&item.ID,
+		&item.TenantID,
+		&item.ProviderCode,
+		&item.Environment,
+		&item.CredentialAlias,
+		&item.DisplayKey,
+		&item.DailyLimit,
+		&item.Active,
+		&item.ValidationStatus,
+		&item.LastValidatedAt,
+		&item.LastSelectedAt,
+		&item.CreatedAt,
+		&item.DisabledAt,
+		&item.SecretCiphertext,
+		&item.Fingerprint,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return StoredCredential{}, ErrNotFound
+	}
+	if err != nil {
+		return StoredCredential{}, fmt.Errorf("get active merchant provider credential: %w", err)
+	}
+	return item, nil
+}
+
 func (r *PostgresRepository) disable(
 	ctx context.Context,
 	tenantID, id, actor, requestID string,

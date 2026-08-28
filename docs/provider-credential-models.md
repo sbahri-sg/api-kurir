@@ -1,7 +1,7 @@
 # Model credential provider
 
 API Kurir mengirim `credential_type` dan `credential_fields` pada
-`GET /api/v1/integrations/providers`. Main Service atau dashboard Emisell tidak
+`GET /api/v1/integrations/providers/{provider_code}`. Main Service atau dashboard Emisell tidak
 perlu mempunyai form khusus untuk setiap provider; field dirender dari kontrak
 ini ketika seller memilih provider yang mewajibkan credential, baik
 managed-upstream maupun partner-hosted BYOK seperti RajaOngkir.
@@ -63,13 +63,15 @@ Dashboard mengirim nilai sesuai kode field:
 
 Urutan aktivasi merchant:
 
-1. Emisell membaca `GET /api/v1/integrations/providers`.
-2. Saat seller memilih provider dengan `requires_credential: true`, dashboard
+1. Emisell membaca `GET /api/v1/integrations/providers` untuk listing ringkas.
+2. Saat seller membuka satu provider, Emisell membaca
+   `GET /api/v1/integrations/providers/{provider_code}`.
+3. Saat seller memilih provider dengan `requires_credential: true`, dashboard
    merender `credential_fields` untuk environment yang dipilih. OAuth otomatis
    menampilkan `client_id` dan `client_secret`.
-3. Backend Emisell mengirim bundle ke
+4. Backend Emisell mengirim bundle ke
    `POST /api/v1/integrations/provider-credentials`.
-4. Setelah credential valid, backend mengaktifkan provider melalui
+5. Setelah credential valid, backend mengaktifkan provider melalui
    `POST /api/v1/integrations/providers/{provider_code}/activate`.
 
 API Kurir menolak field tambahan, mengenkripsi seluruh bundle menggunakan
@@ -82,10 +84,28 @@ pertama.
 Field `api_key` pada request lama tetap didukung untuk kompatibilitas
 RajaOngkir.
 
+Jika credential opsional ditambahkan setelah instalasi, gunakan PATCH agar
+field lama tidak hilang:
+
+```json
+{
+  "environment": "live",
+  "credentials": {
+    "delivery_api_key": "delivery-key-seller"
+  }
+}
+```
+
+Request tersebut dikirim ke
+`PATCH /api/v1/integrations/provider-credentials/{provider_code}`. Kesiapan
+auto-pickup dan nama field yang sudah tersedia dibaca kembali melalui endpoint
+detail provider. Nilai secret tidak pernah dikembalikan.
+
 ## Credential berdasarkan fungsi
 
-RajaOngkir menggunakan `capability_api_keys`. `shipping_api_key` wajib dan
-dipakai untuk `rates:read` serta `tracking:read`. `delivery_api_key` bersifat
+Package hosted RajaOngkir mendeklarasikan model `provider_declared` dengan pola
+field per capability. `shipping_api_key` wajib dan dipakai untuk `rates:read`
+serta `tracking:read`. `delivery_api_key` bersifat
 opsional selama merchant hanya memakai ongkir/tracking; field ini dipakai untuk
 `shipments:write`, `pickup:write`, `labels:read`, dan `shipments:cancel` ketika
 fitur fulfillment diaktifkan.

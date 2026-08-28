@@ -1,5 +1,5 @@
 export type ApiDocumentationScope = "customer" | "admin" | "partner";
-export type ApiDocumentationMethod = "GET" | "POST" | "PUT" | "DELETE";
+export type ApiDocumentationMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type ApiDocumentationContract =
   | "rajaongkir-v2"
   | "emisell-legacy"
@@ -2094,7 +2094,7 @@ Content-Type: application/json
       "delivery_api_key opsional selama seller hanya menggunakan cek ongkir dan tracking.",
       "Payload lama api_key tetap diterima dan dipetakan ke shipping_api_key.",
       `Contoh OAuth: { "provider_code": "provider-oauth", "credentials": { "client_id": "...", "client_secret": "..." } }`,
-      "Nama field wajib mengikuti credential_fields dari GET /api/v1/integrations/providers.",
+      "Nama field wajib mengikuti credential_fields dari GET /api/v1/integrations/providers/{provider_code}.",
       "environment menerima live atau sandbox; jika tidak dikirim selalu dianggap live.",
       "Mengirim shipping_api_key dan delivery_api_key tanpa environment hanya mengonfigurasi live, bukan sandbox.",
       "Live dan sandbox wajib memakai dua request terpisah. Secret kedua mode tidak pernah disalin atau dicampur otomatis.",
@@ -2106,6 +2106,44 @@ Content-Type: application/json
     "provider_code": "rajaongkir",
     "environment": "live",
     "display_key": "demo••••1234",
+    "daily_limit": 50000,
+    "active": true,
+    "validation_status": "valid"
+  },
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "PATCH",
+    path: "/api/v1/integrations/provider-credentials/{provider_code}",
+    title: "Tambahkan credential opsional tanpa menghapus key lama",
+    description:
+      "Menggabungkan field yang dikirim dengan bundle aktif pada environment yang sama. Gunakan endpoint ini ketika seller mengaktifkan auto-pickup setelah sebelumnya hanya memasang shipping_api_key.",
+    authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
+    parameters: [
+      "provider_code — provider yang credential aktifnya ingin diperbarui",
+      "environment — live atau sandbox; default live",
+      "credentials — hanya field yang ingin ditambah atau diganti",
+      "Field yang tidak dikirim tetap dipertahankan dan secret tidak pernah dikembalikan.",
+    ],
+    request: `PATCH {{base_url}}/api/v1/integrations/provider-credentials/rajaongkir
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}
+Content-Type: application/json
+
+{
+  "environment": "live",
+  "credentials": {
+    "delivery_api_key": "{{seller_rajaongkir_delivery_key}}"
+  }
+}`,
+    response: `{
+  "data": {
+    "provider_code": "rajaongkir",
+    "environment": "live",
+    "display_key": "demo•••1234",
     "daily_limit": 50000,
     "active": true,
     "validation_status": "valid"
@@ -2135,7 +2173,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers",
     title: "Katalog provider dan extension aktif",
     description:
-      "Menampilkan provider eligible beserta field credential, environment, dan policy capability dari release. Emisell merender form tanpa implementasi khusus per provider.",
+      "Menampilkan ringkasan provider untuk halaman listing. Credential fields, environment, capability, dan status auto-pickup dibaca dari endpoint detail agar payload daftar tetap ringan.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/providers
 key: {{api_key}}
@@ -2154,17 +2192,9 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "integration_type": "built_in",
         "distribution_type": "built_in",
         "requires_credential": false,
-        "credential_type": "none",
-        "credential_fields": [],
-        "credential_source": "platform_default",
-        "environments": [{"code":"live","label":"Live","description":"Operasi production."}],
-        "capability_policies": [],
         "available": true,
         "installed": true,
-        "active": false,
-        "active_release_version": "",
-        "required_scopes": ["rates:read", "tracking:read"],
-        "granted_scopes": []
+        "active": false
       },
       {
         "code": "rajaongkir",
@@ -2175,44 +2205,69 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "integration_type": "partner_hosted",
         "distribution_type": "merchant",
         "requires_credential": true,
-        "credential_type": "provider_declared",
-        "credential_source": "provider_package",
-        "credential_fields": [
-          {
-            "code": "shipping_api_key",
-            "label": "Shipping API key",
-            "input_type": "password",
-            "secret": true,
-            "required": true,
-            "capabilities": ["rates:read", "tracking:read"],
-            "environments": ["live"]
-          },
-          {
-            "code": "delivery_api_key",
-            "label": "Delivery API key",
-            "input_type": "password",
-            "secret": true,
-            "required": false,
-            "capabilities": ["shipments:write", "shipments:read", "pickup:write", "labels:read", "shipments:cancel"],
-            "environments": ["live", "sandbox"]
-          }
-        ],
-        "environments": [
-          {"code":"live","label":"Live","description":"Operasi production."},
-          {"code":"sandbox","label":"Sandbox","description":"Pengujian fulfillment."}
-        ],
-        "capability_policies": [
-          {"capability":"rates","environment":"sandbox","behavior":"live_read_only","credential_environment":"live","billing":"provider_charged"},
-          {"capability":"shipments","environment":"sandbox","behavior":"provider_sandbox","credential_environment":"sandbox","billing":"provider_defined"}
-        ],
         "available": true,
         "installed": true,
-        "active": false,
-        "active_release_version": "1.0.1",
-        "required_scopes": ["rates:read", "tracking:read"],
-        "granted_scopes": []
+        "active": false
       }
     ]
+  },
+  "meta": { "request_id": "req_example" }
+}`,
+  },
+  {
+    contract: "gateway",
+    scope: "customer",
+    method: "GET",
+    path: "/api/v1/integrations/providers/{provider_code}",
+    title: "Detail provider dan kesiapan auto-pickup",
+    description:
+      "Mengembalikan kontrak instalasi lengkap satu provider. Dashboard merender form dari credential_fields dan memakai available_credentials serta auto_pickup_status untuk menampilkan pengaturan pickup.",
+    authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
+    parameters: [
+      "provider_code — kode provider dari endpoint listing",
+      "auto_pickup true berarti credential live untuk pickup sudah tersedia",
+      "auto_pickup_status — unavailable, not_configured, configured, atau invalid",
+      "available_credentials hanya berisi nama field, tidak pernah secret.",
+    ],
+    request: `GET {{base_url}}/api/v1/integrations/providers/rajaongkir
+key: {{api_key}}
+X-Emisell-Merchant-ID: {{merchant_id}}`,
+    response: `{
+  "data": {
+    "code": "rajaongkir",
+    "name": "RajaOngkir",
+    "requires_credential": true,
+    "credential_type": "provider_declared",
+    "credential_fields": [
+      {
+        "code": "shipping_api_key",
+        "label": "Shipping API key",
+        "input_type": "password",
+        "secret": true,
+        "required": true,
+        "capabilities": ["rates:read", "tracking:read"],
+        "environments": ["live"]
+      },
+      {
+        "code": "delivery_api_key",
+        "label": "Delivery API key",
+        "input_type": "password",
+        "secret": true,
+        "required": false,
+        "capabilities": ["shipments:write", "pickup:write", "labels:read", "shipments:cancel"],
+        "environments": ["live", "sandbox"]
+      }
+    ],
+    "environments": [
+      {"code":"live","label":"Live","description":"Operasi production."},
+      {"code":"sandbox","label":"Sandbox","description":"Pengujian fulfillment."}
+    ],
+    "auto_pickup": true,
+    "auto_pickup_status": "configured",
+    "available_credentials": {
+      "live": ["delivery_api_key", "shipping_api_key"],
+      "sandbox": []
+    }
   },
   "meta": { "request_id": "req_example" }
 }`,

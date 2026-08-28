@@ -953,6 +953,57 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/integrations/provider-credentials/{provider_code}:
+    patch:
+      tags: [Emisell Gateway]
+      operationId: patchTenantProviderCredential
+      summary: Menambah atau merotasi sebagian field credential provider
+      description: >
+        Menggabungkan field yang dikirim dengan bundle aktif pada environment
+        yang sama. Field credential yang tidak dikirim tetap dipertahankan,
+        sehingga delivery_api_key dapat ditambahkan tanpa menghapus
+        shipping_api_key. Secret hasil merge divalidasi dan dienkripsi ulang.
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchTenantProviderCredentialRequest"
+            example:
+              environment: live
+              credentials:
+                delivery_api_key: delivery-live-key
+      responses:
+        "200":
+          description: Bundle credential berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantProviderCredentialResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Credential aktif pada environment tersebut belum tersedia
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Field atau credential hasil merge tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/integrations/providers:
     get:
       tags: [Emisell Gateway]
@@ -964,9 +1015,9 @@ paths:
         dan valid. Maksimal satu provider efektif aktif; tenant tanpa konfigurasi
         eksplisit tidak mempunyai provider aktif dan memakai version 0. Hanya
         provider available yang dikirim; provider yang dinonaktifkan operator
-        otomatis hilang dari katalog dashboard seller. Dashboard merender form
-        aktivasi dari credential_fields; oauth2_client_credentials menghasilkan
-        field client_id dan client_secret.
+        otomatis hilang dari katalog dashboard seller. Response ini sengaja
+        ringkas. Dashboard membaca credential_fields, environment, capability,
+        dan kesiapan auto-pickup dari endpoint detail provider.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -981,6 +1032,40 @@ paths:
                 $ref: "#/components/schemas/TenantShippingProviderCatalogResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/integrations/providers/{provider_code}:
+    get:
+      tags: [Emisell Gateway]
+      operationId: getTenantShippingProvider
+      summary: Membaca detail instalasi satu provider
+      description: >
+        Dipanggil ketika seller membuka atau memasang extension. Response
+        berisi credential_fields dinamis, environment, capability policy,
+        field credential yang telah tersedia, dan kesiapan auto-pickup.
+      security:
+        - serviceBearerAuth: []
+          merchantContextAuth: []
+        - serviceKeyAuth: []
+          merchantContextAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ShippingProviderCode"
+      responses:
+        "200":
+          description: Detail provider untuk merchant terautentikasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantShippingProviderDetailResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Provider tidak ditemukan atau tidak tersedia bagi merchant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/integrations/providers/{provider_code}/activate:
     post:
@@ -3906,7 +3991,53 @@ components:
           maxLength: 64
           examples: [REG]
 
-    TenantShippingProvider:
+    TenantShippingProviderSummary:
+      type: object
+      required:
+        - code
+        - name
+        - logo
+        - description
+        - built_in
+        - integration_type
+        - distribution_type
+        - requires_credential
+        - available
+        - installed
+        - active
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9_-]{2,48}$"
+        name:
+          type: string
+        logo:
+          type: string
+          format: uri
+          pattern: "^https://"
+        description:
+          type: string
+          minLength: 10
+          maxLength: 500
+        built_in:
+          type: boolean
+        integration_type:
+          type: string
+          enum: [built_in, managed_upstream, partner_hosted]
+        distribution_type:
+          type: string
+          enum: [built_in, merchant]
+        requires_credential:
+          type: boolean
+        available:
+          type: boolean
+          const: true
+        installed:
+          type: boolean
+        active:
+          type: boolean
+
+    TenantShippingProviderDetail:
       type: object
       required:
         - code
@@ -3925,6 +4056,9 @@ components:
         - available
         - installed
         - active
+        - auto_pickup
+        - auto_pickup_status
+        - available_credentials
       properties:
         code:
           type: string
@@ -3993,6 +4127,32 @@ components:
           items:
             type: string
           description: Scope yang dipin saat merchant mengaktifkan release ini.
+        auto_pickup:
+          type: boolean
+          description: True jika provider mendukung pickup dan credential live yang diperlukan sudah tersedia.
+        auto_pickup_status:
+          type: string
+          enum: [unavailable, not_configured, configured, invalid]
+          description: Status kesiapan auto-pickup tanpa mengekspos secret provider.
+        available_credentials:
+          type: object
+          additionalProperties:
+            type: array
+            uniqueItems: true
+            items:
+              type: string
+          example:
+            live: [shipping_api_key, delivery_api_key]
+            sandbox: [delivery_api_key]
+
+    TenantShippingProviderDetailResponse:
+      type: object
+      required: [meta, data]
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+        data:
+          $ref: "#/components/schemas/TenantShippingProviderDetail"
 
     TenantShippingProviderCatalog:
       type: object
@@ -4009,7 +4169,7 @@ components:
         providers:
           type: array
           items:
-            $ref: "#/components/schemas/TenantShippingProvider"
+            $ref: "#/components/schemas/TenantShippingProviderSummary"
 
     TenantShippingProviderCatalogResponse:
       type: object
@@ -6196,7 +6356,7 @@ components:
           minLength: 8
           maxLength: 512
           writeOnly: true
-          description: Alias kompatibilitas untuk api_key atau shipping_api_key pada model capability_api_keys.
+          description: Alias kompatibilitas untuk shipping_api_key pada model capability_api_keys dan package hosted RajaOngkir.
         credentials:
           type: object
           minProperties: 1
@@ -6212,6 +6372,32 @@ components:
           minimum: 1
           maximum: 100000000
           default: 50000
+
+    PatchTenantProviderCredentialRequest:
+      type: object
+      additionalProperties: false
+      required: [credentials]
+      properties:
+        environment:
+          type: string
+          enum: [live, sandbox]
+          default: live
+        credentials:
+          type: object
+          minProperties: 1
+          maxProperties: 8
+          additionalProperties:
+            type: string
+            maxLength: 1024
+          writeOnly: true
+          description: >
+            Hanya field yang ingin ditambah atau diganti. Field
+            lain pada bundle aktif dipertahankan.
+        daily_limit:
+          type: integer
+          minimum: 1
+          maximum: 100000000
+          description: Jika tidak dikirim, limit credential aktif dipertahankan.
 
     ProviderCredentialType:
       type: string

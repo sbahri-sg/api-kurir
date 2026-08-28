@@ -23,6 +23,10 @@ type Repository interface {
 		ctx context.Context,
 		tenantID, providerCode, actor, requestID string,
 	) error
+	ActiveStoredForTenantProvider(
+		ctx context.Context,
+		tenantID, providerCode, environment string,
+	) (StoredCredential, error)
 	ActiveCredentialID(ctx context.Context, tenantID, providerCode string) (string, error)
 	ResolveActive(ctx context.Context, providerCode string) (StoredCredential, error)
 }
