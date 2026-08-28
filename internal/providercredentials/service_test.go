@@ -64,6 +64,19 @@ type declarativeMemoryRepository struct {
 	fields []FieldDefinition
 }
 
+type livePolicyDeclarativeMemoryRepository struct {
+	declarativeMemoryRepository
+}
+
+func (r *livePolicyDeclarativeMemoryRepository) CredentialEnvironment(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ string,
+) (string, error) {
+	return EnvironmentLive, nil
+}
+
 func (r *declarativeMemoryRepository) CredentialDefinition(
 	context.Context,
 	string,
@@ -350,7 +363,7 @@ func TestCapabilityAPIKeysDoNotReuseShippingKeyForDelivery(t *testing.T) {
 	}
 }
 
-func TestCapabilityDeliveryOnlyCredentialCanBeStoredForSandbox(t *testing.T) {
+func TestCapabilityShippingAndDeliveryCredentialCanBeStoredForSandbox(t *testing.T) {
 	t.Parallel()
 
 	cipher, err := NewCipher(testEncryptionKey)
@@ -364,7 +377,10 @@ func TestCapabilityDeliveryOnlyCredentialCanBeStoredForSandbox(t *testing.T) {
 	service := NewService(repository, cipher, validator)
 	credential, err := service.AddForTenantEnvironmentCredentials(
 		context.Background(), "merchant_123", "rajaongkir", EnvironmentSandbox,
-		map[string]string{"delivery_api_key": "sandbox-delivery-key"},
+		map[string]string{
+			"shipping_api_key": "shipping-cost-key",
+			"delivery_api_key": "sandbox-delivery-key",
+		},
 		50_000, "tenant:merchant_123", "req_sandbox_delivery",
 	)
 	if err != nil {
@@ -373,8 +389,9 @@ func TestCapabilityDeliveryOnlyCredentialCanBeStoredForSandbox(t *testing.T) {
 	if credential.Environment != EnvironmentSandbox || credential.DisplayKey == "" {
 		t.Fatalf("unexpected sandbox credential: %#v", credential)
 	}
-	if validator.calls != 1 || validator.values["delivery_api_key"] != "sandbox-delivery-key" {
-		t.Fatalf("delivery-only credential was not validated as a bundle: %#v", validator)
+	if validator.calls != 1 || validator.values["shipping_api_key"] != "shipping-cost-key" ||
+		validator.values["delivery_api_key"] != "sandbox-delivery-key" {
+		t.Fatalf("sandbox credential bundle was not validated: %#v", validator)
 	}
 	value, credentialType, _, _, err := service.ResolveProviderCredentialValues(
 		WithExecutionEnvironment(context.Background(), EnvironmentSandbox), "rajaongkir",
@@ -382,8 +399,52 @@ func TestCapabilityDeliveryOnlyCredentialCanBeStoredForSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if credentialType != CredentialTypeCapabilityAPIKeys || value["delivery_api_key"] != "sandbox-delivery-key" {
+	if credentialType != CredentialTypeCapabilityAPIKeys ||
+		value["shipping_api_key"] != "shipping-cost-key" ||
+		value["delivery_api_key"] != "sandbox-delivery-key" {
 		t.Fatalf("unexpected resolved credential: type=%q values=%#v", credentialType, value)
+	}
+}
+
+func TestRajaOngkirSandboxShippingCostUsesSandboxBundleBeforeLivePolicy(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &livePolicyDeclarativeMemoryRepository{
+		declarativeMemoryRepository: declarativeMemoryRepository{fields: []FieldDefinition{
+			{
+				Code: "shipping_api_key", Label: "Shipping key", InputType: "password",
+				Secret: true, Required: true, Capabilities: []string{"rates:read", "tracking:read"},
+				Environments: []string{EnvironmentLive, EnvironmentSandbox},
+			},
+			{
+				Code: "delivery_api_key", Label: "Delivery key", InputType: "password",
+				Secret: true, Required: false, Capabilities: []string{"shipments:write"},
+				Environments: []string{EnvironmentLive, EnvironmentSandbox},
+			},
+		}},
+	}
+	service := NewService(repository, cipher, &acceptingBundleValidator{})
+	_, err = service.AddForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentSandbox,
+		map[string]string{
+			"shipping_api_key": "shipping-cost-key",
+			"delivery_api_key": "sandbox-delivery-key",
+		},
+		50_000, "tenant:merchant_123", "req_sandbox_bundle",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, _, err := service.ResolveProviderCredentialForCapability(
+		WithExecutionEnvironment(context.Background(), EnvironmentSandbox),
+		"rajaongkir", "rates:read",
+	)
+	if err != nil || secret != "shipping-cost-key" {
+		t.Fatalf("sandbox shipping key=%q err=%v", secret, err)
 	}
 }
 
@@ -400,7 +461,10 @@ func TestCapabilityEnvironmentResolverSelectsInstalledSandboxCredential(t *testi
 	service := NewService(repository, cipher, &acceptingBundleValidator{})
 	_, err = service.AddForTenantEnvironmentCredentials(
 		context.Background(), "merchant_123", "rajaongkir", EnvironmentSandbox,
-		map[string]string{"delivery_api_key": "sandbox-delivery-key"},
+		map[string]string{
+			"shipping_api_key": "shipping-cost-key",
+			"delivery_api_key": "sandbox-delivery-key",
+		},
 		50_000, "tenant:merchant_123", "req_sandbox_auto",
 	)
 	if err != nil {

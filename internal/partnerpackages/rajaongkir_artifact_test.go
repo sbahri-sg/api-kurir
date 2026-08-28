@@ -19,7 +19,7 @@ func TestRajaOngkirHostedArtifactPassesPackageValidator(t *testing.T) {
 		t.Fatal("resolve test path")
 	}
 	root := filepath.Clean(filepath.Join(
-		filepath.Dir(currentFile), "..", "..", "artifacts", "rajaongkir-hosted-v1.0.9",
+		filepath.Dir(currentFile), "..", "..", "artifacts", "rajaongkir-hosted-v1.0.10",
 	))
 	var buffer bytes.Buffer
 	archive := zip.NewWriter(&buffer)
@@ -68,5 +68,12 @@ func TestRajaOngkirHostedArtifactPassesPackageValidator(t *testing.T) {
 		len(report.Manifest.Environments) != 2 ||
 		len(report.Manifest.CapabilityPolicies) != 8 {
 		t.Fatalf("credential/environment contract incomplete: %#v", report.Manifest)
+	}
+	shippingField := report.Manifest.CredentialFields[0]
+	if shippingField.Code != "shipping_api_key" ||
+		len(shippingField.Environments) != 2 ||
+		shippingField.Environments[0] != "live" ||
+		shippingField.Environments[1] != "sandbox" {
+		t.Fatalf("shipping key must support both modes: %#v", shippingField)
 	}
 }

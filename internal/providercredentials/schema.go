@@ -136,7 +136,7 @@ func FieldsForCredentialType(value string) []FieldDefinition {
 				Secret: true, Required: true, Placeholder: "Masukkan API key tarif dan tracking",
 				Help:         "Dipakai untuk cek ongkir dan tracking.",
 				Capabilities: []string{"rates:read", "tracking:read"},
-				Environments: []string{EnvironmentLive},
+				Environments: []string{EnvironmentLive, EnvironmentSandbox},
 			},
 			{
 				Code: "delivery_api_key", Label: "Delivery API key", InputType: "password",

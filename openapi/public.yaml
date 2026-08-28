@@ -870,9 +870,11 @@ paths:
         milik merchant yang sama yang pernah dinonaktifkan akan diaktifkan
         kembali tanpa membuat credential duplikat dan tanpa mengaktifkan
         provider shipping secara otomatis. Jika environment tidak dikirim,
-        credential selalu disimpan sebagai live. RajaOngkir live dan sandbox
-        harus dikonfigurasi melalui dua request terpisah; secret tidak pernah
-        disalin otomatis antar-environment. shipping_api_key dan
+        credential selalu disimpan sebagai live. RajaOngkir menerima
+        shipping_api_key dan delivery_api_key pada mode live maupun sandbox.
+        Pada sandbox, shipping_api_key tetap mengakses produk Shipping Cost
+        live/read-only karena produk tersebut tidak mempunyai endpoint sandbox;
+        hanya Shipping Delivery yang berganti endpoint. shipping_api_key dan
         delivery_api_key RajaOngkir diuji ke endpoint read-only produk
         masing-masing sebelum credential disimpan; key invalid ditolak dengan
         422 INVALID_PROVIDER_KEY tanpa mengganti credential aktif.
@@ -898,11 +900,12 @@ paths:
                     delivery_api_key: delivery-live-key
                   daily_limit: 50000
               rajaongkirSandbox:
-                summary: Shipping Delivery sandbox sebagai request terpisah
+                summary: Shipping Cost live/read-only dan Shipping Delivery sandbox
                 value:
                   provider_code: rajaongkir
                   environment: sandbox
                   credentials:
+                    shipping_api_key: shipping-cost-key
                     delivery_api_key: delivery-sandbox-key
                   daily_limit: 50000
       responses:
@@ -4151,7 +4154,7 @@ components:
               type: string
           example:
             live: [shipping_api_key, delivery_api_key]
-            sandbox: [delivery_api_key]
+            sandbox: [shipping_api_key, delivery_api_key]
 
     AutoPickupEnvironmentStatus:
       type: object

@@ -69,23 +69,25 @@ lain tidak boleh meminjam credential atau saldo platform.
 Adapter RajaOngkir memakai base URL Shipping Delivery
 `https://api.collaborator.komerce.id`. Sandbox memakai base URL dan key sandbox
 tersendiri. Credential sandbox disimpan sebagai record terpisah dengan
-`environment: sandbox` dan hanya perlu memuat `delivery_api_key`; Shipping Cost
-tetap memakai credential live karena rate dan tracking RajaOngkir tidak
-mempunyai sandbox terpisah. Saat credential disimpan atau dirotasi, API Kurir
+`environment: sandbox` serta menerima `shipping_api_key` dan
+`delivery_api_key`. Shipping Cost tetap memanggil produk live/read-only karena
+rate dan tracking RajaOngkir tidak mempunyai endpoint sandbox terpisah; hanya
+Shipping Delivery yang berpindah ke endpoint sandbox. Saat credential disimpan atau dirotasi, API Kurir
 menguji Shipping Cost dan Shipping Delivery melalui endpoint read-only produk
 masing-masing. Key invalid ditolak sebelum bundle aktif berubah.
 
-Instalasi RajaOngkir yang menggunakan kedua mode harus membuat **dua request**
-credential:
+Setiap mode instalasi RajaOngkir dapat menerima kedua key:
 
 1. `environment: live` berisi `shipping_api_key` dan, jika fulfillment live
    digunakan, `delivery_api_key` production;
-2. `environment: sandbox` berisi `delivery_api_key` sandbox.
+2. `environment: sandbox` berisi `shipping_api_key` Shipping Cost yang sama dan
+   `delivery_api_key` sandbox. Rate/tracking tetap nyata dan dapat mengurangi
+   kuota Shipping Cost.
 
 Jika `environment` tidak dikirim, API selalu memilih `live`. Karena itu payload
-yang berisi kedua key tanpa `environment` hanya mengonfigurasi live dan tidak
-menyediakan credential sandbox. API sengaja tidak menyalin secret live ke
-sandbox maupun sebaliknya.
+yang berisi kedua key tanpa `environment` hanya mengonfigurasi live. API tidak
+menyalin secret otomatis; saat seller memilih sandbox, form mengirim kedua key
+ke bundle sandbox.
 
 Main Service tidak perlu meneruskan header environment. Pada quote fulfillment,
 API Kurir memilih credential live valid lebih dahulu dan memakai sandbox bila

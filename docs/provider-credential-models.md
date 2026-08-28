@@ -121,14 +121,16 @@ fitur fulfillment diaktifkan.
 }
 ```
 
-Jika merchant juga memakai fulfillment sandbox, kirim request kedua. Jangan
-menggabungkan key sandbox ke bundle live:
+Jika merchant memakai fulfillment sandbox, form tetap mengirim kedua field.
+`shipping_api_key` mengakses Shipping Cost live/read-only, sedangkan
+`delivery_api_key` mengakses Shipping Delivery sandbox:
 
 ```json
 {
   "provider_code": "rajaongkir",
   "environment": "sandbox",
   "credentials": {
+    "shipping_api_key": "shipping-key-seller",
     "delivery_api_key": "delivery-sandbox-key-seller"
   }
 }
@@ -142,7 +144,9 @@ delivery bila `delivery_api_key` belum tersedia.
 
 Credential live dan sandbox disimpan terpisah. Field `environment` pada
 POST/PATCH credential menentukan tempat penyimpanan dan jika tidak dikirim
-berarti `live`; satu request hanya mengonfigurasi satu environment. Main Service
+berarti `live`; satu request hanya mengonfigurasi satu environment. Kedua mode
+menerima `shipping_api_key`, tetapi hanya endpoint Shipping Delivery yang
+berpindah antara live dan sandbox. Main Service
 tidak mengirim header mode pada quote, shipment, atau pickup. API Kurir memilih
 credential fulfillment valid secara otomatis (live diprioritaskan, sandbox
 menjadi fallback), menyimpan environment pada quote, lalu mewariskannya ke

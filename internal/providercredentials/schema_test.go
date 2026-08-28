@@ -36,6 +36,11 @@ func TestCapabilityAPIKeyFieldsAndLegacyAlias(t *testing.T) {
 	if len(fields[0].Capabilities) != 2 || fields[0].Capabilities[0] != "rates:read" {
 		t.Fatalf("unexpected shipping capabilities: %#v", fields[0].Capabilities)
 	}
+	if len(fields[0].Environments) != 2 ||
+		!containsString(fields[0].Environments, EnvironmentLive) ||
+		!containsString(fields[0].Environments, EnvironmentSandbox) {
+		t.Fatalf("shipping key must be accepted for live and sandbox: %#v", fields[0].Environments)
+	}
 
 	values, err := NormalizeCredentialValues(
 		CredentialTypeCapabilityAPIKeys,

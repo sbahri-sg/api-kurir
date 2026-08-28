@@ -554,21 +554,63 @@ func (s *Service) ResolveProviderCredentialForCapability(
 ) (string, string, int64, error) {
 	providerCode = strings.ToLower(strings.TrimSpace(providerCode))
 	capability = strings.ToLower(strings.TrimSpace(capability))
+	executionEnvironment := ExecutionEnvironment(ctx)
+	credentialEnvironments := []string{executionEnvironment}
 	if repository, ok := s.repository.(SchemaRepository); ok {
 		credentialEnvironment, resolveErr := repository.CredentialEnvironment(
-			ctx, providerCode, capability, ExecutionEnvironment(ctx),
+			ctx, providerCode, capability, executionEnvironment,
 		)
 		if resolveErr != nil {
 			return "", "", 0, resolveErr
 		}
-		ctx = WithExecutionEnvironment(ctx, credentialEnvironment)
+		credentialEnvironments = []string{credentialEnvironment}
 	}
-	values, credentialType, alias, dailyLimit, err := s.ResolveProviderCredentialValues(
-		ctx, providerCode,
-	)
-	if err != nil {
-		return "", "", 0, err
+	if providerCode == "rajaongkir" && executionEnvironment == EnvironmentSandbox &&
+		(capability == "rates:read" || capability == "tracking:read") {
+		// Shipping Cost has no separate sandbox product. A merchant may still
+		// submit both RajaOngkir keys while installing the sandbox mode, so use
+		// that sandbox bundle first and retain the legacy live-bundle fallback.
+		credentialEnvironments = appendUniqueEnvironment(
+			[]string{EnvironmentSandbox}, credentialEnvironments...,
+		)
 	}
+	var lastErr error
+	for _, credentialEnvironment := range credentialEnvironments {
+		credentialCtx := WithExecutionEnvironment(ctx, credentialEnvironment)
+		values, credentialType, alias, dailyLimit, err := s.ResolveProviderCredentialValues(
+			credentialCtx, providerCode,
+		)
+		if err != nil {
+			if !credentialSelectionError(err) {
+				return "", "", 0, err
+			}
+			lastErr = err
+			continue
+		}
+		secret, err := s.credentialSecretForCapability(
+			credentialCtx, providerCode, capability, credentialType, values,
+		)
+		if err == nil {
+			return secret, alias, dailyLimit, nil
+		}
+		if !credentialSelectionError(err) {
+			return "", "", 0, err
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = ErrCredentialCapabilityUnavailable
+	}
+	return "", "", 0, lastErr
+}
+
+func (s *Service) credentialSecretForCapability(
+	ctx context.Context,
+	providerCode string,
+	capability string,
+	credentialType string,
+	values map[string]string,
+) (string, error) {
 	var secret string
 	switch credentialType {
 	case CredentialTypeCapabilityAPIKeys:
@@ -587,7 +629,7 @@ func (s *Service) ResolveProviderCredentialForCapability(
 	case CredentialTypeProviderDeclared:
 		_, fields, definitionErr := s.credentialDefinition(ctx, providerCode)
 		if definitionErr != nil {
-			return "", "", 0, definitionErr
+			return "", definitionErr
 		}
 		for _, field := range FieldsForEnvironment(fields, ExecutionEnvironment(ctx)) {
 			if len(field.Capabilities) == 0 || containsString(field.Capabilities, capability) {
@@ -599,9 +641,20 @@ func (s *Service) ResolveProviderCredentialForCapability(
 		}
 	}
 	if secret == "" {
-		return "", "", 0, ErrCredentialCapabilityUnavailable
+		return "", ErrCredentialCapabilityUnavailable
 	}
-	return secret, alias, dailyLimit, nil
+	return secret, nil
+}
+
+func appendUniqueEnvironment(initial []string, values ...string) []string {
+	result := append([]string(nil), initial...)
+	for _, value := range values {
+		value = NormalizeEnvironment(value)
+		if !containsString(result, value) {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func (s *Service) ResolveProviderCredentialForCapabilityEnvironment(

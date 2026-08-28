@@ -1,0 +1,53 @@
+schema_version: "1"
+provider:
+  code: rajaongkir
+  name: RajaOngkir
+connector:
+  contract_version: v1
+  base_url: https://api-kurir.emisell.com/connectors/rajaongkir/v1
+credentials:
+  fields:
+    - code: shipping_api_key
+      label: Shipping Cost API key
+      input_type: password
+      secret: true
+      required: true
+      placeholder: Masukkan API key Shipping Cost
+      help: Dipakai untuk cek ongkir dan tracking. Endpoint Shipping Cost tetap live pada kedua mode.
+      capabilities: ["rates:read", "tracking:read"]
+      environments: [live, sandbox]
+    - code: delivery_api_key
+      label: Shipping Delivery API key
+      input_type: password
+      secret: true
+      required: false
+      placeholder: Masukkan API key Shipping Delivery
+      help: Dipakai untuk order, pickup, label, detail, dan pembatalan.
+      capabilities: ["shipments:write", "shipments:read", "shipments:cancel", "pickup:write", "labels:read"]
+      environments: [live, sandbox]
+environments:
+  - code: live
+    label: Live
+    description: Cek ongkir, tracking, dan fulfillment RajaOngkir production.
+  - code: sandbox
+    label: Sandbox
+    description: Fulfillment memakai sandbox; cek ongkir dan tracking tetap live read-only dan dapat mengurangi kuota provider.
+capability_policies:
+  - {capability: rates, environment: live, behavior: live, credential_environment: live, billing: provider_charged}
+  - {capability: rates, environment: sandbox, behavior: live_read_only, credential_environment: live, billing: provider_charged}
+  - {capability: tracking, environment: live, behavior: live, credential_environment: live, billing: provider_charged}
+  - {capability: tracking, environment: sandbox, behavior: live_read_only, credential_environment: live, billing: provider_charged}
+  - {capability: shipments, environment: live, behavior: live, credential_environment: live, billing: provider_charged}
+  - {capability: shipments, environment: sandbox, behavior: provider_sandbox, credential_environment: sandbox, billing: provider_defined}
+  - {capability: pickup, environment: live, behavior: live, credential_environment: live, billing: provider_charged}
+  - {capability: pickup, environment: sandbox, behavior: provider_sandbox, credential_environment: sandbox, billing: provider_defined}
+capabilities:
+  - rates
+  - shipments
+  - pickup
+  - tracking
+services:
+  - regular
+  - next_day
+  - economy
+  - cargo

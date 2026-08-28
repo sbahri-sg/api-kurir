@@ -2076,7 +2076,7 @@ Content-Type: application/json
   "daily_limit": 50000
 }
 
-# 2. Simpan credential Shipping Delivery sandbox sebagai request terpisah
+# 2. Simpan Shipping Cost live/read-only dan Shipping Delivery sandbox
 POST {{base_url}}/api/v1/integrations/provider-credentials
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}
@@ -2086,6 +2086,7 @@ Content-Type: application/json
   "provider_code": "rajaongkir",
   "environment": "sandbox",
   "credentials": {
+    "shipping_api_key": "{{seller_rajaongkir_shipping_key}}",
     "delivery_api_key": "{{seller_rajaongkir_sandbox_delivery_key}}"
   },
   "daily_limit": 50000
@@ -2097,8 +2098,9 @@ Content-Type: application/json
       "Nama field wajib mengikuti credential_fields dari GET /api/v1/integrations/providers/{provider_code}.",
       "environment menerima live atau sandbox; jika tidak dikirim selalu dianggap live.",
       "Mengirim shipping_api_key dan delivery_api_key tanpa environment hanya mengonfigurasi live, bukan sandbox.",
-      "Live dan sandbox wajib memakai dua request terpisah. Secret kedua mode tidak pernah disalin atau dicampur otomatis.",
-      `Credential fulfillment sandbox disimpan terpisah: { "provider_code": "rajaongkir", "environment": "sandbox", "credentials": { "delivery_api_key": "..." } }`,
+      "Live dan sandbox disimpan sebagai bundle terpisah. Form sandbox dapat mengirim shipping_api_key dan delivery_api_key sekaligus.",
+      "Pada sandbox, shipping_api_key tetap memanggil Shipping Cost live/read-only; hanya delivery_api_key yang memakai endpoint Shipping Delivery sandbox.",
+      `Credential fulfillment sandbox: { "provider_code": "rajaongkir", "environment": "sandbox", "credentials": { "shipping_api_key": "...", "delivery_api_key": "..." } }`,
       "shipping_api_key dan delivery_api_key RajaOngkir diuji ke endpoint read-only produk masing-masing saat POST/PATCH. Key invalid menghasilkan HTTP 422 INVALID_PROVIDER_KEY dan credential aktif lama tidak diganti.",
     ],
     response: `{
@@ -2248,7 +2250,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
         "secret": true,
         "required": true,
         "capabilities": ["rates:read", "tracking:read"],
-        "environments": ["live"]
+        "environments": ["live", "sandbox"]
       },
       {
         "code": "delivery_api_key",
@@ -2280,7 +2282,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     },
     "available_credentials": {
       "live": ["shipping_api_key"],
-      "sandbox": ["delivery_api_key"]
+      "sandbox": ["shipping_api_key", "delivery_api_key"]
     }
   },
   "meta": { "request_id": "req_example" }
