@@ -70,9 +70,10 @@ func (s *Service) Create(
 		if !quote.ExpiresAt.After(time.Now().UTC()) {
 			return Shipment{}, false, ErrQuoteExpired
 		}
-		if quote.Environment != providercredentials.ExecutionEnvironment(ctx) {
+		if requestedEnvironment, explicit := providercredentials.RequestedExecutionEnvironment(ctx); explicit && quote.Environment != requestedEnvironment {
 			return Shipment{}, false, ErrQuoteMismatch
 		}
+		ctx = providercredentials.WithExecutionEnvironment(ctx, quote.Environment)
 		if err := applyLockedQuote(&request, quote); err != nil {
 			return Shipment{}, false, err
 		}
@@ -81,14 +82,15 @@ func (s *Service) Create(
 	if err := validateCreateRequest(request); err != nil {
 		return Shipment{}, false, err
 	}
-	providerCode, adapter, credential, credentialAlias, err := s.resolveProvider(
+	providerCode, adapter, credential, credentialAlias, environment, err := s.resolveProvider(
 		ctx, tenantID, request.ProviderCode, "shipments:write",
 	)
 	if err != nil {
 		return Shipment{}, false, err
 	}
 	if lockedQuote != nil && (lockedQuote.ProviderCode != providerCode ||
-		lockedQuote.CredentialAlias != credentialAlias) {
+		lockedQuote.CredentialAlias != credentialAlias ||
+		lockedQuote.Environment != environment) {
 		return Shipment{}, false, ErrQuoteMismatch
 	}
 	request.ProviderCode = providerCode
@@ -107,6 +109,7 @@ func (s *Service) Create(
 	}
 	reserved, created, err := s.repository.ReserveCreate(ctx, ReserveCreateInput{
 		ID: shipmentID, TenantID: tenantID, ProviderCode: providerCode,
+		Environment:       environment,
 		MerchantReference: request.MerchantReference, QuoteID: request.QuoteID,
 		CourierCode: request.CourierCode, ServiceCode: publicServiceCode,
 		DeliveryMode: request.DeliveryMode, Fulfillment: request.Fulfillment,
@@ -127,7 +130,8 @@ func (s *Service) Create(
 		}
 		return reserved, true, nil
 	}
-	result, err := adapter.Create(ctx, credential, request)
+	operationContext := providercredentials.WithExecutionEnvironment(ctx, environment)
+	result, err := adapter.Create(operationContext, credential, request)
 	if err != nil {
 		_ = s.repository.FailCreate(ctx, tenantID, reserved.ID, providerErrorStatus(err))
 		return Shipment{}, false, err
@@ -145,7 +149,7 @@ func (s *Service) Quotes(ctx context.Context, request QuoteRequest) ([]Quote, er
 	if err := validateQuoteRequest(request); err != nil {
 		return nil, err
 	}
-	providerCode, adapter, credential, credentialAlias, err := s.resolveProvider(
+	providerCode, adapter, credential, credentialAlias, environment, err := s.resolveProvider(
 		ctx, tenantID, request.ProviderCode, "shipments:write",
 	)
 	if err != nil {
@@ -155,7 +159,8 @@ func (s *Service) Quotes(ctx context.Context, request QuoteRequest) ([]Quote, er
 	if !ok {
 		return nil, ErrProviderUnsupported
 	}
-	providerQuotes, err := quoteAdapter.Quote(ctx, credential, request)
+	operationContext := providercredentials.WithExecutionEnvironment(ctx, environment)
+	providerQuotes, err := quoteAdapter.Quote(operationContext, credential, request)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +169,6 @@ func (s *Service) Quotes(ctx context.Context, request QuoteRequest) ([]Quote, er
 		return nil, err
 	}
 	now := time.Now().UTC()
-	environment := providercredentials.ExecutionEnvironment(ctx)
 	quotes := make([]Quote, 0, len(providerQuotes))
 	for _, providerQuote := range providerQuotes {
 		providerQuote = normalizeProviderQuote(providerQuote, request.Package.ItemValue, request.PaymentType, now)
@@ -262,7 +266,8 @@ func (s *Service) Pickup(
 		return shipment, true, nil
 	}
 	request.PackageWeightGrams = shipment.PackageWeightGrams
-	adapter, credential, err := s.adapterCredential(ctx, shipment.ProviderCode, "pickup:write")
+	operationContext := providercredentials.WithExecutionEnvironment(ctx, shipment.Environment)
+	adapter, credential, err := s.adapterCredential(operationContext, shipment.ProviderCode, "pickup:write")
 	if err != nil {
 		return Shipment{}, false, err
 	}
@@ -292,7 +297,7 @@ func (s *Service) Pickup(
 		}
 		return Shipment{}, false, ErrOperationInProgress
 	}
-	result, err := adapter.Pickup(ctx, credential, shipment, request)
+	result, err := adapter.Pickup(operationContext, credential, shipment, request)
 	if err != nil {
 		_ = s.repository.FailOperation(ctx, tenantID, shipment.ID, "pickup", idempotencyKey, providerErrorStatus(err))
 		return Shipment{}, false, err
@@ -333,7 +338,8 @@ func (s *Service) Cancel(
 		}
 		return Shipment{}, false, ErrShipmentFinal
 	}
-	adapter, credential, err := s.adapterCredential(ctx, shipment.ProviderCode, "shipments:cancel")
+	operationContext := providercredentials.WithExecutionEnvironment(ctx, shipment.Environment)
+	adapter, credential, err := s.adapterCredential(operationContext, shipment.ProviderCode, "shipments:cancel")
 	if err != nil {
 		return Shipment{}, false, err
 	}
@@ -363,7 +369,7 @@ func (s *Service) Cancel(
 		}
 		return Shipment{}, false, ErrOperationInProgress
 	}
-	result, err := adapter.Cancel(ctx, credential, shipment, request)
+	result, err := adapter.Cancel(operationContext, credential, shipment, request)
 	if err != nil {
 		_ = s.repository.FailOperation(ctx, tenantID, shipment.ID, "cancel", idempotencyKey, providerErrorStatus(err))
 		return Shipment{}, false, err
@@ -397,11 +403,12 @@ func (s *Service) Label(ctx context.Context, shipmentID, format string) (Label, 
 	} else if !errors.Is(cacheErr, ErrLabelUnavailable) {
 		return Label{}, cacheErr
 	}
-	adapter, credential, err := s.adapterCredential(ctx, shipment.ProviderCode, "labels:read")
+	operationContext := providercredentials.WithExecutionEnvironment(ctx, shipment.Environment)
+	adapter, credential, err := s.adapterCredential(operationContext, shipment.ProviderCode, "labels:read")
 	if err != nil {
 		return Label{}, err
 	}
-	label, err := adapter.Label(ctx, credential, shipment, format)
+	label, err := adapter.Label(operationContext, credential, shipment, format)
 	if err != nil {
 		return Label{}, err
 	}
@@ -438,54 +445,63 @@ func (s *Service) ReconcileNow(ctx context.Context, shipmentID string) error {
 func (s *Service) resolveProvider(
 	ctx context.Context,
 	tenantID, requestedProvider, capability string,
-) (string, Adapter, string, string, error) {
+) (string, Adapter, string, string, string, error) {
 	activeProvider, err := s.catalog.ActiveProviderCode(ctx, tenantID)
 	if err != nil {
-		return "", nil, "", "", err
+		return "", nil, "", "", "", err
 	}
 	if activeProvider == "" {
-		return "", nil, "", "", ErrShippingDisabled
+		return "", nil, "", "", "", ErrShippingDisabled
 	}
 	requestedProvider = strings.ToLower(strings.TrimSpace(requestedProvider))
 	if requestedProvider != "" && requestedProvider != activeProvider &&
 		!(activeProvider == merchantproviders.EmisellProviderCode && requestedProvider == "rajaongkir") {
-		return "", nil, "", "", ErrProviderUnsupported
+		return "", nil, "", "", "", ErrProviderUnsupported
 	}
 	effectiveProvider := activeProvider
 	if effectiveProvider == merchantproviders.EmisellProviderCode {
 		effectiveProvider = "rajaongkir"
 	}
-	adapter, credential, alias, err := s.adapterCredentialWithAlias(ctx, effectiveProvider, capability)
-	return effectiveProvider, adapter, credential, alias, err
+	adapter, credential, alias, environment, err := s.adapterCredentialWithAlias(ctx, effectiveProvider, capability)
+	return effectiveProvider, adapter, credential, alias, environment, err
 }
 
 func (s *Service) adapterCredential(
 	ctx context.Context,
 	providerCode, capability string,
 ) (Adapter, string, error) {
-	adapter, credential, _, err := s.adapterCredentialWithAlias(ctx, providerCode, capability)
+	adapter, credential, _, _, err := s.adapterCredentialWithAlias(ctx, providerCode, capability)
 	return adapter, credential, err
 }
 
 func (s *Service) adapterCredentialWithAlias(
 	ctx context.Context,
 	providerCode, capability string,
-) (Adapter, string, string, error) {
+) (Adapter, string, string, string, error) {
 	adapter, ok := s.adapters[providerCode]
 	if !ok {
-		return nil, "", "", ErrProviderUnsupported
+		return nil, "", "", "", ErrProviderUnsupported
 	}
-	credential, alias, _, err := s.credentials.ResolveProviderCredentialForCapability(
-		ctx, providerCode, capability,
-	)
+	environment := providercredentials.ExecutionEnvironment(ctx)
+	var credential, alias string
+	var err error
+	if resolver, ok := s.credentials.(providercredentials.CapabilityEnvironmentResolver); ok {
+		credential, alias, environment, _, err = resolver.ResolveProviderCredentialForCapabilityEnvironment(
+			ctx, providerCode, capability,
+		)
+	} else {
+		credential, alias, _, err = s.credentials.ResolveProviderCredentialForCapability(
+			ctx, providerCode, capability,
+		)
+	}
 	if errors.Is(err, providercredentials.ErrCredentialCapabilityUnavailable) ||
 		errors.Is(err, providercredentials.ErrNoActiveCredential) {
-		return nil, "", "", ErrCredentialUnavailable
+		return nil, "", "", "", ErrCredentialUnavailable
 	}
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", "", "", err
 	}
-	return adapter, credential, alias, nil
+	return adapter, credential, alias, environment, nil
 }
 
 func normalizeCreateRequest(request CreateRequest) CreateRequest {

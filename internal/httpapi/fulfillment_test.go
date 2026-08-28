@@ -74,6 +74,34 @@ func TestDeliveryCredentialRequiredReportsExecutionEnvironment(t *testing.T) {
 	}
 }
 
+func TestDeliveryCredentialRequiredReportsAutomaticSelection(t *testing.T) {
+	t.Parallel()
+	e := echo.New()
+	e.GET("/", func(c *echo.Context) error {
+		return writeFulfillmentError(c, fulfillment.ErrCredentialUnavailable)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Error struct {
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Error.Details["environment"] != "auto" ||
+		payload.Error.Message != "Credential Shipping Delivery valid belum tersedia pada live maupun sandbox." {
+		t.Fatalf("unexpected response: %s", response.Body.String())
+	}
+}
+
 func TestAmountMismatchErrorResponse(t *testing.T) {
 	t.Parallel()
 	e := echo.New()

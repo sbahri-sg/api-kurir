@@ -2099,7 +2099,7 @@ Content-Type: application/json
       "Mengirim shipping_api_key dan delivery_api_key tanpa environment hanya mengonfigurasi live, bukan sandbox.",
       "Live dan sandbox wajib memakai dua request terpisah. Secret kedua mode tidak pernah disalin atau dicampur otomatis.",
       `Credential fulfillment sandbox disimpan terpisah: { "provider_code": "rajaongkir", "environment": "sandbox", "credentials": { "delivery_api_key": "..." } }`,
-      "Credential Shipping Delivery-only tidak diuji melalui endpoint Shipping Cost. Format dan penyimpanannya divalidasi saat instalasi; otorisasi provider dipastikan pada request fulfillment sandbox pertama.",
+      "shipping_api_key dan delivery_api_key RajaOngkir diuji ke endpoint read-only produk masing-masing saat POST/PATCH. Key invalid menghasilkan HTTP 422 INVALID_PROVIDER_KEY dan credential aktif lama tidak diganti.",
     ],
     response: `{
   "data": {
@@ -2127,6 +2127,7 @@ Content-Type: application/json
       "environment — live atau sandbox; default live",
       "credentials — hanya field yang ingin ditambah atau diganti",
       "Field yang tidak dikirim tetap dipertahankan dan secret tidak pernah dikembalikan.",
+      "Setiap shipping_api_key/delivery_api_key yang berubah divalidasi ke RajaOngkir; HTTP 422 INVALID_PROVIDER_KEY tidak mengubah credential lama.",
     ],
     request: `PATCH {{base_url}}/api/v1/integrations/provider-credentials/rajaongkir
 key: {{api_key}}
@@ -2553,10 +2554,10 @@ awb=TEST123456789&courier=sicepat`,
     path: "/api/v1/integrations/shipping-quotes",
     title: "Ambil quote fulfillment terkunci",
     description:
-      "Mengambil tarif dari produk fulfillment provider aktif lalu menyimpannya sebagai snapshot canonical di API Kurir. Provider-native service code, credential alias, dan detail upstream tidak dikirim ke Emisell. Quote terikat pada merchant, provider, environment, credential, rute, paket, pembayaran, harga, dan masa berlaku.",
+      "Mengambil tarif dari produk fulfillment provider aktif lalu menyimpannya sebagai snapshot canonical di API Kurir. Provider-native service code, credential alias, dan detail upstream tidak dikirim ke Emisell. API Kurir memilih credential live yang valid atau fallback sandbox secara otomatis, lalu mengunci environment pada quote.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID",
     parameters: [
-      "X-Emisell-Execution-Mode — live (default) atau sandbox; harus sama ketika quote dipakai untuk create shipment",
+      "environment tidak dikirim Main Service; API Kurir memilihnya dari credential fulfillment merchant dan mengembalikannya pada quote",
       "origin/destination.destination_id — ID tujuan produk fulfillment provider",
       "package — berat, dimensi, dan nilai barang yang akan dikunci",
       "payment_type — non_cod atau cod",
@@ -2566,7 +2567,6 @@ awb=TEST123456789&courier=sicepat`,
     request: `POST {{base_url}}/api/v1/integrations/shipping-quotes
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}
-X-Emisell-Execution-Mode: sandbox
 Content-Type: application/json
 
 {
@@ -2612,11 +2612,11 @@ Kode seperti JNEFlat disimpan internal dan tidak perlu diketahui Emisell.`,
     path: "/api/v1/integrations/shipments",
     title: "Buat shipment fulfillment",
     description:
-      "Membuat booking memakai quote fq_ yang sebelumnya disimpan API Kurir. API Kurir mengambil service native dan biaya provider dari snapshot server-side, lalu memvalidasi subtotal barang, diskon, pajak, ongkir, dan grand total sebelum provider dipanggil. Field shipment lama tidak diterima.",
+      "Membuat booking memakai quote fq_ yang sebelumnya disimpan API Kurir. Environment dan credential diwarisi dari quote sehingga Main Service tidak mengirim header mode. API Kurir mengambil service native dan biaya provider dari snapshot server-side, lalu memvalidasi subtotal barang, diskon, pajak, ongkir, dan grand total sebelum provider dipanggil.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID + Idempotency-Key",
     parameters: [
       "Idempotency-Key — wajib, unik per percobaan booking; gunakan nilai yang sama hanya untuk retry payload identik",
-      "X-Emisell-Execution-Mode — kirim sandbox untuk memakai delivery_api_key sandbox; jika header tidak dikirim, API selalu memilih live",
+      "environment — tidak dikirim; otomatis diwarisi dari quote fq_",
       "quote_id — gunakan fq_ dari POST /api/v1/integrations/shipping-quotes",
       "service_code — kode canonical svc_ dari quote; kode native provider tidak pernah dikirim Emisell",
       "courier_code, delivery_mode, dan komponen payment boleh diteruskan dari quote; bila nilainya berbeda request ditolak sebelum hit provider",
@@ -2630,7 +2630,6 @@ Kode seperti JNEFlat disimpan internal dan tidak perlu diketahui Emisell.`,
     request: `POST {{base_url}}/api/v1/integrations/shipments
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}
-X-Emisell-Execution-Mode: sandbox
 Idempotency-Key: shipment:create:ORDER-10001
 Content-Type: application/json
 
@@ -2688,6 +2687,7 @@ Content-Type: application/json
       "shipment_id": "9f02ad9e-b9fd-4a30-987a-92ae731ac063",
       "merchant_reference": "ORDER-10001",
       "provider_code": "rajaongkir",
+      "environment": "sandbox",
       "provider_shipment_id": "KOMXXXXXXXXXXXXXXXXX",
       "courier_code": "jne",
       "service_code": "svc_5328e2d0d9efaa41",
@@ -2706,7 +2706,7 @@ HTTP 409 IDEMPOTENCY_CONFLICT — merchant_reference/Idempotency-Key pernah dipa
 
 HTTP 409 QUOTE_EXPIRED / QUOTE_MISMATCH / QUOTE_ALREADY_USED — hitung quote baru; jangan mengubah atau memakai ulang snapshot.
 
-HTTP 422 DELIVERY_CREDENTIAL_REQUIRED — delivery_api_key belum tersedia pada environment request. Pastikan header live/sandbox sesuai credential.
+HTTP 422 DELIVERY_CREDENTIAL_REQUIRED — delivery_api_key valid belum tersedia pada live maupun sandbox. Pasang credential provider terlebih dahulu; Main Service tidak memilih mode lewat header.
 
 HTTP 422 PROVIDER_REJECTED — request sudah mencapai provider, tetapi service, harga, total, rute, atau data shipment tidak diterima. Ambil ulang quote fulfillment dan buat percobaan baru dengan reference/key baru.`,
   },
@@ -2736,7 +2736,6 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     request: `POST {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}/pickup
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}
-X-Emisell-Execution-Mode: sandbox
 Idempotency-Key: shipment:pickup:ORDER-10001
 Content-Type: application/json
 
@@ -2750,7 +2749,7 @@ HTTP 202 untuk request baru atau 200 untuk replay. Shipment berstatus pickup_req
 
 HTTP 409 PICKUP_NOT_ALLOWED bila booking provider belum berhasil atau provider_shipment_id belum tersedia.
 
-HTTP 422 PROVIDER_REJECTED bila provider menerima request tetapi hasil order pickup berstatus failed. Shipment tetap booked sehingga dapat dicoba ulang setelah data diperbaiki. scheduled_at wajib di masa depan untuk mode scheduled. Gunakan mode live untuk produksi; header sandbox hanya ketika credential Shipping Delivery sandbox sudah tersimpan.`,
+HTTP 422 PROVIDER_REJECTED bila provider menerima request tetapi hasil order pickup berstatus failed. Shipment tetap booked sehingga dapat dicoba ulang setelah data diperbaiki. scheduled_at wajib di masa depan untuk mode scheduled. Pickup otomatis memakai environment yang sudah dikunci pada shipment.`,
   },
   {
     contract: "gateway",

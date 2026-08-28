@@ -63,13 +63,24 @@ func WithExecutionEnvironment(ctx context.Context, environment string) context.C
 }
 
 func ExecutionEnvironment(ctx context.Context) string {
-	if ctx == nil {
-		return EnvironmentLive
-	}
-	if value, ok := ctx.Value(environmentContextKey{}).(string); ok {
-		return NormalizeEnvironment(value)
+	if value, ok := RequestedExecutionEnvironment(ctx); ok {
+		return value
 	}
 	return EnvironmentLive
+}
+
+// RequestedExecutionEnvironment distinguishes an explicit environment choice
+// from the legacy live default. Runtime fulfillment uses this to select the
+// merchant's valid credential automatically when callers omit the header.
+func RequestedExecutionEnvironment(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	value, ok := ctx.Value(environmentContextKey{}).(string)
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", false
+	}
+	return NormalizeEnvironment(value), true
 }
 
 func NormalizeEnvironment(value string) string {

@@ -264,10 +264,13 @@ harus dibiarkan kosong pada instalasi baru.
 Fulfillment (buat shipment, pickup, label, dan pembatalan) memakai key Shipping
 Delivery yang berbeda dari key cek ongkir/tracking. Untuk fallback legacy,
 server mengenali `RAJAONGKIR_DELIVERY_API_KEY` dan
-`RAJAONGKIR_DELIVERY_BASE_URL`. Instalasi baru sebaiknya menyimpan
+`RAJAONGKIR_DELIVERY_BASE_URL`; endpoint validasi sandbox dapat dioverride
+melalui `RAJAONGKIR_DELIVERY_SANDBOX_BASE_URL`. Instalasi baru sebaiknya menyimpan
 `shipping_api_key` dan `delivery_api_key` terenkripsi melalui credential
 RajaOngkir di dashboard; key tidak dikirim oleh Main Service pada setiap
-request.
+request. Kedua jenis key diuji ke endpoint read-only RajaOngkir sebelum
+disimpan. Quote, shipment, dan pickup memilih serta mengunci environment
+credential secara otomatis tanpa header mode dari Main Service.
 
 `location-sync` tidak lagi dijalankan sebagai service default. Full sync
 RajaOngkir hanya disimpan sebagai alat pemulihan legacy di profile Compose

@@ -67,15 +67,13 @@ Merchant dengan provider built-in `emisell` memakai pool platform. Provider
 lain tidak boleh meminjam credential atau saldo platform.
 
 Adapter RajaOngkir memakai base URL Shipping Delivery
-`https://api.collaborator.komerce.id`. Sandbox harus memakai base URL dan key
-sandbox tersendiri. Endpoint internal tidak berubah ketika environment provider
-diganti. Main Service memilihnya melalui header
-`X-Emisell-Execution-Mode: live|sandbox` (default `live`). Credential sandbox
-disimpan sebagai record terpisah dengan `environment: sandbox` dan hanya perlu
-memuat `delivery_api_key`; Shipping Cost tetap memakai credential live karena
-rate dan tracking RajaOngkir tidak mempunyai sandbox terpisah. Validator lama
-Shipping Cost tidak dipakai untuk menolak key Delivery-only. Key tersebut
-divalidasi secara otoritatif oleh request fulfillment sandbox pertama.
+`https://api.collaborator.komerce.id`. Sandbox memakai base URL dan key sandbox
+tersendiri. Credential sandbox disimpan sebagai record terpisah dengan
+`environment: sandbox` dan hanya perlu memuat `delivery_api_key`; Shipping Cost
+tetap memakai credential live karena rate dan tracking RajaOngkir tidak
+mempunyai sandbox terpisah. Saat credential disimpan atau dirotasi, API Kurir
+menguji Shipping Cost dan Shipping Delivery melalui endpoint read-only produk
+masing-masing. Key invalid ditolak sebelum bundle aktif berubah.
 
 Instalasi RajaOngkir yang menggunakan kedua mode harus membuat **dua request**
 credential:
@@ -86,14 +84,15 @@ credential:
 
 Jika `environment` tidak dikirim, API selalu memilih `live`. Karena itu payload
 yang berisi kedua key tanpa `environment` hanya mengonfigurasi live dan tidak
-menyediakan credential untuk request dengan
-`X-Emisell-Execution-Mode: sandbox`. API sengaja tidak menyalin secret live ke
+menyediakan credential sandbox. API sengaja tidak menyalin secret live ke
 sandbox maupun sebaliknya.
 
-Header environment wajib diteruskan kembali pada setiap operasi fulfillment.
-Menyimpan credential dengan `environment: sandbox` tidak otomatis mengubah mode
-request berikutnya. Tanpa `X-Emisell-Execution-Mode: sandbox`, create shipment,
-pickup, cancel, detail, dan label tetap berjalan sebagai `live`.
+Main Service tidak perlu meneruskan header environment. Pada quote fulfillment,
+API Kurir memilih credential live valid lebih dahulu dan memakai sandbox bila
+live tidak tersedia. Environment tersebut dikunci pada quote dan disimpan pada
+shipment. Create shipment, pickup, cancel, detail, label, serta worker
+rekonsiliasi selalu memakai environment shipment yang sama sehingga tidak
+berpindah mode di tengah lifecycle.
 
 `service_code`, `shipping_cost`, serta komponen total pada create shipment
 diambil kembali dari snapshot `fq_` oleh API Kurir. Kode native seperti

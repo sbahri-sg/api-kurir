@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/tenancy"
 )
 
@@ -131,6 +132,42 @@ func TestCanonicalQuoteRejectsManipulatedPrice(t *testing.T) {
 	_, _, err = service.Create(ctx, "shipment:create:manipulated", request)
 	if !errors.Is(err, ErrQuoteMismatch) {
 		t.Fatalf("expected quote mismatch, got %v", err)
+	}
+}
+
+func TestFulfillmentAutomaticallyLocksInstalledCredentialEnvironment(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{}
+	credentials := &environmentCredentials{}
+	adapter := &stubAdapter{quotes: []ProviderQuote{{
+		CourierCode: "jne", CourierName: "JNE", ServiceCode: "JNEFlat",
+		ServiceGroup: "regular", DeliveryMode: "regular", ShippingCost: 10500,
+		GrandTotal: 110500, Currency: "IDR", ExpiresAt: time.Now().Add(time.Hour),
+	}}}
+	service := NewService(repository, stubCatalog{code: "rajaongkir"}, credentials, adapter)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
+
+	quotes, err := service.Quotes(ctx, validQuoteRequest())
+	if err != nil || len(quotes) != 1 {
+		t.Fatalf("quote failed: quotes=%+v err=%v", quotes, err)
+	}
+	if quotes[0].Environment != providercredentials.EnvironmentSandbox ||
+		adapter.lastEnvironment != providercredentials.EnvironmentSandbox {
+		t.Fatalf("sandbox environment was not selected and locked: quote=%+v adapter=%q", quotes[0], adapter.lastEnvironment)
+	}
+
+	request := validCreateRequest()
+	request.QuoteID = quotes[0].ID
+	request.ServiceCode = quotes[0].ServiceCode
+	request.Payment.ShippingCost = quotes[0].ShippingCost
+	request.Payment.GrandTotal = quotes[0].GrandTotal
+	shipment, _, err := service.Create(ctx, "shipment:create:auto-environment", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shipment.Environment != providercredentials.EnvironmentSandbox ||
+		adapter.lastEnvironment != providercredentials.EnvironmentSandbox {
+		t.Fatalf("shipment did not inherit quote environment: shipment=%+v adapter=%q", shipment, adapter.lastEnvironment)
 	}
 }
 
@@ -302,27 +339,52 @@ func (s stubCredentials) ResolveProviderCredentialForCapability(context.Context,
 	return "delivery-key", "test", 100, nil
 }
 
+type environmentCredentials struct {
+	selectedEnvironment string
+}
+
+func (s *environmentCredentials) ResolveProviderCredentialForCapability(
+	context.Context, string, string,
+) (string, string, int64, error) {
+	return "delivery-key", "sandbox-alias", 100, nil
+}
+
+func (s *environmentCredentials) ResolveProviderCredentialForCapabilityEnvironment(
+	ctx context.Context, _ string, _ string,
+) (string, string, string, int64, error) {
+	environment := providercredentials.EnvironmentSandbox
+	if requested, explicit := providercredentials.RequestedExecutionEnvironment(ctx); explicit {
+		environment = requested
+	}
+	s.selectedEnvironment = environment
+	return "delivery-key", "sandbox-alias", environment, 100, nil
+}
+
 type stubAdapter struct {
-	create      ProviderCreateResult
-	quotes      []ProviderQuote
-	createCalls int
-	pickupCalls int
-	lastCreate  CreateRequest
-	lastPickup  PickupRequest
+	create          ProviderCreateResult
+	quotes          []ProviderQuote
+	createCalls     int
+	pickupCalls     int
+	lastCreate      CreateRequest
+	lastPickup      PickupRequest
+	lastEnvironment string
 }
 
 func (s *stubAdapter) Code() string { return "rajaongkir" }
-func (s *stubAdapter) Create(_ context.Context, _ string, request CreateRequest) (ProviderCreateResult, error) {
+func (s *stubAdapter) Create(ctx context.Context, _ string, request CreateRequest) (ProviderCreateResult, error) {
 	s.lastCreate = request
+	s.lastEnvironment = providercredentials.ExecutionEnvironment(ctx)
 	s.createCalls++
 	return s.create, nil
 }
-func (s *stubAdapter) Quote(context.Context, string, QuoteRequest) ([]ProviderQuote, error) {
+func (s *stubAdapter) Quote(ctx context.Context, _ string, _ QuoteRequest) ([]ProviderQuote, error) {
+	s.lastEnvironment = providercredentials.ExecutionEnvironment(ctx)
 	return s.quotes, nil
 }
-func (s *stubAdapter) Pickup(_ context.Context, _ string, _ Shipment, request PickupRequest) (ProviderPickupResult, error) {
+func (s *stubAdapter) Pickup(ctx context.Context, _ string, _ Shipment, request PickupRequest) (ProviderPickupResult, error) {
 	s.pickupCalls++
 	s.lastPickup = request
+	s.lastEnvironment = providercredentials.ExecutionEnvironment(ctx)
 	return ProviderPickupResult{}, nil
 }
 func (s *stubAdapter) Label(context.Context, string, Shipment, string) (Label, error) {
@@ -362,7 +424,7 @@ func (r *memoryRepository) ReserveCreate(_ context.Context, input ReserveCreateI
 	now := time.Now().UTC()
 	shipment := Shipment{
 		ID: input.ID, MerchantReference: input.MerchantReference,
-		ProviderCode: input.ProviderCode, QuoteID: input.QuoteID,
+		ProviderCode: input.ProviderCode, Environment: input.Environment, QuoteID: input.QuoteID,
 		CourierCode: input.CourierCode, ServiceCode: input.ServiceCode,
 		DeliveryMode: input.DeliveryMode, Fulfillment: input.Fulfillment,
 		Status: StatusBookingPending, ShippingCost: input.ShippingCost,

@@ -57,6 +57,7 @@ func TestFulfillmentRepositoryTenantIsolationAndEncryptedPayloadIntegration(t *t
 	}
 	_, created, err := repository.ReserveCreate(ctx, ReserveCreateInput{
 		ID: quoteShipmentID, TenantID: tenantID, ProviderCode: "rajaongkir",
+		Environment:       providercredentials.EnvironmentSandbox,
 		MerchantReference: "ORDER-QUOTE-" + fmt.Sprint(suffix), QuoteID: quoteID,
 		CourierCode: "jne", ServiceCode: "svc_test", DeliveryMode: "regular",
 		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR", PackageWeightGrams: 1000,
@@ -68,6 +69,7 @@ func TestFulfillmentRepositoryTenantIsolationAndEncryptedPayloadIntegration(t *t
 	}
 	_, _, err = repository.ReserveCreate(ctx, ReserveCreateInput{
 		ID: secondQuoteShipmentID, TenantID: tenantID, ProviderCode: "rajaongkir",
+		Environment:       providercredentials.EnvironmentSandbox,
 		MerchantReference: "ORDER-QUOTE-SECOND-" + fmt.Sprint(suffix), QuoteID: quoteID,
 		CourierCode: "jne", ServiceCode: "svc_test", DeliveryMode: "regular",
 		Fulfillment: "pickup", ShippingCost: 18000, Currency: "IDR", PackageWeightGrams: 1000,

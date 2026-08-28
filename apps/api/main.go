@@ -106,6 +106,8 @@ func run(logger *slog.Logger) error {
 				cfg.RajaOngkir.BaseURL,
 				cfg.RajaOngkir.Timeout,
 				cfg.RajaOngkir.MinRequestInterval,
+				cfg.RajaOngkir.DeliveryBaseURL,
+				cfg.RajaOngkir.DeliverySandboxBaseURL,
 			),
 			"biteship": biteship.NewCredentialValidator(
 				cfg.Biteship.BaseURL,

@@ -32,6 +32,7 @@ func TestLoadSeparatesRajaOngkirShippingAndDeliveryCredentials(t *testing.T) {
 	t.Setenv("RAJAONGKIR_API_KEY", "shipping-key")
 	t.Setenv("RAJAONGKIR_DELIVERY_API_KEY", "delivery-key")
 	t.Setenv("RAJAONGKIR_DELIVERY_BASE_URL", "https://api-sandbox.collaborator.komerce.id")
+	t.Setenv("RAJAONGKIR_DELIVERY_SANDBOX_BASE_URL", "https://sandbox-delivery.example")
 	t.Setenv("RAJAONGKIR_DELIVERY_TIMEOUT", "9s")
 	cfg, err := Load()
 	if err != nil {
@@ -40,6 +41,7 @@ func TestLoadSeparatesRajaOngkirShippingAndDeliveryCredentials(t *testing.T) {
 	if cfg.RajaOngkir.APIKey != "shipping-key" ||
 		cfg.RajaOngkir.DeliveryAPIKey != "delivery-key" ||
 		cfg.RajaOngkir.DeliveryBaseURL != "https://api-sandbox.collaborator.komerce.id" ||
+		cfg.RajaOngkir.DeliverySandboxBaseURL != "https://sandbox-delivery.example" ||
 		cfg.RajaOngkir.DeliveryTimeout != 9*time.Second {
 		t.Fatalf("unexpected RajaOngkir delivery config: %#v", cfg.RajaOngkir)
 	}

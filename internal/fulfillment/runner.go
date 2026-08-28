@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/emisell/api-kurir/internal/tenancy"
 )
 
@@ -103,8 +104,11 @@ func (r *Runner) processOne(ctx context.Context, workerID string) error {
 		}
 		return r.repository.CompleteTrackingRegistration(jobCtx, job, trackingShipmentID)
 	case "reconcile":
+		providerContext := providercredentials.WithExecutionEnvironment(
+			jobCtx, shipment.Environment,
+		)
 		adapter, credential, err := r.service.adapterCredential(
-			jobCtx, shipment.ProviderCode, "shipments:read",
+			providerContext, shipment.ProviderCode, "shipments:read",
 		)
 		if err != nil {
 			return r.fail(jobCtx, job, lifecycleFailureCode(err), err)
@@ -113,7 +117,7 @@ func (r *Runner) processOne(ctx context.Context, workerID string) error {
 		if !ok {
 			return r.fail(jobCtx, job, "DETAIL_UNSUPPORTED", ErrProviderUnsupported)
 		}
-		result, err := detailAdapter.Detail(jobCtx, credential, shipment)
+		result, err := detailAdapter.Detail(providerContext, credential, shipment)
 		if err != nil {
 			return r.fail(jobCtx, job, lifecycleFailureCode(err), err)
 		}

@@ -39,17 +39,18 @@ type RedisConfig struct {
 }
 
 type RajaOngkirConfig struct {
-	TrackingCouriers   []string
-	APIKey             string
-	DeliveryAPIKey     string
-	BaseURL            string
-	DeliveryBaseURL    string
-	Timeout            time.Duration
-	DeliveryTimeout    time.Duration
-	DailyLimit         int64
-	CredentialAlias    string
-	SnapshotTTL        time.Duration
-	MinRequestInterval time.Duration
+	TrackingCouriers       []string
+	APIKey                 string
+	DeliveryAPIKey         string
+	BaseURL                string
+	DeliveryBaseURL        string
+	DeliverySandboxBaseURL string
+	Timeout                time.Duration
+	DeliveryTimeout        time.Duration
+	DailyLimit             int64
+	CredentialAlias        string
+	SnapshotTTL            time.Duration
+	MinRequestInterval     time.Duration
 }
 
 type HostedConnectorConfig struct {
@@ -217,10 +218,14 @@ func Load() (Config, error) {
 				"RAJAONGKIR_TRACKING_COURIERS",
 				"jne,sap,ninja,jnt,tiki,wahana,pos,lion,anteraja",
 			)),
-			APIKey:             strings.TrimSpace(os.Getenv("RAJAONGKIR_API_KEY")),
-			DeliveryAPIKey:     strings.TrimSpace(os.Getenv("RAJAONGKIR_DELIVERY_API_KEY")),
-			BaseURL:            envOr("RAJAONGKIR_BASE_URL", "https://rajaongkir.komerce.id/api/v1/"),
-			DeliveryBaseURL:    envOr("RAJAONGKIR_DELIVERY_BASE_URL", "https://api.collaborator.komerce.id"),
+			APIKey:          strings.TrimSpace(os.Getenv("RAJAONGKIR_API_KEY")),
+			DeliveryAPIKey:  strings.TrimSpace(os.Getenv("RAJAONGKIR_DELIVERY_API_KEY")),
+			BaseURL:         envOr("RAJAONGKIR_BASE_URL", "https://rajaongkir.komerce.id/api/v1/"),
+			DeliveryBaseURL: envOr("RAJAONGKIR_DELIVERY_BASE_URL", "https://api.collaborator.komerce.id"),
+			DeliverySandboxBaseURL: envOr(
+				"RAJAONGKIR_DELIVERY_SANDBOX_BASE_URL",
+				"https://api-sandbox.collaborator.komerce.id",
+			),
 			Timeout:            rajaOngkirTimeout,
 			DeliveryTimeout:    rajaOngkirDeliveryTimeout,
 			DailyLimit:         rajaOngkirDailyLimit,

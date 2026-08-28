@@ -61,6 +61,18 @@ type CapabilityResolver interface {
 	) (secret, credentialAlias string, dailyLimit int64, err error)
 }
 
+// CapabilityEnvironmentResolver resolves both the credential and the provider
+// execution environment. It lets trusted backend callers omit an environment
+// header while keeping every subsequent shipment operation in the environment
+// selected when the credential was installed.
+type CapabilityEnvironmentResolver interface {
+	ResolveProviderCredentialForCapabilityEnvironment(
+		ctx context.Context,
+		providerCode string,
+		capability string,
+	) (secret, credentialAlias, environment string, dailyLimit int64, err error)
+}
+
 type Service struct {
 	repository Repository
 	cipher     *Cipher
@@ -337,13 +349,14 @@ func (s *Service) validateCredentialValues(
 	values map[string]string,
 ) error {
 	if credentialType == CredentialTypeProviderDeclared {
-		// Provider packages own the safe field declaration. Known providers may
-		// still validate a read credential immediately; other credentials are
-		// verified by their first connector capability call.
+		// Provider packages own the safe field declaration. RajaOngkir has an
+		// authoritative validator for both Shipping Cost and Shipping Delivery,
+		// so neither key may be accepted without a provider-side check.
 		if providerCode == "rajaongkir" {
-			if secret := values["shipping_api_key"]; secret != "" {
-				return s.validator.Validate(ctx, providerCode, secret)
+			if validator, ok := s.validator.(BundleValidator); ok {
+				return validator.ValidateCredentials(ctx, providerCode, credentialType, values)
 			}
+			return ErrUnsupportedProvider
 		}
 		return nil
 	}
@@ -356,12 +369,6 @@ func (s *Service) validateCredentialValues(
 		secret = values["api_key"]
 	case CredentialTypeCapabilityAPIKeys:
 		secret = values["shipping_api_key"]
-		if secret == "" && values["delivery_api_key"] != "" {
-			// Shipping Delivery credentials cannot be validated through the
-			// Shipping Cost catalog endpoint. They are exercised by the first
-			// sandbox/live fulfillment request instead.
-			return nil
-		}
 	case CredentialTypeBearerToken:
 		secret = values["token"]
 	default:
@@ -378,11 +385,22 @@ func (s *Service) validatePatchedCredentialValues(
 	changed map[string]string,
 ) error {
 	if credentialType == CredentialTypeProviderDeclared && providerCode == "rajaongkir" {
-		if _, shippingChanged := changed["shipping_api_key"]; !shippingChanged {
-			// Adding the optional Shipping Delivery key must not spend another
-			// Shipping Cost validation hit or reject a valid stored shipping key.
-			return nil
+		validator, ok := s.validator.(BundleValidator)
+		if !ok {
+			return ErrUnsupportedProvider
 		}
+		changedValues := make(map[string]string, len(changed))
+		for code := range changed {
+			if value, exists := values[code]; exists {
+				changedValues[code] = value
+			}
+		}
+		if len(changedValues) == 0 {
+			return ErrInvalidSecret
+		}
+		return validator.ValidateCredentials(
+			ctx, providerCode, credentialType, changedValues,
+		)
 	}
 	return s.validateCredentialValues(ctx, providerCode, credentialType, values)
 }
@@ -584,6 +602,41 @@ func (s *Service) ResolveProviderCredentialForCapability(
 		return "", "", 0, ErrCredentialCapabilityUnavailable
 	}
 	return secret, alias, dailyLimit, nil
+}
+
+func (s *Service) ResolveProviderCredentialForCapabilityEnvironment(
+	ctx context.Context,
+	providerCode string,
+	capability string,
+) (string, string, string, int64, error) {
+	environments := []string{EnvironmentLive, EnvironmentSandbox}
+	if requested, explicit := RequestedExecutionEnvironment(ctx); explicit {
+		environments = []string{requested}
+	}
+	var lastErr error
+	for _, environment := range environments {
+		secret, alias, limit, err := s.ResolveProviderCredentialForCapability(
+			WithExecutionEnvironment(ctx, environment), providerCode, capability,
+		)
+		if err == nil {
+			return secret, alias, environment, limit, nil
+		}
+		if !credentialSelectionError(err) {
+			return "", "", "", 0, err
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = ErrNoActiveCredential
+	}
+	return "", "", "", 0, lastErr
+}
+
+func credentialSelectionError(err error) bool {
+	return errors.Is(err, ErrNoActiveCredential) ||
+		errors.Is(err, ErrCredentialCapabilityUnavailable) ||
+		errors.Is(err, ErrEnvironmentUnavailable) ||
+		errors.Is(err, ErrAllCredentialsExhausted)
 }
 
 func (s *Service) ResolveProviderCredentialValues(
@@ -821,4 +874,32 @@ func (r *StaticFallbackResolver) ResolveProviderCredentialForCapability(
 		return "", "", 0, ErrCredentialCapabilityUnavailable
 	}
 	return secret, fallback.CredentialAlias, fallback.DailyLimit, nil
+}
+
+func (r *StaticFallbackResolver) ResolveProviderCredentialForCapabilityEnvironment(
+	ctx context.Context,
+	providerCode string,
+	capability string,
+) (string, string, string, int64, error) {
+	environments := []string{EnvironmentLive, EnvironmentSandbox}
+	if requested, explicit := RequestedExecutionEnvironment(ctx); explicit {
+		environments = []string{requested}
+	}
+	var lastErr error
+	for _, environment := range environments {
+		secret, alias, limit, err := r.ResolveProviderCredentialForCapability(
+			WithExecutionEnvironment(ctx, environment), providerCode, capability,
+		)
+		if err == nil {
+			return secret, alias, environment, limit, nil
+		}
+		if !credentialSelectionError(err) {
+			return "", "", "", 0, err
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = ErrNoActiveCredential
+	}
+	return "", "", "", 0, lastErr
 }

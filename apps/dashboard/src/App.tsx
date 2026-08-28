@@ -2956,6 +2956,9 @@ function PartnerPortalIntegrationDocumentation({
 X-Request-Id: req_...`}</code></pre>
           <p>
             API Kurir menentukan credential live/sandbox dan endpoint runtime.
+            Header mode di atas hanya berada pada komunikasi API Kurir ke
+            connector partner; Main Service Emisell tidak mengirimkannya pada
+            quote, shipment, atau pickup.
             Provider tidak boleh meminta Emisell menyimpan URL upstream atau
             membuat form khusus per provider.
           </p>

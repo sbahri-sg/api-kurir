@@ -198,6 +198,7 @@ type Shipment struct {
 	ID                         string     `json:"shipment_id"`
 	MerchantReference          string     `json:"merchant_reference"`
 	ProviderCode               string     `json:"provider_code"`
+	Environment                string     `json:"environment"`
 	ProviderShipmentID         string     `json:"provider_shipment_id,omitempty"`
 	QuoteID                    string     `json:"quote_id"`
 	CourierCode                string     `json:"courier_code"`
@@ -374,6 +375,7 @@ type ReserveCreateInput struct {
 	ID                 string
 	TenantID           string
 	ProviderCode       string
+	Environment        string
 	MerchantReference  string
 	QuoteID            string
 	CourierCode        string

@@ -148,8 +148,9 @@ func (r *memoryRepository) ActiveCredentialID(
 	return r.item.ID, nil
 }
 
-func (r *memoryRepository) ResolveActive(context.Context, string) (StoredCredential, error) {
-	if r.item.ID == "" || r.disabled {
+func (r *memoryRepository) ResolveActive(ctx context.Context, _ string) (StoredCredential, error) {
+	if r.item.ID == "" || r.disabled ||
+		r.item.Environment != ExecutionEnvironment(ctx) {
 		return StoredCredential{}, ErrNoActiveCredential
 	}
 	return StoredCredential{
@@ -176,8 +177,12 @@ func (v *acceptingBundleValidator) ValidateCredentials(
 	credentialType string,
 	values map[string]string,
 ) error {
+	v.calls++
 	v.credentialType = credentialType
-	v.values = values
+	v.values = make(map[string]string, len(values))
+	for code, value := range values {
+		v.values[code] = value
+	}
 	return v.err
 }
 
@@ -194,7 +199,7 @@ func TestAddEncryptsProviderSecretAndResolverDecryptsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := &memoryRepository{}
-	validator := &acceptingValidator{}
+	validator := &acceptingBundleValidator{}
 	service := NewService(repository, cipher, validator)
 	secret := "rajaongkir-provider-secret"
 
@@ -283,7 +288,7 @@ func TestCapabilityAPIKeysResolveByOperation(t *testing.T) {
 	repository := &memoryRepository{credentialTypes: map[string]string{
 		"rajaongkir": CredentialTypeCapabilityAPIKeys,
 	}}
-	validator := &acceptingValidator{}
+	validator := &acceptingBundleValidator{}
 	service := NewService(repository, cipher, validator)
 	_, err = service.AddForTenantCredentials(
 		context.Background(), "merchant_123", "rajaongkir",
@@ -329,7 +334,7 @@ func TestCapabilityAPIKeysDoNotReuseShippingKeyForDelivery(t *testing.T) {
 	repository := &memoryRepository{credentialTypes: map[string]string{
 		"rajaongkir": CredentialTypeCapabilityAPIKeys,
 	}}
-	service := NewService(repository, cipher, &acceptingValidator{})
+	service := NewService(repository, cipher, &acceptingBundleValidator{})
 	_, err = service.AddForTenant(
 		context.Background(), "merchant_123", "rajaongkir",
 		"legacy-shipping-key", 50_000, "tenant:merchant_123", "req_legacy_shipping",
@@ -355,7 +360,7 @@ func TestCapabilityDeliveryOnlyCredentialCanBeStoredForSandbox(t *testing.T) {
 	repository := &memoryRepository{credentialTypes: map[string]string{
 		"rajaongkir": CredentialTypeCapabilityAPIKeys,
 	}}
-	validator := &acceptingValidator{}
+	validator := &acceptingBundleValidator{}
 	service := NewService(repository, cipher, validator)
 	credential, err := service.AddForTenantEnvironmentCredentials(
 		context.Background(), "merchant_123", "rajaongkir", EnvironmentSandbox,
@@ -368,8 +373,8 @@ func TestCapabilityDeliveryOnlyCredentialCanBeStoredForSandbox(t *testing.T) {
 	if credential.Environment != EnvironmentSandbox || credential.DisplayKey == "" {
 		t.Fatalf("unexpected sandbox credential: %#v", credential)
 	}
-	if validator.calls != 0 {
-		t.Fatalf("delivery-only credential used Shipping Cost validator %d times", validator.calls)
+	if validator.calls != 1 || validator.values["delivery_api_key"] != "sandbox-delivery-key" {
+		t.Fatalf("delivery-only credential was not validated as a bundle: %#v", validator)
 	}
 	value, credentialType, _, _, err := service.ResolveProviderCredentialValues(
 		WithExecutionEnvironment(context.Background(), EnvironmentSandbox), "rajaongkir",
@@ -379,6 +384,33 @@ func TestCapabilityDeliveryOnlyCredentialCanBeStoredForSandbox(t *testing.T) {
 	}
 	if credentialType != CredentialTypeCapabilityAPIKeys || value["delivery_api_key"] != "sandbox-delivery-key" {
 		t.Fatalf("unexpected resolved credential: type=%q values=%#v", credentialType, value)
+	}
+}
+
+func TestCapabilityEnvironmentResolverSelectsInstalledSandboxCredential(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryRepository{credentialTypes: map[string]string{
+		"rajaongkir": CredentialTypeCapabilityAPIKeys,
+	}}
+	service := NewService(repository, cipher, &acceptingBundleValidator{})
+	_, err = service.AddForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentSandbox,
+		map[string]string{"delivery_api_key": "sandbox-delivery-key"},
+		50_000, "tenant:merchant_123", "req_sandbox_auto",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, environment, _, err := service.ResolveProviderCredentialForCapabilityEnvironment(
+		context.Background(), "rajaongkir", "shipments:write",
+	)
+	if err != nil || secret != "sandbox-delivery-key" || environment != EnvironmentSandbox {
+		t.Fatalf("secret=%q environment=%q err=%v", secret, environment, err)
 	}
 }
 
@@ -401,7 +433,7 @@ func TestProviderDeclaredSandboxCredentialUsesSandboxFieldOnly(t *testing.T) {
 			Environments: []string{EnvironmentSandbox},
 		},
 	}}
-	service := NewService(repository, cipher, &acceptingValidator{})
+	service := NewService(repository, cipher, &acceptingBundleValidator{})
 	_, err = service.AddForTenantEnvironmentCredentials(
 		context.Background(), "merchant_123", "provider-hosted", EnvironmentSandbox,
 		map[string]string{"delivery_api_key": "sandbox-delivery-key"},
@@ -433,7 +465,7 @@ func TestProviderDeclaredRajaOngkirAcceptsLegacyAPIKey(t *testing.T) {
 		Secret: true, Required: true, Capabilities: []string{"rates:read"},
 		Environments: []string{EnvironmentLive},
 	}}}
-	service := NewService(repository, cipher, &acceptingValidator{})
+	service := NewService(repository, cipher, &acceptingBundleValidator{})
 	_, err = service.AddForTenantEnvironmentCredentials(
 		context.Background(), "merchant_123", "rajaongkir", EnvironmentLive,
 		map[string]string{"api_key": "legacy-shipping-key"},
@@ -467,7 +499,7 @@ func TestPatchProviderDeclaredCredentialMergesOptionalDeliveryKey(t *testing.T) 
 			Environments: []string{EnvironmentLive, EnvironmentSandbox},
 		},
 	}}
-	validator := &acceptingValidator{}
+	validator := &acceptingBundleValidator{}
 	service := NewService(repository, cipher, validator)
 	_, err = service.AddForTenantEnvironmentCredentials(
 		context.Background(), "merchant_123", "rajaongkir", EnvironmentLive,
@@ -488,8 +520,11 @@ func TestPatchProviderDeclaredCredentialMergesOptionalDeliveryKey(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.DailyLimit != 50_000 || validator.calls != 1 {
+	if updated.DailyLimit != 50_000 || validator.calls != 2 {
 		t.Fatalf("updated=%#v validation calls=%d", updated, validator.calls)
+	}
+	if len(validator.values) != 1 || validator.values["delivery_api_key"] != "delivery-live-key" {
+		t.Fatalf("patch should validate only changed key: %#v", validator.values)
 	}
 	shipping, shippingExists := repository.inputSecretValue(t, cipher, "shipping_api_key")
 	delivery, deliveryExists := repository.inputSecretValue(t, cipher, "delivery_api_key")
@@ -505,6 +540,64 @@ func TestPatchProviderDeclaredCredentialMergesOptionalDeliveryKey(t *testing.T) 
 	}
 	if got := availability.FieldsByEnvironment[EnvironmentLive]; len(got) != 2 || got[0] != "delivery_api_key" || got[1] != "shipping_api_key" {
 		t.Fatalf("available live fields=%#v", got)
+	}
+}
+
+func TestProviderDeclaredDeliveryKeyValidationRejectsPostAndPatchWithoutReplacingStoredBundle(t *testing.T) {
+	t.Parallel()
+
+	cipher, err := NewCipher(testEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := []FieldDefinition{
+		{
+			Code: "shipping_api_key", Label: "Shipping key", InputType: "password",
+			Secret: true, Required: true, Capabilities: []string{"rates:read"},
+			Environments: []string{EnvironmentLive},
+		},
+		{
+			Code: "delivery_api_key", Label: "Delivery key", InputType: "password",
+			Secret: true, Required: false, Capabilities: []string{"shipments:write"},
+			Environments: []string{EnvironmentLive, EnvironmentSandbox},
+		},
+	}
+
+	invalidPostRepository := &declarativeMemoryRepository{fields: fields}
+	invalidPostValidator := &acceptingBundleValidator{acceptingValidator: acceptingValidator{
+		err: errors.New("unauthorized"),
+	}}
+	invalidPostService := NewService(invalidPostRepository, cipher, invalidPostValidator)
+	_, err = invalidPostService.AddForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentSandbox,
+		map[string]string{"delivery_api_key": "invalid-delivery-key"},
+		50_000, "tenant:merchant_123", "req_invalid_post",
+	)
+	if !errors.Is(err, ErrInvalidSecret) || invalidPostRepository.item.ID != "" {
+		t.Fatalf("invalid POST must be rejected before storage: item=%+v err=%v", invalidPostRepository.item, err)
+	}
+
+	patchRepository := &declarativeMemoryRepository{fields: fields}
+	patchValidator := &acceptingBundleValidator{}
+	patchService := NewService(patchRepository, cipher, patchValidator)
+	_, err = patchService.AddForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentLive,
+		map[string]string{"shipping_api_key": "valid-shipping-key"},
+		50_000, "tenant:merchant_123", "req_valid_create",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedCiphertext := append([]byte(nil), patchRepository.input.SecretCiphertext...)
+	patchValidator.err = errors.New("unauthorized")
+	_, err = patchService.PatchForTenantEnvironmentCredentials(
+		context.Background(), "merchant_123", "rajaongkir", EnvironmentLive,
+		map[string]string{"delivery_api_key": "invalid-delivery-key"},
+		nil, "tenant:merchant_123", "req_invalid_patch",
+	)
+	if !errors.Is(err, ErrInvalidSecret) ||
+		!bytes.Equal(storedCiphertext, patchRepository.input.SecretCiphertext) {
+		t.Fatalf("invalid PATCH replaced stored bundle: err=%v", err)
 	}
 }
 

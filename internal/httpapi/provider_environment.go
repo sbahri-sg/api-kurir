@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/emisell/api-kurir/internal/providercredentials"
 	"github.com/labstack/echo/v5"
@@ -12,8 +13,12 @@ const providerExecutionModeHeader = "X-Emisell-Execution-Mode"
 func providerExecutionEnvironmentMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
+			headerValue := strings.TrimSpace(c.Request().Header.Get(providerExecutionModeHeader))
+			if headerValue == "" {
+				return next(c)
+			}
 			environment, valid := providercredentials.NormalizeEnvironmentStrict(
-				c.Request().Header.Get(providerExecutionModeHeader),
+				headerValue,
 			)
 			if !valid {
 				return writeError(

@@ -113,17 +113,18 @@ func TestValidatorRegistryValidatesCapabilityShippingKey(t *testing.T) {
 	}
 }
 
-func TestValidatorRegistryDefersDeliveryOnlyCredentialValidation(t *testing.T) {
+func TestValidatorRegistryRejectsDeliveryOnlyWithoutBundleValidator(t *testing.T) {
 	t.Parallel()
 	delivery := &registryValidatorStub{}
 	registry := NewValidatorRegistry(map[string]Validator{"rajaongkir": delivery})
-	if err := registry.ValidateCredentials(
+	err := registry.ValidateCredentials(
 		context.Background(),
 		"rajaongkir",
 		CredentialTypeCapabilityAPIKeys,
 		map[string]string{"delivery_api_key": "sandbox-delivery-key"},
-	); err != nil {
-		t.Fatal(err)
+	)
+	if !errors.Is(err, ErrUnsupportedProvider) {
+		t.Fatalf("expected bundle validator requirement, got %v", err)
 	}
 	if delivery.calls != 0 {
 		t.Fatalf("delivery-only credential used Shipping Cost validator %d times", delivery.calls)

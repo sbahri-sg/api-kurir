@@ -76,10 +76,10 @@ Urutan aktivasi merchant:
 
 API Kurir menolak field tambahan, mengenkripsi seluruh bundle menggunakan
 AES-256-GCM, dan tidak pernah mengembalikan nilai secret. Provider package
-menjadi tersedia setelah release dipublikasikan. Credential yang dapat
-diverifikasi lewat endpoint baca diuji saat penyimpanan; credential transaksi
-yang tidak mempunyai endpoint validasi aman diuji pada pemakaian capability
-pertama.
+menjadi tersedia setelah release dipublikasikan. Untuk RajaOngkir,
+`shipping_api_key` dan `delivery_api_key` diuji ke endpoint read-only produk
+masing-masing pada POST maupun PATCH. Respons provider non-2xx menghasilkan
+`422 INVALID_PROVIDER_KEY`; credential aktif sebelumnya tidak diganti.
 
 Field `api_key` pada request lama tetap didukung untuk kompatibilitas
 RajaOngkir.
@@ -140,11 +140,13 @@ delivery bila `delivery_api_key` belum tersedia.
 
 ## Environment dan biaya provider
 
-Header internal `X-Emisell-Execution-Mode` menerima `live` atau `sandbox` dan
-default-nya `live`, sehingga integrasi Emisell lama tetap kompatibel. Credential
-live dan sandbox disimpan terpisah. Memindahkan mode tidak pernah menyalin
-secret dari environment lain. Field `environment` yang tidak dikirim selalu
-berarti `live`; satu request hanya mengonfigurasi satu environment.
+Credential live dan sandbox disimpan terpisah. Field `environment` pada
+POST/PATCH credential menentukan tempat penyimpanan dan jika tidak dikirim
+berarti `live`; satu request hanya mengonfigurasi satu environment. Main Service
+tidak mengirim header mode pada quote, shipment, atau pickup. API Kurir memilih
+credential fulfillment valid secara otomatis (live diprioritaskan, sandbox
+menjadi fallback), menyimpan environment pada quote, lalu mewariskannya ke
+shipment dan seluruh operasi lifecycle.
 
 | Capability RajaOngkir | Mode | Perilaku | Credential | Implikasi |
 |---|---|---|---|---|

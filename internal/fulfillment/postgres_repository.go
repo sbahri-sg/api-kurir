@@ -90,6 +90,7 @@ func (r *PostgresRepository) ReserveCreate(
 	ctx context.Context,
 	input ReserveCreateInput,
 ) (Shipment, bool, error) {
+	input.Environment = providercredentials.NormalizeEnvironment(input.Environment)
 	var existingHash []byte
 	var existingKey string
 	existing, err := scanShipment(r.pool.QueryRow(ctx, shipmentSelect+`
@@ -121,15 +122,15 @@ func (r *PostgresRepository) ReserveCreate(
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, `
 		INSERT INTO fulfillment_shipments (
-			id, tenant_id, provider_code, merchant_reference, quote_id,
+			id, tenant_id, provider_code, environment_code, merchant_reference, quote_id,
 			courier_code, service_code, delivery_mode, fulfillment_mode,
 			shipping_cost, currency, package_weight_grams, create_idempotency_key,
 			create_request_hash, request_ciphertext
 		) VALUES (
-			$1::uuid, $2, $3, $4, $5, $6, $7, $8, $9,
-			$10, $11, $12, $13, $14, $15
+			$1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+			$11, $12, $13, $14, $15, $16
 		)
-	`, input.ID, input.TenantID, input.ProviderCode, input.MerchantReference,
+	`, input.ID, input.TenantID, input.ProviderCode, input.Environment, input.MerchantReference,
 		input.QuoteID, input.CourierCode, input.ServiceCode, input.DeliveryMode,
 		input.Fulfillment, input.ShippingCost, input.Currency,
 		input.PackageWeightGrams, input.IdempotencyKey, input.RequestHash, requestCiphertext)
@@ -856,7 +857,7 @@ func (r *PostgresRepository) FailFulfillmentWebhook(
 
 const shipmentSelect = `
 	SELECT
-		id::text, merchant_reference, provider_code,
+		id::text, merchant_reference, provider_code, environment_code,
 		coalesce(provider_shipment_id, ''), quote_id, courier_code,
 		service_code, delivery_mode, fulfillment_mode, coalesce(awb, ''),
 		normalized_status, provider_status, shipping_cost, currency,
@@ -879,7 +880,7 @@ func scanShipment(row rowScanner, requestHash *[]byte, idempotencyKey *string) (
 	var storedKey string
 	err := row.Scan(
 		&shipment.ID, &shipment.MerchantReference, &shipment.ProviderCode,
-		&shipment.ProviderShipmentID, &shipment.QuoteID, &shipment.CourierCode,
+		&shipment.Environment, &shipment.ProviderShipmentID, &shipment.QuoteID, &shipment.CourierCode,
 		&shipment.ServiceCode, &shipment.DeliveryMode, &shipment.Fulfillment,
 		&shipment.AWB, &shipment.Status, &shipment.ProviderStatus,
 		&shipment.ShippingCost, &shipment.Currency, &shipment.PackageWeightGrams,

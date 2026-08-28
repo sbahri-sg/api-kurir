@@ -190,12 +190,18 @@ func writeFulfillmentError(c *echo.Context, err error) error {
 	case errors.Is(err, fulfillment.ErrProviderUnsupported):
 		return writeError(c, http.StatusUnprocessableEntity, "FULFILLMENT_PROVIDER_UNSUPPORTED", "Provider aktif belum mendukung fulfillment melalui API Kurir.", nil)
 	case errors.Is(err, fulfillment.ErrCredentialUnavailable):
-		environment := providercredentials.ExecutionEnvironment(c.Request().Context())
+		environment, explicit := providercredentials.RequestedExecutionEnvironment(c.Request().Context())
+		message := "Credential Shipping Delivery valid belum tersedia pada live maupun sandbox."
+		if explicit {
+			message = "Credential Shipping Delivery untuk mode " + environment + " belum tersedia."
+		} else {
+			environment = "auto"
+		}
 		return writeError(
 			c,
 			http.StatusUnprocessableEntity,
 			"DELIVERY_CREDENTIAL_REQUIRED",
-			"Credential Shipping Delivery untuk mode "+environment+" belum tersedia.",
+			message,
 			map[string]any{
 				"environment":         environment,
 				"required_credential": "delivery_api_key",

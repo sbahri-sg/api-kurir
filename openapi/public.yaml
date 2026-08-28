@@ -872,7 +872,10 @@ paths:
         provider shipping secara otomatis. Jika environment tidak dikirim,
         credential selalu disimpan sebagai live. RajaOngkir live dan sandbox
         harus dikonfigurasi melalui dua request terpisah; secret tidak pernah
-        disalin otomatis antar-environment.
+        disalin otomatis antar-environment. shipping_api_key dan
+        delivery_api_key RajaOngkir diuji ke endpoint read-only produk
+        masing-masing sebelum credential disimpan; key invalid ditolak dengan
+        422 INVALID_PROVIDER_KEY tanpa mengganti credential aktif.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -962,7 +965,9 @@ paths:
         Menggabungkan field yang dikirim dengan bundle aktif pada environment
         yang sama. Field credential yang tidak dikirim tetap dipertahankan,
         sehingga delivery_api_key dapat ditambahkan tanpa menghapus
-        shipping_api_key. Secret hasil merge divalidasi dan dienkripsi ulang.
+        shipping_api_key. Setiap key yang ditambah atau dirotasi diuji ke
+        endpoint read-only provider sebelum bundle dienkripsi dan menggantikan
+        credential aktif. Key invalid ditolak tanpa mengubah bundle lama.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1241,14 +1246,15 @@ paths:
         rute, dan paket di API Kurir. Response hanya membawa service_code
         canonical. Quote berawalan fq_ wajib dipakai saat create shipment dan
         tidak dapat dipindahkan ke provider, credential, mode, rute, atau paket
-        lain. Shipping Cost umum bukan sumber endpoint ini.
+        lain. Environment dipilih otomatis dari credential fulfillment valid
+        milik merchant (live diprioritaskan, sandbox dipakai bila live tidak
+        tersedia) dan dikunci pada quote. Main Service tidak perlu mengirim
+        header mode. Shipping Cost umum bukan sumber endpoint ini.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
         - serviceKeyAuth: []
           merchantContextAuth: []
-      parameters:
-        - $ref: "#/components/parameters/ExecutionModeHeader"
       requestBody:
         required: true
         content:
@@ -1288,8 +1294,8 @@ paths:
         Mereservasi idempotency sebelum memanggil provider. Provider dan
         credential dipilih server-side dari konfigurasi merchant; payload PII
         disimpan terenkripsi. Request timeout tidak diulang otomatis agar tidak
-        membuat dua AWB. Credential sandbox hanya dipilih bila header
-        X-Emisell-Execution-Mode bernilai sandbox. Gunakan quote_id fq_ dari
+        membuat dua AWB. Environment dan credential diwarisi otomatis dari
+        quote fq_; Main Service tidak mengirim header mode. Gunakan quote_id fq_ dari
         /api/v1/integrations/shipping-quotes. API Kurir mengambil service native
         dan seluruh komponen biaya dari snapshot server-side; perubahan rute,
         paket, provider, mode, credential, service, atau harga ditolak sebelum
@@ -1302,7 +1308,6 @@ paths:
           merchantContextAuth: []
       parameters:
         - $ref: "#/components/parameters/FulfillmentIdempotencyKey"
-        - $ref: "#/components/parameters/ExecutionModeHeader"
       requestBody:
         required: true
         content:
@@ -1337,7 +1342,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
           description: >
-            Credential Shipping Delivery pada environment request belum ada,
+            Credential Shipping Delivery live maupun sandbox belum tersedia,
             rincian nominal tidak konsisten (AMOUNT_MISMATCH), atau provider
             menolak service, harga, total, rute, maupun data shipment. Ambil
             ulang quote fulfillment sebelum membuat percobaan baru.
@@ -1386,7 +1391,8 @@ paths:
         envelope 2xx dari provider hanya dianggap berhasil ketika item order
         pickup juga berstatus sukses. Merchant hanya memilih pickup sekarang
         atau terjadwal; kendaraan dan field native lain ditentukan adapter
-        dari snapshot shipment yang sudah tersimpan.
+        dari snapshot shipment yang sudah tersimpan. Environment selalu
+        diwarisi dari shipment sehingga Main Service tidak mengirim header mode.
       security:
         - serviceBearerAuth: []
           merchantContextAuth: []
@@ -1395,7 +1401,6 @@ paths:
       parameters:
         - $ref: "#/components/parameters/FulfillmentShipmentID"
         - $ref: "#/components/parameters/FulfillmentIdempotencyKey"
-        - $ref: "#/components/parameters/ExecutionModeHeader"
       requestBody:
         required: true
         content:
@@ -3143,20 +3148,6 @@ components:
       description: Access key berformat epk_live_* yang terikat ke satu provider.
 
   parameters:
-    ExecutionModeHeader:
-      name: X-Emisell-Execution-Mode
-      in: header
-      required: false
-      description: >
-        Mode eksekusi capability provider. Default live. Sandbox memilih
-        credential dan base URL sandbox bila provider mendukungnya; rate dan
-        tracking RajaOngkir tetap live read-only sesuai capability policy.
-        Menyimpan credential sandbox tidak mengubah default ini; setiap request
-        fulfillment sandbox wajib mengirim header dengan nilai sandbox.
-      schema:
-        type: string
-        enum: [live, sandbox]
-        default: live
     FulfillmentShipmentID:
       name: shipment_id
       in: path
@@ -3561,6 +3552,7 @@ components:
         - shipment_id
         - merchant_reference
         - provider_code
+        - environment
         - quote_id
         - courier_code
         - service_code
@@ -3578,6 +3570,7 @@ components:
         shipment_id: { type: string, format: uuid }
         merchant_reference: { type: string }
         provider_code: { type: string }
+        environment: { type: string, enum: [live, sandbox] }
         provider_shipment_id: { type: string }
         quote_id: { type: string }
         courier_code: { type: string }

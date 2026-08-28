@@ -5,6 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -114,15 +118,34 @@ func (p *DynamicProvider) Quote(
 }
 
 type CredentialValidator struct {
-	clients *dynamicClientFactory
+	clients          *dynamicClientFactory
+	deliveryBaseURLs map[string]string
+	deliveryClient   *http.Client
 }
 
 func NewCredentialValidator(
 	baseURL string,
 	timeout, interval time.Duration,
+	deliveryBaseURLs ...string,
 ) *CredentialValidator {
+	if timeout <= 0 {
+		timeout = 8 * time.Second
+	}
+	liveBaseURL := "https://api.collaborator.komerce.id"
+	sandboxBaseURL := "https://api-sandbox.collaborator.komerce.id"
+	if len(deliveryBaseURLs) > 0 && strings.TrimSpace(deliveryBaseURLs[0]) != "" {
+		liveBaseURL = deliveryBaseURLs[0]
+	}
+	if len(deliveryBaseURLs) > 1 && strings.TrimSpace(deliveryBaseURLs[1]) != "" {
+		sandboxBaseURL = deliveryBaseURLs[1]
+	}
 	return &CredentialValidator{
 		clients: newDynamicClientFactory(baseURL, timeout, interval),
+		deliveryBaseURLs: map[string]string{
+			providercredentials.EnvironmentLive:    strings.TrimRight(strings.TrimSpace(liveBaseURL), "/"),
+			providercredentials.EnvironmentSandbox: strings.TrimRight(strings.TrimSpace(sandboxBaseURL), "/"),
+		},
+		deliveryClient: &http.Client{Timeout: timeout},
 	}
 }
 
@@ -143,6 +166,68 @@ func (v *CredentialValidator) Validate(
 	}
 	_, err = client.SearchDestinations(ctx, "Jakarta", 1, 0)
 	return err
+}
+
+func (v *CredentialValidator) ValidateCredentials(
+	ctx context.Context,
+	providerCode string,
+	credentialType string,
+	values map[string]string,
+) error {
+	if providerCode != "rajaongkir" {
+		return providercredentials.ErrUnsupportedProvider
+	}
+	shippingKey := strings.TrimSpace(values["shipping_api_key"])
+	if shippingKey == "" {
+		shippingKey = strings.TrimSpace(values["api_key"])
+	}
+	deliveryKey := strings.TrimSpace(values["delivery_api_key"])
+	if shippingKey == "" && deliveryKey == "" {
+		return providercredentials.ErrInvalidSecret
+	}
+	if shippingKey != "" {
+		if err := v.Validate(ctx, providerCode, shippingKey); err != nil {
+			return fmt.Errorf("validate shipping_api_key: %w", err)
+		}
+	}
+	if deliveryKey != "" {
+		if err := v.validateDeliveryCredential(ctx, deliveryKey); err != nil {
+			return fmt.Errorf("validate delivery_api_key: %w", err)
+		}
+	}
+	return nil
+}
+
+func (v *CredentialValidator) validateDeliveryCredential(
+	ctx context.Context,
+	secret string,
+) error {
+	environment := providercredentials.ExecutionEnvironment(ctx)
+	baseURL := v.deliveryBaseURLs[environment]
+	if baseURL == "" || strings.TrimSpace(secret) == "" {
+		return providercredentials.ErrInvalidSecret
+	}
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		baseURL+"/tariff/api/v1/destination/search?keyword=53131",
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("x-api-key", secret)
+	request.Header.Set("Accept", "application/json")
+	response, err := v.deliveryClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("Shipping Delivery returned HTTP %d", response.StatusCode)
+	}
+	return nil
 }
 
 type DynamicTrackingAdapter struct {
