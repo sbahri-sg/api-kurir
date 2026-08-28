@@ -2225,8 +2225,9 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     parameters: [
       "provider_code — kode provider dari endpoint listing",
-      "auto_pickup true berarti credential live untuk pickup sudah tersedia",
-      "auto_pickup_status — unavailable, not_configured, configured, atau invalid",
+      "auto_pickup true berarti sedikitnya satu environment siap menjalankan pickup",
+      "auto_pickup_status — unsupported, credential_missing, credential_invalid_or_expired, atau configured",
+      "auto_pickup_environments — status yang harus dibaca Emisell sesuai mode live/sandbox yang sedang digunakan",
       "available_credentials hanya berisi nama field, tidak pernah secret.",
     ],
     request: `GET {{base_url}}/api/v1/integrations/providers/rajaongkir
@@ -2264,9 +2265,21 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     ],
     "auto_pickup": true,
     "auto_pickup_status": "configured",
+    "auto_pickup_environments": {
+      "live": {
+        "enabled": false,
+        "status": "credential_missing",
+        "missing_credentials": ["delivery_api_key"]
+      },
+      "sandbox": {
+        "enabled": true,
+        "status": "configured",
+        "missing_credentials": []
+      }
+    },
     "available_credentials": {
-      "live": ["delivery_api_key", "shipping_api_key"],
-      "sandbox": []
+      "live": ["shipping_api_key"],
+      "sandbox": ["delivery_api_key"]
     }
   },
   "meta": { "request_id": "req_example" }

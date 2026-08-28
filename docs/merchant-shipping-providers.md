@@ -145,10 +145,13 @@ memasang satu provider. Endpoint detail membawa `credential_fields`, environment
 capability policy, versi release, scope, `available_credentials`, `auto_pickup`,
 dan `auto_pickup_status`.
 
-`available_credentials` hanya berisi nama field, bukan nilai secret. Status
-auto-pickup bernilai `configured` bila provider mendukung pickup dan credential
-live yang diperlukan tersedia; nilai lain adalah `unavailable`,
-`not_configured`, atau `invalid`.
+`available_credentials` hanya berisi nama field, bukan nilai secret.
+`auto_pickup=true` bila sedikitnya satu environment siap dipakai. Main Service
+tetap wajib membaca `auto_pickup_environments.live` atau `.sandbox` sesuai mode
+operasi sebelum menampilkan aksi pickup. Statusnya adalah `configured`,
+`credential_missing`, `credential_invalid_or_expired`, atau `unsupported`.
+`missing_credentials` menjelaskan nama field yang belum diisi tanpa pernah
+menampilkan nilainya.
 
 ## Pengelolaan master provider
 

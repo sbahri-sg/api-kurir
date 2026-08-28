@@ -4,6 +4,13 @@ import "github.com/emisell/api-kurir/internal/providercredentials"
 
 const EmisellProviderCode = "emisell"
 
+const (
+	AutoPickupStatusConfigured                 = "configured"
+	AutoPickupStatusCredentialMissing          = "credential_missing"
+	AutoPickupStatusCredentialInvalidOrExpired = "credential_invalid_or_expired"
+	AutoPickupStatusUnsupported                = "unsupported"
+)
+
 type Provider struct {
 	Code                 string                                            `json:"code"`
 	Name                 string                                            `json:"name"`
@@ -34,9 +41,16 @@ type Catalog struct {
 
 type Detail struct {
 	Provider
-	AutoPickup           bool                `json:"auto_pickup"`
-	AutoPickupStatus     string              `json:"auto_pickup_status"`
-	AvailableCredentials map[string][]string `json:"available_credentials"`
+	AutoPickup             bool                                   `json:"auto_pickup"`
+	AutoPickupStatus       string                                 `json:"auto_pickup_status"`
+	AutoPickupEnvironments map[string]AutoPickupEnvironmentStatus `json:"auto_pickup_environments"`
+	AvailableCredentials   map[string][]string                    `json:"available_credentials"`
+}
+
+type AutoPickupEnvironmentStatus struct {
+	Enabled            bool     `json:"enabled"`
+	Status             string   `json:"status"`
+	MissingCredentials []string `json:"missing_credentials"`
 }
 
 type ChangeInput struct {

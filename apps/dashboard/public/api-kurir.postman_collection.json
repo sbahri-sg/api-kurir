@@ -1198,7 +1198,8 @@
                   "  const provider = pm.response.json().data;",
                   "  pm.expect(provider.credential_fields).to.be.an('array').that.is.not.empty;",
                   "  pm.expect(provider.available_credentials).to.be.an('object');",
-                  "  pm.expect(provider.auto_pickup_status).to.be.oneOf(['unavailable', 'not_configured', 'configured', 'invalid']);",
+                  "  pm.expect(provider.auto_pickup_status).to.be.oneOf(['unsupported', 'credential_missing', 'credential_invalid_or_expired', 'configured']);",
+                  "  pm.expect(provider.auto_pickup_environments).to.be.an('object');",
                   "});"
                 ]
               }

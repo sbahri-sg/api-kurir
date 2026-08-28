@@ -4058,6 +4058,7 @@ components:
         - active
         - auto_pickup
         - auto_pickup_status
+        - auto_pickup_environments
         - available_credentials
       properties:
         code:
@@ -4129,11 +4130,25 @@ components:
           description: Scope yang dipin saat merchant mengaktifkan release ini.
         auto_pickup:
           type: boolean
-          description: True jika provider mendukung pickup dan credential live yang diperlukan sudah tersedia.
+          description: True jika sedikitnya satu environment siap menjalankan pickup.
         auto_pickup_status:
           type: string
-          enum: [unavailable, not_configured, configured, invalid]
-          description: Status kesiapan auto-pickup tanpa mengekspos secret provider.
+          enum: [unsupported, credential_missing, credential_invalid_or_expired, configured]
+          description: Ringkasan kesiapan lintas environment tanpa mengekspos secret provider.
+        auto_pickup_environments:
+          type: object
+          description: Status pickup per environment. Emisell wajib membaca environment yang akan dipakai sebelum menampilkan aksi pickup.
+          additionalProperties:
+            $ref: "#/components/schemas/AutoPickupEnvironmentStatus"
+          example:
+            live:
+              enabled: false
+              status: credential_missing
+              missing_credentials: [delivery_api_key]
+            sandbox:
+              enabled: true
+              status: configured
+              missing_credentials: []
         available_credentials:
           type: object
           additionalProperties:
@@ -4144,6 +4159,23 @@ components:
           example:
             live: [shipping_api_key, delivery_api_key]
             sandbox: [delivery_api_key]
+
+    AutoPickupEnvironmentStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, status, missing_credentials]
+      properties:
+        enabled:
+          type: boolean
+        status:
+          type: string
+          enum: [unsupported, credential_missing, credential_invalid_or_expired, configured]
+        missing_credentials:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+          description: Nama field yang belum tersedia; tidak pernah berisi nilai credential.
 
     TenantShippingProviderDetailResponse:
       type: object

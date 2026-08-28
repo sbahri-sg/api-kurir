@@ -79,12 +79,17 @@ func (s *Service) Provider(
 		return Detail{}, ErrProviderNotFound
 	}
 	detail := Detail{
-		Provider:             *provider,
-		AutoPickupStatus:     "unavailable",
-		AvailableCredentials: make(map[string][]string),
+		Provider:               *provider,
+		AutoPickupStatus:       AutoPickupStatusUnsupported,
+		AutoPickupEnvironments: make(map[string]AutoPickupEnvironmentStatus),
+		AvailableCredentials:   make(map[string][]string),
 	}
 	for _, environment := range provider.Environments {
 		detail.AvailableCredentials[environment.Code] = []string{}
+		detail.AutoPickupEnvironments[environment.Code] = AutoPickupEnvironmentStatus{
+			Status:             AutoPickupStatusUnsupported,
+			MissingCredentials: []string{},
+		}
 	}
 	availability := providercredentials.Availability{
 		FieldsByEnvironment: map[string][]string{},
@@ -104,36 +109,81 @@ func (s *Service) Provider(
 	for environment, fields := range availability.FieldsByEnvironment {
 		detail.AvailableCredentials[environment] = append([]string(nil), fields...)
 	}
-	pickupCredentialFields := make([]string, 0)
-	for _, field := range provider.CredentialFields {
-		if contains(field.Capabilities, "pickup:write") {
-			pickupCredentialFields = append(pickupCredentialFields, field.Code)
-		}
-	}
-	pickupSupported := len(pickupCredentialFields) > 0 ||
+	pickupSupported := hasPickupCredentialField(provider.CredentialFields) ||
 		contains(provider.RequiredScopes, "pickup:write")
 	if !pickupSupported {
 		return detail, nil
 	}
 	if !provider.RequiresCredential {
 		detail.AutoPickup = true
-		detail.AutoPickupStatus = "configured"
+		detail.AutoPickupStatus = AutoPickupStatusConfigured
+		for _, environment := range provider.Environments {
+			detail.AutoPickupEnvironments[environment.Code] = AutoPickupEnvironmentStatus{
+				Enabled:            true,
+				Status:             AutoPickupStatusConfigured,
+				MissingCredentials: []string{},
+			}
+		}
 		return detail, nil
 	}
-	detail.AutoPickupStatus = "not_configured"
-	for _, code := range pickupCredentialFields {
-		if !contains(detail.AvailableCredentials[providercredentials.EnvironmentLive], code) {
+	detail.AutoPickupStatus = AutoPickupStatusCredentialMissing
+	hasInvalidCredential := false
+	for _, environment := range provider.Environments {
+		pickupFields := pickupCredentialFieldsForEnvironment(
+			provider.CredentialFields,
+			environment.Code,
+		)
+		if len(pickupFields) == 0 {
 			continue
 		}
-		if availability.StatusByEnvironment[providercredentials.EnvironmentLive] == "invalid" {
-			detail.AutoPickupStatus = "invalid"
-			return detail, nil
+		missing := make([]string, 0, len(pickupFields))
+		for _, code := range pickupFields {
+			if !contains(detail.AvailableCredentials[environment.Code], code) {
+				missing = append(missing, code)
+			}
 		}
-		detail.AutoPickup = true
-		detail.AutoPickupStatus = "configured"
-		return detail, nil
+		status := AutoPickupEnvironmentStatus{
+			Status:             AutoPickupStatusCredentialMissing,
+			MissingCredentials: missing,
+		}
+		if len(missing) == 0 && availability.StatusByEnvironment[environment.Code] == "invalid" {
+			status.Status = AutoPickupStatusCredentialInvalidOrExpired
+			hasInvalidCredential = true
+		} else if len(missing) == 0 {
+			status.Enabled = true
+			status.Status = AutoPickupStatusConfigured
+			detail.AutoPickup = true
+		}
+		detail.AutoPickupEnvironments[environment.Code] = status
+	}
+	if detail.AutoPickup {
+		detail.AutoPickupStatus = AutoPickupStatusConfigured
+	} else if hasInvalidCredential {
+		detail.AutoPickupStatus = AutoPickupStatusCredentialInvalidOrExpired
 	}
 	return detail, nil
+}
+
+func hasPickupCredentialField(fields []providercredentials.FieldDefinition) bool {
+	for _, field := range fields {
+		if contains(field.Capabilities, "pickup:write") {
+			return true
+		}
+	}
+	return false
+}
+
+func pickupCredentialFieldsForEnvironment(
+	fields []providercredentials.FieldDefinition,
+	environment string,
+) []string {
+	result := make([]string, 0)
+	for _, field := range providercredentials.FieldsForEnvironment(fields, environment) {
+		if contains(field.Capabilities, "pickup:write") {
+			result = append(result, field.Code)
+		}
+	}
+	return result
 }
 
 func contains(values []string, target string) bool {
