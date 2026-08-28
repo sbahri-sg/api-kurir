@@ -71,7 +71,9 @@ Fondasi versi `0.9.0` sudah mencakup:
   internasional, tracking, serta layanan lokal yang sudah terdaftar;
 - tambah, validasi, masking, enkripsi, rotasi, dan nonaktifkan key RajaOngkir
   dari dashboard tanpa restart API atau memasukkan provider key ke environment;
-- credential RajaOngkir BYOK terisolasi per merchant Emisell, tenant context
+- credential seluruh provider BYOK terisolasi per merchant Emisell; key
+  upstream yang sama boleh dipasang merchant berbeda tanpa berbagi konfigurasi,
+  snapshot, shipment, tracking, webhook, atau audit; tenant context
   JWT Ed25519, snapshot tarif tenant-aware, dan ledger kuota per seller;
 - menu dokumentasi API dengan daftar endpoint, contoh request/response, Postman
   Collection, dan Postman Environment tanpa credential;

@@ -2058,7 +2058,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/provider-credentials",
     title: "Hubungkan credential provider seller",
     description:
-      "Memvalidasi credential sesuai credential_fields dan environment provider, mengenkripsi seluruh bundle dengan AES-256-GCM, dan mengikatnya ke merchant. api_key lama tetap kompatibel pada mode live.",
+      "Memvalidasi credential sesuai credential_fields dan environment provider, mengenkripsi seluruh bundle dengan AES-256-GCM, dan mengikatnya ke merchant. Key upstream yang sama boleh dipakai merchant berbeda tanpa mencampur konfigurasi atau data tenant. api_key lama tetap kompatibel pada mode live.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `# 1. Simpan credential live untuk cek ongkir, tracking, dan fulfillment production
 POST {{base_url}}/api/v1/integrations/provider-credentials
@@ -2102,6 +2102,7 @@ Content-Type: application/json
       "Pada sandbox, shipping_api_key tetap memanggil Shipping Cost live/read-only; hanya delivery_api_key yang memakai endpoint Shipping Delivery sandbox.",
       `Credential fulfillment sandbox: { "provider_code": "rajaongkir", "environment": "sandbox", "credentials": { "shipping_api_key": "...", "delivery_api_key": "..." } }`,
       "shipping_api_key dan delivery_api_key RajaOngkir diuji ke endpoint read-only produk masing-masing saat POST/PATCH. Key invalid menghasilkan HTTP 422 INVALID_PROVIDER_KEY dan credential aktif lama tidak diganti.",
+      "Duplikasi hanya ditolak di dalam merchant, provider, dan environment yang sama; merchant lain mendapatkan record terenkripsi dan scope data tersendiri.",
     ],
     response: `{
   "data": {
@@ -2176,7 +2177,7 @@ X-Emisell-Merchant-ID: {{merchant_id}}`,
     path: "/api/v1/integrations/providers",
     title: "Katalog provider dan extension aktif",
     description:
-      "Menampilkan ringkasan provider untuk halaman listing. Credential fields, environment, capability, dan status auto-pickup dibaca dari endpoint detail agar payload daftar tetap ringan.",
+      "Menampilkan ringkasan provider untuk halaman listing. installed bernilai true jika merchant mempunyai credential aktif dan valid pada minimal satu environment, termasuk sandbox. Credential fields, environment, capability, dan status auto-pickup dibaca dari endpoint detail agar payload daftar tetap ringan.",
     authentication: "Main Service API key (gateway:access) + X-Emisell-Merchant-ID",
     request: `GET {{base_url}}/api/v1/integrations/providers
 key: {{api_key}}

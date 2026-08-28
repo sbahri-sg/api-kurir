@@ -183,40 +183,41 @@ func (r *PostgresRepository) Create(
 		`, input.TenantID, input.ProviderCode, input.Environment); err != nil {
 			return Credential{}, fmt.Errorf("lock merchant provider credential: %w", err)
 		}
-		if input.Environment == EnvironmentLive {
-			if err := tx.QueryRow(ctx, `
+		if err := tx.QueryRow(ctx, `
 			SELECT EXISTS (
 				SELECT 1
-				FROM tenant_active_shipping_providers
-				WHERE tenant_id = $1
-				  AND provider_code = $2
+				FROM tenant_active_shipping_providers selection
+				JOIN provider_credentials credential
+				  ON credential.id = selection.credential_id
+				WHERE selection.tenant_id = $1
+				  AND selection.provider_code = $2
+				  AND credential.tenant_id = selection.tenant_id
+				  AND credential.provider_code = selection.provider_code
+				  AND credential.environment_code = $3
 			)
-			`, input.TenantID, input.ProviderCode).Scan(&wasSelected); err != nil {
-				return Credential{}, fmt.Errorf("inspect active merchant provider: %w", err)
-			}
+		`, input.TenantID, input.ProviderCode, input.Environment).Scan(&wasSelected); err != nil {
+			return Credential{}, fmt.Errorf("inspect active merchant provider: %w", err)
 		}
 	}
 
-	var existingID, existingTenantID string
+	var existingID string
 	var existingActive bool
 	err = tx.QueryRow(ctx, `
-		SELECT id::text, tenant_id, active
+		SELECT id::text, active
 		FROM provider_credentials
-		WHERE provider_code = $1
-		  AND secret_fingerprint = $2
-		  AND environment_code = $3
+		WHERE tenant_id = $1
+		  AND provider_code = $2
+		  AND secret_fingerprint = $3
+		  AND environment_code = $4
 		FOR UPDATE
-	`, input.ProviderCode, input.SecretFingerprint, input.Environment).Scan(
+	`, input.TenantID, input.ProviderCode, input.SecretFingerprint, input.Environment).Scan(
 		&existingID,
-		&existingTenantID,
 		&existingActive,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		existingID = ""
 	} else if err != nil {
 		return Credential{}, fmt.Errorf("find existing provider credential: %w", err)
-	} else if existingTenantID != input.TenantID {
-		return Credential{}, ErrDuplicate
 	}
 
 	var existingIDArg any
@@ -312,7 +313,7 @@ func (r *PostgresRepository) Create(
 			return Credential{}, fmt.Errorf("insert provider credential: %w", err)
 		}
 	}
-	if wasSelected && input.Environment == EnvironmentLive {
+	if wasSelected {
 		if _, err := tx.Exec(ctx, `
 			UPDATE tenant_active_shipping_providers
 			SET provider_code = $2,
@@ -706,7 +707,6 @@ func (r *PostgresRepository) ActiveCredentialID(
 		  AND selection.provider_code = $2
 		  AND credential.tenant_id = selection.tenant_id
 		  AND credential.provider_code = selection.provider_code
-		  AND credential.environment_code = 'live'
 		  AND credential.active
 		  AND credential.validation_status = 'valid'
 	`, tenantID, providerCode).Scan(&credentialID)

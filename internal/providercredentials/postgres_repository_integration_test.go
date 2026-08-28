@@ -261,7 +261,7 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 			fallbackCredentialID,
 		)
 	}
-	if _, err := service.AddForTenant(
+	shared, err := service.AddForTenant(
 		ctx,
 		tenantB,
 		"rajaongkir",
@@ -269,8 +269,20 @@ func TestTenantCredentialOwnershipIntegration(t *testing.T) {
 		50_000,
 		"integration-test",
 		"req_duplicate_owner",
-	); !errors.Is(err, ErrDuplicate) {
-		t.Fatalf("credential owned by another merchant was not rejected: %v", err)
+	)
+	if err != nil {
+		t.Fatalf("same provider credential must be reusable by another merchant: %v", err)
+	}
+	if shared.ID == reactivated.ID || shared.TenantID != tenantB || !shared.Active {
+		t.Fatalf("shared upstream key was not isolated per merchant: %#v", shared)
+	}
+	items, err = service.ListForTenant(ctx, tenantA)
+	if err != nil || len(items) == 0 {
+		t.Fatalf("tenant A credential disappeared after tenant B install: items=%#v err=%v", items, err)
+	}
+	items, err = service.ListForTenant(ctx, tenantB)
+	if err != nil || len(items) == 0 || items[0].ID != shared.ID {
+		t.Fatalf("tenant B did not receive its isolated credential: items=%#v err=%v", items, err)
 	}
 
 	if err := service.DisableForTenantProvider(

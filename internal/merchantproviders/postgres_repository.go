@@ -117,10 +117,9 @@ func (r *PostgresRepository) Activate(
 			FROM provider_credentials
 			WHERE tenant_id = $1
 			  AND provider_code = $2
-			  AND environment_code = 'live'
 			  AND active
 			  AND validation_status = 'valid'
-			ORDER BY created_at DESC
+			ORDER BY (environment_code = 'live') DESC, created_at DESC
 			LIMIT 1
 			FOR SHARE
 		`, tenantID, providerCode).Scan(&selectedCredentialID)
@@ -262,7 +261,6 @@ func catalogWithQuerier(
 						FROM provider_credentials credential
 						WHERE credential.tenant_id = $1
 						  AND credential.provider_code = provider.code
-						  AND credential.environment_code = 'live'
 						  AND credential.active
 						  AND credential.validation_status = 'valid'
 					)
@@ -273,7 +271,6 @@ func catalogWithQuerier(
 				FROM provider_credentials credential
 				WHERE credential.tenant_id = $1
 				  AND credential.provider_code = provider.code
-				  AND credential.environment_code = 'live'
 				  AND credential.active
 				  AND credential.validation_status = 'valid'
 			) AS installed,
@@ -309,7 +306,6 @@ func catalogWithQuerier(
 				FROM provider_credentials credential
 				WHERE credential.tenant_id = $1
 				  AND credential.provider_code = provider.code
-				  AND credential.environment_code = 'live'
 				  AND credential.active
 				  AND credential.validation_status = 'valid'
 			)

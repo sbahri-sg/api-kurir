@@ -869,7 +869,9 @@ paths:
         credential aktif lama untuk merchant dan provider yang sama. Credential
         milik merchant yang sama yang pernah dinonaktifkan akan diaktifkan
         kembali tanpa membuat credential duplikat dan tanpa mengaktifkan
-        provider shipping secara otomatis. Jika environment tidak dikirim,
+        provider shipping secara otomatis. API key upstream yang sama boleh
+        dipasang merchant berbeda, tetapi ciphertext, konfigurasi, pemilihan,
+        kuota, snapshot, dan audit tetap terisolasi per merchant. Jika environment tidak dikirim,
         credential selalu disimpan sebagai live. RajaOngkir menerima
         shipping_api_key dan delivery_api_key pada mode live maupun sandbox.
         Pada sandbox, shipping_api_key tetap mengakses produk Shipping Cost
@@ -920,7 +922,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Credential terikat pada scope atau merchant lain
+          description: Credential sama sudah tersimpan pada merchant, provider, dan environment tersebut
           content:
             application/json:
               schema:
@@ -2898,7 +2900,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Credential terikat pada scope merchant lain
+          description: Credential sama sudah tersimpan pada scope admin tersebut
           content:
             application/json:
               schema:
@@ -4030,6 +4032,7 @@ components:
           const: true
         installed:
           type: boolean
+          description: Provider bawaan selalu true; provider eksternal true jika merchant mempunyai credential aktif dan valid pada minimal satu environment.
         active:
           type: boolean
 
@@ -4109,7 +4112,7 @@ components:
           description: Katalog merchant hanya berisi provider yang tersedia. Status false hanya terlihat melalui API admin.
         installed:
           type: boolean
-          description: Provider bawaan selalu true; eksternal true jika mempunyai credential valid.
+          description: Provider bawaan selalu true; eksternal true jika merchant mempunyai credential aktif dan valid pada minimal satu environment, termasuk sandbox.
         active:
           type: boolean
         active_release_version:

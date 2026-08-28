@@ -203,7 +203,7 @@ func writeTenantProviderCredentialError(c *echo.Context, err error) error {
 			c,
 			http.StatusConflict,
 			"PROVIDER_KEY_EXISTS",
-			"API key sudah terikat pada credential lain dan tidak dapat digunakan untuk merchant ini.",
+			"Credential yang sama sudah tersimpan untuk merchant, provider, dan environment ini.",
 			nil,
 		)
 	case errors.Is(err, providercredentials.ErrNotFound):

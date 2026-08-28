@@ -60,12 +60,18 @@ tidak dapat mengakses `/api/v1/integrations/*` atau membawa konteks merchant.
 2. API Kurir memvalidasi key langsung ke provider dan menyimpannya terenkripsi.
 3. Response hanya berisi metadata termasking; UUID credential internal tidak
    dikembalikan.
-4. Satu merchant hanya mempunyai satu credential aktif per provider. Key baru
-   menggantikan key lama secara atomik.
+4. Satu merchant hanya mempunyai satu credential aktif per provider dan
+   environment. Key baru menggantikan key lama pada environment yang sama
+   secara atomik.
    Jika key yang sama pernah dinonaktifkan, record lama diaktifkan kembali.
    Tindakan ini hanya memasang credential dan tidak otomatis mengaktifkan
    provider shipping merchant.
-5. Main Service membaca `GET /api/v1/integrations/providers`; `logo` dan
+   API key upstream yang sama boleh dipasang merchant berbeda. API Kurir
+   menyimpan record terenkripsi terpisah dan seluruh pemilihan, kuota, snapshot,
+   shipment, tracking, webhook, serta audit tetap dibatasi `merchant_id`.
+5. Main Service membaca `GET /api/v1/integrations/providers`; `installed=true`
+   bila merchant mempunyai credential aktif dan valid pada minimal satu
+   environment, termasuk sandbox. `logo` dan
    `description` pada setiap item dapat langsung dipakai untuk listing extension.
    Endpoint hanya mengirim provider berstatus tersedia; provider yang dimatikan
    operator otomatis hilang dari daftar dashboard seller.
@@ -169,7 +175,7 @@ refresh provider. Webhook HMAC mengirim perubahan status ke Emisell.
 | `MERCHANT_CONTEXT_FORBIDDEN` | Public API key mencoba membawa merchant header |
 | `UNAUTHORIZED` | Key bukan Main Service, tidak aktif, atau tidak valid |
 | `INVALID_PROVIDER_KEY` | Key ditolak provider |
-| `PROVIDER_KEY_EXISTS` | Key sudah terikat pada scope atau merchant lain |
+| `PROVIDER_KEY_EXISTS` | Credential sama sudah tersimpan pada merchant, provider, dan environment yang sama |
 | `PROVIDER_CREDENTIAL_UNAVAILABLE` | Provider tidak mempunyai key aktif dan valid |
 | `SHIPPING_PROVIDER_VERSION_CONFLICT` | State berubah sejak katalog terakhir dibaca |
 | `PROVIDER_QUOTA_EXHAUSTED` | Kuota provider habis |

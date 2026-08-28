@@ -66,6 +66,7 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 			id,
 			tenant_id,
 			provider_code,
+			environment_code,
 			credential_alias,
 			secret_ciphertext,
 			secret_fingerprint,
@@ -74,7 +75,7 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 			daily_limit,
 			created_by
 		)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, 'test', '1234', 50000, 'integration-test')
+		VALUES ($1::uuid, $2, $3, 'sandbox', $4, $5, $6, 'test', '1234', 50000, 'integration-test')
 	`, credentialID, tenantID, providerCode, alias, []byte("ciphertext"), fingerprint[:])
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +90,9 @@ func TestProviderActivationAndCredentialFallbackIntegration(t *testing.T) {
 		t.Fatalf("unexpected initial catalog: %#v", initial)
 	}
 	for _, provider := range initial.Providers {
+		if provider.Code == providerCode && !provider.Installed {
+			t.Fatalf("valid sandbox credential was not reported as installed: %#v", provider)
+		}
 		if provider.Active {
 			t.Fatalf("new merchant has an active provider: %#v", provider)
 		}

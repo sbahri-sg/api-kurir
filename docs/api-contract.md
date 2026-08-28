@@ -776,7 +776,7 @@ Kode utama:
 | 404 | `LOCATION_NOT_FOUND` | Lokasi tidak ditemukan |
 | 404 | `WAYBILL_NOT_FOUND` | Resi belum dikenal provider |
 | 409 | `IDEMPOTENCY_CONFLICT` | Key dipakai untuk payload berbeda |
-| 409 | `PROVIDER_KEY_EXISTS` | Provider key terikat pada scope atau merchant lain |
+| 409 | `PROVIDER_KEY_EXISTS` | Credential sama sudah tersimpan pada merchant, provider, dan environment yang sama |
 | 422 | `INVALID_PROVIDER_KEY` | Key provider ditolak saat validasi |
 | 422 | `UNSUPPORTED_SERVICE` | Layanan tidak mendukung paket/rute |
 | 422 | `RATE_NOT_AVAILABLE` | Rate card/quote tidak tersedia |
