@@ -631,6 +631,7 @@ func (r *PostgresRepository) CompleteReconciliation(
 	if _, err := tx.Exec(ctx, `
 		UPDATE fulfillment_shipments
 		SET awb = coalesce(nullif($3, ''), awb),
+		    label_available = label_available OR (coalesce(nullif($3, ''), awb, '') <> ''),
 		    normalized_status = $4,
 		    provider_status = $5,
 		    live_tracking_url = $6,

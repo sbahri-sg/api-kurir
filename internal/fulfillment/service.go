@@ -403,6 +403,23 @@ func (s *Service) Label(ctx context.Context, shipmentID, format string) (Label, 
 	} else if !errors.Is(cacheErr, ErrLabelUnavailable) {
 		return Label{}, cacheErr
 	}
+	if strings.TrimSpace(shipment.AWB) == "" {
+		notReady := &LabelNotReadyError{
+			Reason:         "pickup_required",
+			ShipmentStatus: shipment.Status,
+			Retryable:      false,
+		}
+		if labelMayBeWaitingForAWB(shipment.Status) {
+			notReady.Reason = "awb_pending"
+			notReady.Retryable = true
+			if enqueuer, ok := s.repository.(ReconciliationEnqueuer); ok {
+				if enqueueErr := enqueuer.EnqueueReconciliation(ctx, shipment.ID); enqueueErr != nil {
+					return Label{}, enqueueErr
+				}
+			}
+		}
+		return Label{}, notReady
+	}
 	operationContext := providercredentials.WithExecutionEnvironment(ctx, shipment.Environment)
 	adapter, credential, err := s.adapterCredential(operationContext, shipment.ProviderCode, "labels:read")
 	if err != nil {
@@ -416,6 +433,16 @@ func (s *Service) Label(ctx context.Context, shipmentID, format string) (Label, 
 		return Label{}, err
 	}
 	return label, nil
+}
+
+func labelMayBeWaitingForAWB(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case StatusPickupRequested, StatusPickedUp, StatusInTransit, StatusOutForDelivery,
+		StatusDelivered, StatusProblem, StatusCancellationPending, StatusCancelled:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) History(ctx context.Context, shipmentID string) ([]HistoryEvent, error) {

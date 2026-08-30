@@ -164,6 +164,25 @@ func TestFulfillmentRepositoryTenantIsolationAndEncryptedPayloadIntegration(t *t
 	if err != nil || len(history) != 2 {
 		t.Fatalf("history=%+v err=%v", history, err)
 	}
+	var reconciliationJobID string
+	if err := pool.QueryRow(ctx, `
+		SELECT id::text FROM fulfillment_lifecycle_jobs
+		WHERE shipment_id = $1::uuid AND job_type = 'reconcile' AND status = 'pending'
+		LIMIT 1
+	`, shipmentID).Scan(&reconciliationJobID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CompleteReconciliation(ctx, LifecycleJob{
+		ID: reconciliationJobID, TenantID: tenantID, ShipmentID: shipmentID,
+	}, ProviderDetailResult{
+		AWB: "RECONCILED123", Status: StatusPickupRequested, ProviderStatus: "Dipacking",
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	reconciled, err := repository.Get(ctx, tenantID, shipmentID)
+	if err != nil || reconciled.AWB != "RECONCILED123" || !reconciled.LabelAvailable {
+		t.Fatalf("reconciled shipment=%+v err=%v", reconciled, err)
+	}
 	label := Label{Format: "page_5", ContentType: "application/pdf", Base64: "JVBERi0="}
 	if err := repository.SaveLabel(ctx, tenantID, shipmentID, label); err != nil {
 		t.Fatal(err)

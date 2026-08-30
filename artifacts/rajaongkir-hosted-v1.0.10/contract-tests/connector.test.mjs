@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+	absoluteProviderURL,
   canonicalCourierName,
   canonicalServiceName,
   createConnectorServer,
   deliveryBaseURL,
-  executionMode,
+	executionMode,
+	labelFailure,
   pickupProviderPayload,
   pickupProviderResult,
   pickupVehicleFromWeight,
@@ -13,6 +15,15 @@ import {
   serviceGroup,
   shipmentProviderPayload,
 } from "../src/server.mjs";
+
+test("label menormalkan URL dan status AWB provider", () => {
+	assert.equal(
+		absoluteProviderURL(new URL("https://api-sandbox.collaborator.komerce.id/"), "/storage/label.pdf"),
+		"https://api-sandbox.collaborator.komerce.id/storage/label.pdf",
+	);
+	assert.equal(labelFailure("awb not found, break execute").code, "RAJAONGKIR_LABEL_AWB_PENDING");
+	assert.equal(labelFailure("Please pickup the order first").code, "RAJAONGKIR_LABEL_PICKUP_REQUIRED");
+});
 
 async function withServer(run) {
   const server = createConnectorServer();

@@ -39,6 +39,37 @@ func TestPickupNotAllowedErrorResponse(t *testing.T) {
 	}
 }
 
+func TestLabelNotReadyErrorResponse(t *testing.T) {
+	t.Parallel()
+	e := echo.New()
+	e.GET("/", func(c *echo.Context) error {
+		return writeFulfillmentError(c, &fulfillment.LabelNotReadyError{
+			Reason: "awb_pending", ShipmentStatus: fulfillment.StatusPickupRequested, Retryable: true,
+		})
+	})
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+	e.ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Error.Code != "LABEL_NOT_READY" || payload.Error.Details["reason"] != "awb_pending" ||
+		payload.Error.Details["shipment_status"] != fulfillment.StatusPickupRequested ||
+		payload.Error.Details["retryable"] != true || payload.Error.Details["retry_after_seconds"] != float64(15) {
+		t.Fatalf("unexpected response: %s", response.Body.String())
+	}
+}
+
 func TestDeliveryCredentialRequiredReportsExecutionEnvironment(t *testing.T) {
 	t.Parallel()
 	e := echo.New()

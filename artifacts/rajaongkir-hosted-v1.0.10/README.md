@@ -47,6 +47,11 @@ header, payload pelanggan, atau response provider ke log.
 - `GET /partner/v1/shipments/{partner_shipment_id}/label`
 - `POST /partner/v1/pickups`
 
+Endpoint label hanya berhasil setelah pickup menghasilkan AWB. Connector
+mengembalikan HTTP `409` dengan kode `RAJAONGKIR_LABEL_PICKUP_REQUIRED` bila
+pickup belum dijadwalkan, atau `RAJAONGKIR_LABEL_AWB_PENDING` bila AWB masih
+diproses. Path file relatif dari RajaOngkir dinormalisasi menjadi URL absolut.
+
 ## Menjalankan
 
 ```bash

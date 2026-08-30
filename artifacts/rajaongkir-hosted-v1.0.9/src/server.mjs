@@ -227,7 +227,29 @@ function mapUpstreamStatus(status) {
 }
 
 function upstreamMessage(payload, fallback) {
-  return String(payload?.meta?.message || payload?.message || payload?.data?.errors || fallback);
+	const primary = payload?.meta?.message || payload?.message || "";
+	const detail = typeof payload?.data === "string" ? payload.data : payload?.data?.errors || "";
+	return [primary, detail].map((value) => String(value || "").trim()).filter(Boolean).join(" — ") || fallback;
+}
+
+export function absoluteProviderURL(baseURL, value) {
+	if (!String(value || "").trim()) return "";
+	try {
+		return new URL(String(value), baseURL).toString();
+	} catch {
+		return "";
+	}
+}
+
+export function labelFailure(providerMessage) {
+	const normalizedMessage = String(providerMessage || "").toLowerCase();
+	if (normalizedMessage.includes("awb not found")) {
+		return { code: "RAJAONGKIR_LABEL_AWB_PENDING", message: "Pickup berhasil, tetapi AWB provider belum tersedia." };
+	}
+	if (normalizedMessage.includes("pickup") || normalizedMessage.includes("pick up")) {
+		return { code: "RAJAONGKIR_LABEL_PICKUP_REQUIRED", message: "Pickup shipment belum berhasil dijadwalkan." };
+	}
+	return null;
 }
 
 async function upstreamRequest(baseURL, path, apiKey, options = {}) {
@@ -620,17 +642,23 @@ async function shipmentLabel(request, response, id, apiKey, shipmentID, format) 
 	const upstream = await upstreamRequest(deliveryBaseURL(request), DELIVERY_PATHS.label, apiKey, {
     method: "POST", authHeader: "x-api-key", query: { page, order_no: shipmentID },
   });
-  if (upstream.status < 200 || upstream.status >= 300) {
-    fail(response, mapUpstreamStatus(upstream.status), "RAJAONGKIR_LABEL_ERROR", upstreamMessage(upstream.payload, "Label tidak tersedia."), id);
-    return;
-  }
+	if (upstream.status < 200 || upstream.status >= 300) {
+		const providerMessage = upstreamMessage(upstream.payload, "Label tidak tersedia.");
+		const knownFailure = labelFailure(providerMessage);
+		if (knownFailure) {
+			fail(response, 409, knownFailure.code, knownFailure.message, id);
+			return;
+		}
+		fail(response, mapUpstreamStatus(upstream.status), "RAJAONGKIR_LABEL_ERROR", providerMessage, id);
+		return;
+	}
   const data = upstream.payload?.data || {};
   reply(response, 200, {
     data: {
       partner_shipment_id: shipmentID,
       format: page,
       content_type: "application/pdf",
-      file_url: String(data.path || ""),
+			file_url: absoluteProviderURL(deliveryBaseURL(request), data.path),
       base64: String(data.base_64 || ""),
     },
     meta: sourceMeta("shipping_delivery"),

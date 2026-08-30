@@ -3,6 +3,7 @@ package rajaongkir
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +11,49 @@ import (
 
 	"github.com/emisell/api-kurir/internal/fulfillment"
 )
+
+func TestFulfillmentAdapterLabelNormalizesRelativeURL(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/order/api/v1/orders/print-label" ||
+			request.URL.Query().Get("order_no") != "KOM-300" || request.URL.Query().Get("page") != "page_5" {
+			t.Fatalf("unexpected label request: %s %s", request.Method, request.URL.String())
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"meta":{"status":"success"},"data":{"path":"/storage/labels/KOM-300.pdf"}}`))
+	}))
+	defer server.Close()
+
+	label, err := NewFulfillmentAdapter(server.URL, time.Second).Label(
+		context.Background(), "delivery-key",
+		fulfillment.Shipment{ProviderShipmentID: "KOM-300", AWB: "JNE300"}, "page_5",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if label.URL != server.URL+"/storage/labels/KOM-300.pdf" {
+		t.Fatalf("label URL=%q", label.URL)
+	}
+}
+
+func TestFulfillmentAdapterLabelMapsPendingAWB(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = writer.Write([]byte(`{"meta":{"message":"Generate Print Label failed"},"data":"awb not found, break execute "}`))
+	}))
+	defer server.Close()
+
+	_, err := NewFulfillmentAdapter(server.URL, time.Second).Label(
+		context.Background(), "delivery-key", fulfillment.Shipment{ProviderShipmentID: "KOM-301"}, "page_5",
+	)
+	var notReady *fulfillment.LabelNotReadyError
+	if !errors.Is(err, fulfillment.ErrLabelNotReady) || !errors.As(err, &notReady) ||
+		notReady.Reason != "awb_pending" || !notReady.Retryable {
+		t.Fatalf("unexpected label error: %#v", err)
+	}
+}
 
 func TestFulfillmentAdapterCreateMapsCanonicalRequest(t *testing.T) {
 	t.Parallel()

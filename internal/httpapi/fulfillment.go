@@ -219,6 +219,20 @@ func writeFulfillmentError(c *echo.Context, err error) error {
 		return writeError(c, http.StatusConflict, "PICKUP_NOT_ALLOWED", "Pickup hanya dapat dijadwalkan setelah booking provider berhasil.", nil)
 	case errors.Is(err, fulfillment.ErrShipmentFinal):
 		return writeError(c, http.StatusConflict, "SHIPMENT_FINAL", "Shipment berstatus final dan tidak dapat diubah.", nil)
+	case errors.Is(err, fulfillment.ErrLabelNotReady):
+		details := map[string]any{"reason": "awb_pending", "retryable": true, "retry_after_seconds": 15}
+		message := "Pickup berhasil, tetapi AWB provider belum tersedia. Status sedang disegarkan; coba kembali sesaat lagi."
+		var notReady *fulfillment.LabelNotReadyError
+		if errors.As(err, &notReady) {
+			details["reason"] = notReady.Reason
+			details["shipment_status"] = notReady.ShipmentStatus
+			details["retryable"] = notReady.Retryable
+			if !notReady.Retryable {
+				delete(details, "retry_after_seconds")
+				message = "Pickup shipment belum berhasil dijadwalkan; label belum dapat dibuat."
+			}
+		}
+		return writeError(c, http.StatusConflict, "LABEL_NOT_READY", message, details)
 	case errors.Is(err, fulfillment.ErrLabelUnavailable):
 		return writeError(c, http.StatusUnprocessableEntity, "LABEL_UNAVAILABLE", "Label belum tersedia atau shipment belum dijadwalkan pickup.", nil)
 	default:

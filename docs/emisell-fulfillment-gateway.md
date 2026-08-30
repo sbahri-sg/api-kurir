@@ -37,6 +37,22 @@ native RajaOngkir, Biteship, atau partner lain tidak diteruskan ke Emisell.
 | `POST` | `/api/v1/integrations/shipments/{shipment_id}/cancel` | Meminta pembatalan |
 | `GET` | `/api/v1/integrations/shipments/{shipment_id}/history` | Membaca timeline audit |
 
+## Kesiapan label dan AWB
+
+Label hanya diminta ke provider setelah pickup berhasil dan shipment sudah
+memiliki AWB. Ini mencegah hit `print-label` yang pasti ditolak provider.
+
+- jika pickup belum dijadwalkan, endpoint label mengembalikan HTTP `409`
+  `LABEL_NOT_READY` dengan `reason: pickup_required` dan `retryable: false`;
+- jika pickup sudah diterima tetapi AWB belum tersedia, endpoint mengembalikan
+  HTTP `409` dengan `reason: awb_pending`, `retryable: true`, dan
+  `retry_after_seconds: 15`;
+- pada kondisi `awb_pending`, API Kurir mempercepat job rekonsiliasi detail
+  secara idempotent. Main Service cukup mencoba lagi setelah interval tersebut;
+- ketika AWB ditemukan oleh worker, `label_available` otomatis menjadi `true`;
+- URL file relatif dari provider dinormalisasi menjadi URL HTTPS absolut dan
+  hasil label tetap disimpan cache-first secara terenkripsi.
+
 Semua endpoint memakai dedicated Main Service API key dan header
 `X-Emisell-Merchant-ID`. Semua `POST` yang menimbulkan side effect juga wajib
 memakai `Idempotency-Key` sepanjang 8–128 karakter.

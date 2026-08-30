@@ -298,6 +298,51 @@ func TestPickupScheduledRejectsPastTimestamp(t *testing.T) {
 	}
 }
 
+func TestLabelQueuesReconciliationWhenPickupAWBIsPending(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{shipment: &Shipment{
+		ID: "5b546141-4797-461d-98e7-0d0d8f744110", ProviderCode: "rajaongkir",
+		ProviderShipmentID: "KOM-110", Environment: providercredentials.EnvironmentSandbox,
+		Status: StatusPickupRequested,
+	}}
+	adapter := &stubAdapter{}
+	service := NewService(repository, stubCatalog{code: "rajaongkir"}, stubCredentials{}, adapter)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
+
+	_, err := service.Label(ctx, repository.shipment.ID, "page_5")
+	var notReady *LabelNotReadyError
+	if !errors.As(err, &notReady) || !errors.Is(err, ErrLabelNotReady) {
+		t.Fatalf("expected label not ready, got %v", err)
+	}
+	if notReady.Reason != "awb_pending" || !notReady.Retryable || !repository.reconcileQueued {
+		t.Fatalf("unexpected label state: %+v queued=%v", notReady, repository.reconcileQueued)
+	}
+	if adapter.labelCalls != 0 {
+		t.Fatalf("provider label must not be called without AWB, calls=%d", adapter.labelCalls)
+	}
+}
+
+func TestLabelRequiresPickupBeforeProviderCall(t *testing.T) {
+	t.Parallel()
+	repository := &memoryRepository{shipment: &Shipment{
+		ID: "8dc7a96d-2735-4fe4-a5c3-86548c94912c", ProviderCode: "rajaongkir",
+		ProviderShipmentID: "KOM-120", Environment: providercredentials.EnvironmentLive,
+		Status: StatusBooked,
+	}}
+	adapter := &stubAdapter{}
+	service := NewService(repository, stubCatalog{code: "rajaongkir"}, stubCredentials{}, adapter)
+	ctx := tenancy.WithIdentity(context.Background(), tenancy.Identity{TenantID: "merchant-1"})
+
+	_, err := service.Label(ctx, repository.shipment.ID, "page_5")
+	var notReady *LabelNotReadyError
+	if !errors.As(err, &notReady) || notReady.Reason != "pickup_required" || notReady.Retryable {
+		t.Fatalf("unexpected label state: %+v err=%v", notReady, err)
+	}
+	if repository.reconcileQueued || adapter.labelCalls != 0 {
+		t.Fatalf("booked shipment must not call provider or enqueue: queued=%v calls=%d", repository.reconcileQueued, adapter.labelCalls)
+	}
+}
+
 func validCreateRequest() CreateRequest {
 	return CreateRequest{
 		MerchantReference: "ORDER-100", QuoteID: "quote-100",
@@ -365,6 +410,7 @@ type stubAdapter struct {
 	quotes          []ProviderQuote
 	createCalls     int
 	pickupCalls     int
+	labelCalls      int
 	lastCreate      CreateRequest
 	lastPickup      PickupRequest
 	lastEnvironment string
@@ -388,6 +434,7 @@ func (s *stubAdapter) Pickup(ctx context.Context, _ string, _ Shipment, request 
 	return ProviderPickupResult{}, nil
 }
 func (s *stubAdapter) Label(context.Context, string, Shipment, string) (Label, error) {
+	s.labelCalls++
 	return Label{}, nil
 }
 func (s *stubAdapter) Cancel(context.Context, string, Shipment, CancelRequest) (ProviderCancelResult, error) {
@@ -395,8 +442,9 @@ func (s *stubAdapter) Cancel(context.Context, string, Shipment, CancelRequest) (
 }
 
 type memoryRepository struct {
-	shipment *Shipment
-	quotes   map[string]Quote
+	shipment        *Shipment
+	quotes          map[string]Quote
+	reconcileQueued bool
 }
 
 func (r *memoryRepository) SaveQuotes(_ context.Context, _ string, quotes []Quote) error {
@@ -465,3 +513,7 @@ func (*memoryRepository) GetLabel(context.Context, string, string, string) (Labe
 	return Label{}, ErrLabelUnavailable
 }
 func (*memoryRepository) SaveLabel(context.Context, string, string, Label) error { return nil }
+func (r *memoryRepository) EnqueueReconciliation(context.Context, string) error {
+	r.reconcileQueued = true
+	return nil
+}

@@ -3,6 +3,7 @@ package hosted
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,35 @@ import (
 	"github.com/emisell/api-kurir/internal/rates"
 	"github.com/emisell/api-kurir/internal/tracking"
 )
+
+func TestHostedLabelMapsConnectorAWBPending(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/partner/v1/shipments/KOM-400/label" {
+			http.NotFound(response, request)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(response).Encode(map[string]any{
+			"error": map[string]any{"code": "RAJAONGKIR_LABEL_AWB_PENDING"},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL+"/partner/v1", 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewFulfillmentAdapter("rajaongkir", client).Label(
+		context.Background(), "delivery-key", fulfillment.Shipment{ProviderShipmentID: "KOM-400"}, "page_5",
+	)
+	var notReady *fulfillment.LabelNotReadyError
+	if !errors.Is(err, fulfillment.ErrLabelNotReady) || !errors.As(err, &notReady) ||
+		notReady.Reason != "awb_pending" || !notReady.Retryable {
+		t.Fatalf("unexpected hosted label error: %#v", err)
+	}
+}
 
 type credentialStub struct{}
 

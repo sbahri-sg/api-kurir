@@ -21,6 +21,7 @@ var (
 	ErrProviderTimeout       = errors.New("fulfillment provider timeout")
 	ErrPickupNotAllowed      = errors.New("fulfillment pickup is not allowed")
 	ErrShipmentFinal         = errors.New("fulfillment shipment is final")
+	ErrLabelNotReady         = errors.New("fulfillment label is not ready")
 	ErrLabelUnavailable      = errors.New("fulfillment label is unavailable")
 	ErrQuoteNotFound         = errors.New("fulfillment quote not found")
 	ErrQuoteExpired          = errors.New("fulfillment quote expired")
@@ -30,6 +31,16 @@ var (
 	ErrNoLifecycleJob        = errors.New("fulfillment lifecycle job is not available")
 	ErrNoWebhookJob          = errors.New("fulfillment webhook job is not available")
 )
+
+type LabelNotReadyError struct {
+	Reason         string
+	ShipmentStatus string
+	Retryable      bool
+}
+
+func (e *LabelNotReadyError) Error() string { return ErrLabelNotReady.Error() }
+
+func (e *LabelNotReadyError) Unwrap() error { return ErrLabelNotReady }
 
 const (
 	StatusBookingPending      = "booking_pending"
@@ -318,6 +329,12 @@ type LifecycleRepository interface {
 		errorCode, message string,
 		retryAt time.Time,
 	) error
+	EnqueueReconciliation(ctx context.Context, shipmentID string) error
+}
+
+// ReconciliationEnqueuer lets the read path request an immediate provider
+// detail refresh without coupling the fulfillment service to worker internals.
+type ReconciliationEnqueuer interface {
 	EnqueueReconciliation(ctx context.Context, shipmentID string) error
 }
 

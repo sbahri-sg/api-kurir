@@ -216,6 +216,7 @@ paths:
       operationId: getShipmentLabel
       tags: [Shipments]
       summary: Mengambil label shipment
+      description: Mengembalikan HTTP 409 saat pickup belum dijadwalkan atau AWB provider masih diproses.
       security:
         - shipping_delivery: []
       parameters:
@@ -237,6 +238,7 @@ paths:
                 $ref: "#/components/schemas/LabelResponse"
         "401": { $ref: "#/components/responses/ErrorResponse" }
         "404": { $ref: "#/components/responses/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ErrorResponse" }
         "502": { $ref: "#/components/responses/ErrorResponse" }
   /pickups:
     post:

@@ -159,7 +159,7 @@ func (a *FulfillmentAdapter) Label(
 	}
 	return fulfillment.Label{
 		Format: format, ContentType: "application/pdf",
-		URL: response.Data.Path, Base64: response.Data.Base64,
+		URL: resolveProviderURL(a.baseURL, response.Data.Path), Base64: response.Data.Base64,
 	}, nil
 }
 
@@ -254,24 +254,62 @@ func (a *FulfillmentAdapter) doJSON(
 	}
 	defer response.Body.Close()
 	limited := io.LimitReader(response.Body, 4<<20)
+	payloadBytes, readErr := io.ReadAll(limited)
+	if readErr != nil {
+		return fulfillment.ErrProviderUnavailable
+	}
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-		_, _ = io.Copy(io.Discard, limited)
 		return fulfillment.ErrProviderUnauthorized
 	}
 	if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusUnprocessableEntity || response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusConflict {
-		_, _ = io.Copy(io.Discard, limited)
+		if labelErr := labelNotReadyFromProvider(path, payloadBytes); labelErr != nil {
+			return labelErr
+		}
 		return fulfillment.ErrProviderRejected
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, limited)
+		if labelErr := labelNotReadyFromProvider(path, payloadBytes); labelErr != nil {
+			return labelErr
+		}
 		return fulfillment.ErrProviderUnavailable
 	}
-	decoder := json.NewDecoder(limited)
+	decoder := json.NewDecoder(bytes.NewReader(payloadBytes))
 	decoder.UseNumber()
 	if err := decoder.Decode(target); err != nil {
 		return fulfillment.ErrProviderUnavailable
 	}
 	return nil
+}
+
+func labelNotReadyFromProvider(path string, payload []byte) error {
+	if !strings.Contains(path, "/print-label") {
+		return nil
+	}
+	message := strings.ToLower(string(payload))
+	switch {
+	case strings.Contains(message, "awb not found"):
+		return &fulfillment.LabelNotReadyError{Reason: "awb_pending", Retryable: true}
+	case strings.Contains(message, "pickup"), strings.Contains(message, "pick up"):
+		return &fulfillment.LabelNotReadyError{Reason: "pickup_required", Retryable: false}
+	default:
+		return nil
+	}
+}
+
+func resolveProviderURL(baseURL, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	reference, err := url.Parse(value)
+	if err != nil {
+		return ""
+	}
+	base, err := url.Parse(strings.TrimRight(baseURL, "/") + "/")
+	if err != nil {
+		return ""
+	}
+	return base.ResolveReference(reference).String()
 }
 
 func pinPoint(latitude, longitude *float64) string {

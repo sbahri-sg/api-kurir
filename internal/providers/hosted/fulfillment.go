@@ -192,6 +192,12 @@ type shipmentResponse struct {
 func mapFulfillmentError(err error) error {
 	var upstream *HTTPError
 	if errors.As(err, &upstream) {
+		switch upstream.Code {
+		case "RAJAONGKIR_LABEL_AWB_PENDING", "LABEL_AWB_PENDING":
+			return &fulfillment.LabelNotReadyError{Reason: "awb_pending", Retryable: true}
+		case "RAJAONGKIR_LABEL_PICKUP_REQUIRED", "LABEL_PICKUP_REQUIRED":
+			return &fulfillment.LabelNotReadyError{Reason: "pickup_required", Retryable: false}
+		}
 		switch upstream.Status {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return fulfillment.ErrProviderUnauthorized

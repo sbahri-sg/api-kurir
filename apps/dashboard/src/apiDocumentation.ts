@@ -2761,20 +2761,27 @@ HTTP 422 PROVIDER_REJECTED bila provider menerima request tetapi hasil order pic
     path: "/api/v1/integrations/shipments/{shipment_id}/label",
     title: "Ambil label shipment",
     description:
-      "Mengambil label provider dan menyimpan hasilnya terenkripsi agar pembacaan berikutnya tidak membuat request label duplikat.",
+      "Mengambil label provider setelah pickup menghasilkan AWB, lalu menyimpan hasilnya terenkripsi agar pembacaan berikutnya tidak membuat request label duplikat.",
     authentication: "Main Service API key + X-Emisell-Merchant-ID",
     parameters: ["format — page_1, page_2, page_4, page_5 (default), atau page_6"],
     request: `GET {{base_url}}/api/v1/integrations/shipments/{{shipment_id}}/label?format=page_5
 key: {{api_key}}
 X-Emisell-Merchant-ID: {{merchant_id}}`,
-    response: `{
+    response: `HTTP 200 ketika label siap:
+{
   "data": {
     "format": "page_5",
     "content_type": "application/pdf",
-    "url": "/storage/label-example.pdf",
+    "url": "https://api-sandbox.collaborator.komerce.id/storage/label-example.pdf",
     "base64": "JVBERi0x..."
   }
-}`,
+}
+
+HTTP 409 LABEL_NOT_READY mempunyai details.reason:
+- pickup_required: pickup belum berhasil dijadwalkan; jangan retry otomatis.
+- awb_pending: pickup diterima tetapi AWB belum tersedia. API Kurir langsung mengantrekan rekonsiliasi detail; retry setelah details.retry_after_seconds.
+
+URL relatif dari provider selalu dinormalisasi menjadi URL absolut. Jangan membentuk URL label sendiri di Main Service.`,
   },
   {
     contract: "gateway",

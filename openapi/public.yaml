@@ -1468,6 +1468,12 @@ paths:
                 $ref: "#/components/schemas/FulfillmentLabelResponse"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Pickup belum dijadwalkan atau AWB provider masih diproses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "422":
           description: Label belum tersedia
           content:
