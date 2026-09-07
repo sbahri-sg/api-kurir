@@ -39,12 +39,28 @@ The gate runs before rate cache/singleflight. The credential reference must matc
 the currently selected, active, validated merchant credential in existing storage.
 No credential is decrypted by the verifier. Missing references fail closed.
 
+## Operator credential connection
+
+After synchronizing an active installation, use `apps/provider-connect` in the
+trusted backend environment. Supply `DATABASE_URL` through secret configuration
+and `-config` pointing to the private runtime file. Pass `-merchant`, `-provider`,
+`-app`, `-installation`, and `-credential` (an existing credential ID, never a key).
+The operator must be authorized to administer that merchant. This is not a public
+endpoint and does not provide seller authentication.
+
+The tool checks explicit rollout, exact installation identity, fresh
+`settings.write` permission, and current credential selection/ownership. The
+database update rechecks active/valid selection and rejects concurrent binding
+changes or synchronized revocation. A concurrent remote revocation can race the
+write; subsequent rate requests still verify the current remote grant and deny.
+No credential is copied, created or selected, and no shipping history is deleted.
+
 ## Still required before activation
 
 - Connect remaining business operations (shipment, settings, tracking). Current
   runtime wiring protects rates only; do not claim full lifecycle enforcement.
-- Provide an authenticated credential-binding workflow. Synchronization does not
-  populate credential references automatically.
+- Integrate this operator workflow into a seller-authenticated backend route if
+  self-service connection is needed. Synchronization never binds credentials.
 - Test install, credential connection, rates and revocation end-to-end in staging.
 - Validate database migration against a staging backup before deployment.
 

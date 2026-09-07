@@ -45,10 +45,34 @@ func TestBindingPersistence(t *testing.T) {
 	if err != nil || b.InstallationID != "ins" {
 		t.Fatal(err)
 	}
+	// Minimal existing credential schema, only inside the disposable test DB.
+	_, err = pool.Exec(ctx, `CREATE TABLE provider_credentials(id text PRIMARY KEY, tenant_id text, provider_code text, active boolean, validation_status text);
+ CREATE TABLE tenant_active_shipping_providers(tenant_id text, provider_code text, credential_id text);
+ INSERT INTO provider_credentials VALUES ('cred','m','rajaongkir',true,'valid'),('foreign','other','rajaongkir',true,'valid');
+ INSERT INTO tenant_active_shipping_providers VALUES ('m','rajaongkir','cred');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.BindCredential(ctx, b, "foreign"); !errors.Is(err, ErrDenied) {
+		t.Fatal("foreign credential", err)
+	}
+	if err = p.BindCredential(ctx, b, "cred"); err != nil {
+		t.Fatal(err)
+	}
+	if err = p.BindCredential(ctx, b, "cred"); !errors.Is(err, ErrDenied) {
+		t.Fatal("stale binding allowed", err)
+	}
+	b, err = p.Resolve(ctx, "m", "rajaongkir")
+	if err != nil || b.CredentialID != "cred" {
+		t.Fatal("binding not stored", err)
+	}
 	v.Revision = 2
 	v.Active = false
 	v.Revoked = true
 	apply(nil)
+	if err = p.BindCredential(ctx, b, "cred"); !errors.Is(err, ErrDenied) {
+		t.Fatal("revoked binding modified", err)
+	}
 	v.Revision = 1
 	v.Active = true
 	v.Revoked = false
