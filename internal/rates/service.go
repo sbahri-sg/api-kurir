@@ -20,21 +20,22 @@ var (
 )
 
 type Service struct {
-	repository   Repository
-	policies     ServicePolicyRepository
-	policyCache  cache.Cache
-	policyTTL    time.Duration
-	queryTimeout time.Duration
-	group        singleflight.Group
-	provider     QuoteProvider
-	fallbacks    []QuoteProvider
-	snapshots    SnapshotRepository
-	locker       cache.Locker
-	lockTTL      time.Duration
-	resultPolicy ResultPolicy
-	credentials  CredentialSelector
-	providerGate ShippingProviderGate
-	fallbackGate ProviderFallbackPolicy
+	requestAuthorization func(context.Context, Request) error
+	repository           Repository
+	policies             ServicePolicyRepository
+	policyCache          cache.Cache
+	policyTTL            time.Duration
+	queryTimeout         time.Duration
+	group                singleflight.Group
+	provider             QuoteProvider
+	fallbacks            []QuoteProvider
+	snapshots            SnapshotRepository
+	locker               cache.Locker
+	lockTTL              time.Duration
+	resultPolicy         ResultPolicy
+	credentials          CredentialSelector
+	providerGate         ShippingProviderGate
+	fallbackGate         ProviderFallbackPolicy
 }
 
 type ShippingProviderGate interface {
@@ -61,6 +62,24 @@ type ResultPolicy interface {
 }
 
 type Option func(*Service)
+
+// WithRequestAuthorization checks each caller before cache and singleflight.
+func WithRequestAuthorization(check func(context.Context, Request) error) Option {
+	return func(s *Service) {
+		previous := s.requestAuthorization
+		s.requestAuthorization = func(ctx context.Context, r Request) error {
+			if previous != nil {
+				if err := previous(ctx, r); err != nil {
+					return err
+				}
+			}
+			if check == nil {
+				return errors.New("request authorization unavailable")
+			}
+			return check(ctx, r)
+		}
+	}
+}
 
 func WithProviderFallback(
 	provider QuoteProvider,
@@ -146,6 +165,11 @@ func NewService(repository Repository, queryTimeout time.Duration, options ...Op
 }
 
 func (s *Service) Calculate(ctx context.Context, request Request) ([]Result, error) {
+	if s.requestAuthorization != nil {
+		if err := s.requestAuthorization(ctx, request); err != nil {
+			return nil, err
+		}
+	}
 	request.Couriers = normalizeRequestedCouriers(request.Couriers)
 	key := requestKey(request)
 	resultCh := s.group.DoChan(key, func() (any, error) {

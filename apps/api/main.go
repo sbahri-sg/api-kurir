@@ -13,6 +13,7 @@ import (
 	"github.com/emisell/api-kurir/internal/config"
 	"github.com/emisell/api-kurir/internal/couriers"
 	"github.com/emisell/api-kurir/internal/database"
+	"github.com/emisell/api-kurir/internal/enginegrant"
 	"github.com/emisell/api-kurir/internal/fulfillment"
 	"github.com/emisell/api-kurir/internal/httpapi"
 	"github.com/emisell/api-kurir/internal/locations"
@@ -205,6 +206,23 @@ func run(logger *slog.Logger) error {
 		5*time.Minute,
 	)}
 	operationTimeout := cfg.RajaOngkirHosted.Timeout + 2*time.Second
+	externalGate, err := enginegrant.LoadRuntime(os.Getenv("EXTERNAL_PROVIDER_GRANT_FILE"), pool, providerCredentialService)
+	if err != nil {
+		return err
+	}
+	if externalGate != nil {
+		rateOptions = append(rateOptions, rates.WithRequestAuthorization(func(ctx context.Context, request rates.Request) error {
+			// Requests without a merchant retain the existing platform path.
+			if request.TenantID == "" {
+				return nil
+			}
+			provider, err := merchantProviderService.ActiveProviderCode(ctx, request.TenantID)
+			if err != nil {
+				return err
+			}
+			return externalGate.Authorize(ctx, request.TenantID, provider, "rates.read")
+		}))
+	}
 	if cfg.Biteship.RateFallbackEnabled {
 		operationTimeout += 2*cfg.Biteship.Timeout + 2*time.Second
 	}

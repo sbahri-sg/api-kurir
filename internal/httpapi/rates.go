@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/emisell/api-kurir/internal/couriers"
+	"github.com/emisell/api-kurir/internal/enginegrant"
 	"github.com/emisell/api-kurir/internal/locations"
 	"github.com/emisell/api-kurir/internal/merchantshipping"
 	"github.com/emisell/api-kurir/internal/rates"
@@ -91,6 +92,10 @@ func calculateRateHandler(service *rates.Service) echo.HandlerFunc {
 
 		results, err := service.Calculate(c.Request().Context(), request)
 		switch {
+		case errors.Is(err, enginegrant.ErrDenied):
+			return writeError(c, http.StatusForbidden, "APP_GRANT_REQUIRED", "Shipping app access is not active.", nil)
+		case errors.Is(err, enginegrant.ErrUnavailable):
+			return writeError(c, http.StatusServiceUnavailable, "APP_GRANT_UNAVAILABLE", "Shipping app access cannot be verified.", nil)
 		case errors.Is(err, rates.ErrShippingDisabled):
 			return writeError(
 				c,
@@ -479,6 +484,10 @@ func writeRajaOngkirRateError(
 	err error,
 ) error {
 	switch {
+	case errors.Is(err, enginegrant.ErrDenied):
+		return writeError(c, http.StatusForbidden, "APP_GRANT_REQUIRED", "Shipping app access is not active.", nil)
+	case errors.Is(err, enginegrant.ErrUnavailable):
+		return writeError(c, http.StatusServiceUnavailable, "APP_GRANT_UNAVAILABLE", "Shipping app access cannot be verified.", nil)
 	case errors.Is(err, rates.ErrShippingDisabled):
 		return writeError(
 			c,
