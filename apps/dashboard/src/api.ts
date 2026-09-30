@@ -637,7 +637,7 @@ export class AdminApi {
       search: search.trim(),
       limit: "12",
     });
-    return this.request<LocationOption[]>(`/v1/admin/locations/rajaongkir?${query}`, {
+    return this.request<LocationOption[]>(`/v1/admin/locations?${query}`, {
       signal,
     });
   }

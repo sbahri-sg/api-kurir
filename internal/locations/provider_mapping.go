@@ -108,46 +108,6 @@ func (r *PostgresRepository) ResolveProviderLocation(
 	return providerLocationID, nil
 }
 
-// ResolveProviderDistrict returns the provider ID of a district, or the
-// district parent of a subdistrict. RajaOngkir's rate endpoint requires a
-// district ID even when the selected destination is a subdistrict.
-func (r *PostgresRepository) ResolveProviderDistrict(
-	ctx context.Context,
-	locationPublicID string,
-	providerCode string,
-) (string, error) {
-	var providerLocationID string
-	err := r.pool.QueryRow(ctx, `
-		SELECT mapping.provider_location_id
-		FROM locations selected
-		JOIN locations district
-		  ON district.id = CASE
-		       WHEN selected.level = 'district' THEN selected.id
-		       WHEN selected.level = 'subdistrict' THEN selected.parent_id
-		     END
-		 AND district.level = 'district'
-		 AND district.active
-		JOIN provider_location_mappings mapping
-		  ON mapping.location_id = district.id
-		 AND mapping.provider_code = $2
-		 AND mapping.granularity = 'district'
-		 AND mapping.active
-		WHERE selected.public_id = $1
-		  AND selected.active
-		LIMIT 1
-	`,
-		strings.TrimSpace(locationPublicID),
-		strings.TrimSpace(strings.ToLower(providerCode)),
-	).Scan(&providerLocationID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", ErrProviderMappingNotFound
-	}
-	if err != nil {
-		return "", fmt.Errorf("resolve provider district: %w", err)
-	}
-	return providerLocationID, nil
-}
-
 func (r *PostgresRepository) FindByPublicID(
 	ctx context.Context,
 	publicID string,

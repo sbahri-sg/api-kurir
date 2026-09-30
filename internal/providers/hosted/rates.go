@@ -24,7 +24,7 @@ type RateCredentialResolver interface {
 }
 
 type LocationMappingResolver interface {
-	ResolveProviderDistrict(ctx context.Context, locationPublicID, providerCode string) (string, error)
+	ResolveProviderLocation(ctx context.Context, locationPublicID, providerCode string) (string, error)
 }
 
 type RateProvider struct {
@@ -72,14 +72,14 @@ func (p *RateProvider) Quote(ctx context.Context, request rates.Request) ([]rate
 	if err := p.quota.ConsumeProviderHit(ctx, p.providerCode, alias, limit); err != nil {
 		return nil, err
 	}
-	origin, err := p.mappings.ResolveProviderDistrict(ctx, request.Origin, p.providerCode)
+	origin, err := p.mappings.ResolveProviderLocation(ctx, request.Origin, p.providerCode)
 	if err != nil {
 		if errors.Is(err, locations.ErrProviderMappingNotFound) {
 			return nil, rates.ErrProviderLocationMapping
 		}
 		return nil, err
 	}
-	destination, err := p.mappings.ResolveProviderDistrict(ctx, request.Destination, p.providerCode)
+	destination, err := p.mappings.ResolveProviderLocation(ctx, request.Destination, p.providerCode)
 	if err != nil {
 		if errors.Is(err, locations.ErrProviderMappingNotFound) {
 			return nil, rates.ErrProviderLocationMapping
