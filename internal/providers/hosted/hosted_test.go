@@ -63,7 +63,7 @@ func (credentialStub) ResolveProviderCredentialForCapability(
 
 type mappingStub struct{}
 
-func (mappingStub) ResolveProviderLocation(
+func (mappingStub) ResolveProviderDistrict(
 	_ context.Context,
 	locationPublicID, _ string,
 ) (string, error) {
@@ -100,6 +100,19 @@ func TestHostedRateAndTrackingAdapters(t *testing.T) {
 		response.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
 		case "/partner/v1/rates":
+			var input struct {
+				Origin struct {
+					DistrictID string `json:"district_id"`
+				} `json:"origin"`
+				Destination struct {
+					DistrictID string `json:"district_id"`
+				} `json:"destination"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil ||
+				input.Origin.DistrictID != "1391" || input.Destination.DistrictID != "1376" {
+				http.Error(response, "rate request needs district IDs", http.StatusBadRequest)
+				return
+			}
 			_ = json.NewEncoder(response).Encode(map[string]any{
 				"data": map[string]any{"quotes": []map[string]any{{
 					"provider_code": "rajaongkir", "courier_code": "J&T Express",
