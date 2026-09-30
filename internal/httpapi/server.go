@@ -208,6 +208,9 @@ func New(
 	adminGroup.GET("/overview", adminOverviewHandler(adminRepository))
 	adminGroup.GET("/catalog", adminCatalogHandler(adminRepository))
 	adminGroup.GET("/locations", locationSearchHandler(locationRepository))
+	if legacyRepository, ok := locationRepository.(locations.LegacyRepository); ok {
+		adminGroup.GET("/locations/rajaongkir", adminRajaOngkirLocationSearchHandler(legacyRepository))
+	}
 	adminGroup.GET("/couriers", courierListHandler(courierRepository))
 	adminGroup.POST("/calculate/domestic-cost", calculateRateHandler(rateService))
 	adminGroup.POST("/track/waybill", trackingHandler(trackingService))
