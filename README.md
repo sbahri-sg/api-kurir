@@ -102,36 +102,30 @@ Kebutuhan: Go 1.26+, Node.js 24+, Docker, dan Docker Compose.
 
 ```bash
 cp .env.example .env
-make db-up
-make migrate
-make run-api
-```
-
-Untuk menjalankan seluruh aplikasi di Docker dari root proyek:
-
-```bash
 docker compose up -d --build
 ```
 
 `docker-compose.yml` membaca `.env` dari root proyek. File
 `deployments/compose/compose.yaml` tetap tersedia sebagai wrapper kompatibilitas
 untuk perintah lama. Secret tidak disalin ke file Compose atau source code.
-Dashboard tersedia di `http://localhost:5173`.
-Dashboard memakai same-origin API: browser selalu meminta `/v1/*` relatif ke
-domain dashboard. Vite meneruskannya ke `127.0.0.1:8080` saat development,
-sedangkan Nginx meneruskannya ke service `api:8080` saat Docker/production.
-Karena itu deployment cukup memakai satu domain publik dan bundle production
-tidak bergantung pada alamat `localhost:8080`.
+Compose tidak menerbitkan port host untuk layanan mana pun. Network eksternal
+`emisell_container_net` harus sudah tersedia sebelum stack dijalankan. API dan
+dashboard bergabung ke network tersebut dengan alias `api-kurir-api:8080` dan
+`api-kurir-dashboard:80`. PostgreSQL, Redis, worker, dan connector tetap pada
+network internal Compose.
 
-Port dashboard dan API secara default bind ke seluruh interface. Stack juga
-dapat diuji dari perangkat lain menggunakan
-`http://<IP-SERVER>:5173`. Gunakan `DASHBOARD_BIND_ADDR` atau
-`HTTP_BIND_ADDR` bila port hanya boleh tersedia pada interface tertentu.
-Biarkan `VITE_API_URL` kosong untuk deployment satu domain; isi hanya jika API
-memang berada pada origin yang berbeda.
+Reverse proxy dalam `emisell_container_net` meneruskan domain
+`api-kurir.emisell.com` ke `http://api-kurir-dashboard:80`. Dashboard memakai
+same-origin API: browser meminta path `/v1/*` pada domain yang sama, lalu Nginx
+dashboard meneruskannya ke `api:8080` pada network internal. Path `/api/v1/*`,
+`/partner/v1/*`, `/health/*`, `/regions/*`, dan `/shipping/*` juga diteruskan
+ke API. Reverse proxy yang berjalan langsung di host tidak dapat memakai DNS
+Docker `api-kurir-dashboard` tanpa bergabung ke network Docker. Biarkan
+`VITE_API_URL` kosong untuk deployment satu domain.
 
-API berjalan di `http://localhost:8080`. PostgreSQL development menggunakan
-port `55432` agar tidak mudah bentrok dengan instalasi PostgreSQL lain.
+Perintah host-run seperti `make migrate` dan `make run-api` memerlukan database
+yang dapat diakses dari host secara terpisah; Compose default tidak menyediakan
+port host untuk alur tersebut.
 
 Dashboard:
 

@@ -7,8 +7,6 @@ services:
       POSTGRES_DB: api_kurir
       POSTGRES_USER: api_kurir
       POSTGRES_PASSWORD: api_kurir
-    ports:
-      - "${POSTGRES_PORT:-55432}:5432"
     volumes:
       - api-kurir-postgres:/var/lib/postgresql
     healthcheck:
@@ -61,6 +59,11 @@ services:
       context: .
       args:
         APP: api
+    networks:
+      default:
+      emisell:
+        aliases:
+          - api-kurir-api
     env_file:
       - path: .env
         required: false
@@ -71,9 +74,7 @@ services:
       REDIS_ENABLED: "${REDIS_ENABLED:-false}"
       REDIS_ADDR: "${COMPOSE_REDIS_ADDR:-redis:6379}"
       RAJAONGKIR_HOSTED_BASE_URL: http://rajaongkir-hosted:8080/partner/v1
-      RAJAONGKIR_HOSTED_PUBLIC_BASE_URL: "${RAJAONGKIR_HOSTED_PUBLIC_BASE_URL:-http://127.0.0.1:${DASHBOARD_PORT:-5173}/connectors/rajaongkir/v1}"
-    ports:
-      - "${HTTP_BIND_ADDR:-0.0.0.0}:${HTTP_PORT:-8080}:8080"
+      RAJAONGKIR_HOSTED_PUBLIC_BASE_URL: "${RAJAONGKIR_HOSTED_PUBLIC_BASE_URL:-https://api-kurir.emisell.com/connectors/rajaongkir/v1}"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -125,8 +126,11 @@ services:
     build:
       context: .
       dockerfile: apps/dashboard/Dockerfile
-    ports:
-      - "${DASHBOARD_BIND_ADDR:-0.0.0.0}:${DASHBOARD_PORT:-5173}:80"
+    networks:
+      default:
+      emisell:
+        aliases:
+          - api-kurir-dashboard
     depends_on:
       - api
       - rajaongkir-hosted
@@ -163,8 +167,6 @@ services:
     image: redis:8-alpine
     profiles: ["redis"]
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - api-kurir-redis:/data
     healthcheck:
@@ -176,3 +178,8 @@ services:
 volumes:
   api-kurir-postgres:
   api-kurir-redis:
+
+networks:
+  emisell:
+    external: true
+    name: emisell_container_net
