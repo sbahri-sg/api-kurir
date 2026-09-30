@@ -71,13 +71,15 @@ services:
       APP_ENV: "${APP_ENV:-development}"
       HTTP_ADDR: :8080
       DATABASE_URL: postgres://api_kurir:api_kurir@postgres:5432/api_kurir?sslmode=disable
-      REDIS_ENABLED: "${REDIS_ENABLED:-false}"
+      REDIS_ENABLED: "${REDIS_ENABLED:-true}"
       REDIS_ADDR: "${COMPOSE_REDIS_ADDR:-redis:6379}"
       RAJAONGKIR_HOSTED_BASE_URL: http://rajaongkir-hosted:8080/partner/v1
       RAJAONGKIR_HOSTED_PUBLIC_BASE_URL: "${RAJAONGKIR_HOSTED_PUBLIC_BASE_URL:-https://api-kurir.emisell.com/connectors/rajaongkir/v1}"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       rajaongkir-hosted:
         condition: service_healthy
 
@@ -92,12 +94,14 @@ services:
     environment:
       APP_ENV: "${APP_ENV:-development}"
       DATABASE_URL: postgres://api_kurir:api_kurir@postgres:5432/api_kurir?sslmode=disable
-      REDIS_ENABLED: "${REDIS_ENABLED:-false}"
+      REDIS_ENABLED: "${REDIS_ENABLED:-true}"
       REDIS_ADDR: "${COMPOSE_REDIS_ADDR:-redis:6379}"
       RAJAONGKIR_HOSTED_BASE_URL: http://rajaongkir-hosted:8080/partner/v1
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       rajaongkir-hosted:
         condition: service_healthy
 
@@ -107,7 +111,7 @@ services:
     environment:
       PORT: "8080"
       RAJAONGKIR_DELIVERY_ENV: "${RAJAONGKIR_DELIVERY_ENV:-production}"
-      UPSTREAM_TIMEOUT_MS: "${RAJAONGKIR_HOSTED_TIMEOUT_MS:-8000}"
+      UPSTREAM_TIMEOUT_MS: "${RAJAONGKIR_HOSTED_TIMEOUT_MS:-15000}"
     expose:
       - "8080"
     restart: unless-stopped
@@ -165,7 +169,6 @@ services:
 
   redis:
     image: redis:8-alpine
-    profiles: ["redis"]
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - api-kurir-redis:/data

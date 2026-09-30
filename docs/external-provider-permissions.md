@@ -55,12 +55,29 @@ changes or synchronized revocation. A concurrent remote revocation can race the
 write; subsequent rate requests still verify the current remote grant and deny.
 No credential is copied, created or selected, and no shipping history is deleted.
 
+## Service-only binding endpoint (opt-in)
+
+`POST /api/v1/app-integrations/credential-binding` is registered only with the
+external runtime enabled. Uses existing service-key authentication plus trusted
+merchant context. JSON fields: `app_id`, `installation_id`, `provider_code`,
+`credential_id`. It does not accept secrets or merchant identity in the body.
+Browser Origin/Cookie requests are rejected. Success returns only
+`{"status":"connected"}`. It reuses operator grant/ownership checks; 403 denies,
+503 means verification failed, and 400 means invalid input. Never send the service
+key to a seller browser. The calling application backend must authenticate its
+seller session and authorize that merchant before using this endpoint.
+
+Credential creation/validation still uses existing backend credential services.
+There is no combined seller onboarding transaction yet. Connecting does not create
+an installation or automatically activate the selected shipping provider.
+
 ## Still required before activation
 
 - Connect remaining business operations (shipment, settings, tracking). Current
   runtime wiring protects rates only; do not claim full lifecycle enforcement.
-- Integrate this operator workflow into a seller-authenticated backend route if
-  self-service connection is needed. Synchronization never binds credentials.
+- Connect the seller-authenticated application backend to the service endpoint.
+  Synchronization never binds credentials. The Platform V2 installation source
+  still requires runtime composition/readiness before end-to-end onboarding.
 - Test install, credential connection, rates and revocation end-to-end in staging.
 - Validate database migration against a staging backup before deployment.
 

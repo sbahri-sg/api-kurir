@@ -62,7 +62,7 @@ func run(logger *slog.Logger) error {
 
 	var redisClient *redis.Client
 	var runtimeCache cache.Cache = cache.NewMemory(10_000)
-	var runtimeLocker cache.Locker = cache.NewPostgresLocker(pool)
+	var runtimeLocker cache.Locker = cache.NewLocalLocker()
 	if cfg.Redis.Enabled {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
@@ -80,10 +80,15 @@ func run(logger *slog.Logger) error {
 		defer redisClient.Close()
 		logger.Info("Redis coordination enabled")
 	} else {
-		logger.Info("Redis disabled; using memory cache and PostgreSQL locks")
+		logger.Info("Redis disabled; using memory cache and process-local locks")
 	}
 	locationRepository := locations.NewPostgresRepository(pool)
 	rateRepository := rates.NewPostgresRepository(pool)
+	rateSnapshots := rates.NewCachedSnapshotRepository(
+		rateRepository,
+		runtimeCache,
+		cfg.RateSnapshotCacheTTL,
+	)
 	courierRepository := couriers.NewPostgresRepository(pool)
 	merchantShippingService := merchantshipping.NewService(
 		merchantshipping.NewPostgresRepository(pool),
@@ -172,7 +177,8 @@ func run(logger *slog.Logger) error {
 		locationRepository,
 		rateRepository,
 		cfg.RajaOngkir.SnapshotTTL,
-	)
+		rateRepository,
+	).WithPlatformBypassCouriers(cfg.RajaOngkirHosted.RateBypassCouriers)
 	rateLockTTL := cfg.RajaOngkirHosted.Timeout + cfg.Biteship.Timeout + 2*time.Second
 	var rateProviderOption rates.Option
 	if cfg.Biteship.RateFallbackEnabled {
@@ -187,7 +193,7 @@ func run(logger *slog.Logger) error {
 		)
 		rateProviderOption = rates.WithProviderFallbackChain(
 			rajaOngkirProvider,
-			rateRepository,
+			rateSnapshots,
 			runtimeLocker,
 			rateLockTTL,
 			merchantProviderService,
@@ -196,7 +202,7 @@ func run(logger *slog.Logger) error {
 	} else {
 		rateProviderOption = rates.WithProviderFallback(
 			rajaOngkirProvider,
-			rateRepository,
+			rateSnapshots,
 			runtimeLocker,
 			cfg.RajaOngkirHosted.Timeout+2*time.Second,
 		)
@@ -205,6 +211,12 @@ func run(logger *slog.Logger) error {
 		runtimeCache,
 		5*time.Minute,
 	)}
+	if cfg.Biteship.RateFallbackEnabled {
+		rateOptions = append(rateOptions, rates.WithPrimaryCircuitBreaker(
+			cfg.RajaOngkirHosted.RateCircuitFailureThreshold,
+			cfg.RajaOngkirHosted.RateCircuitOpenDuration,
+		))
+	}
 	operationTimeout := cfg.RajaOngkirHosted.Timeout + 2*time.Second
 	externalGate, err := enginegrant.LoadRuntime(os.Getenv("EXTERNAL_PROVIDER_GRANT_FILE"), pool, providerCredentialService)
 	if err != nil {
@@ -231,6 +243,9 @@ func run(logger *slog.Logger) error {
 		"primary", "rajaongkir",
 		"transport", "partner_hosted",
 		"rate_fallback", cfg.Biteship.RateFallbackEnabled,
+		"rate_bypass_couriers", cfg.RajaOngkirHosted.RateBypassCouriers,
+		"circuit_failure_threshold", cfg.RajaOngkirHosted.RateCircuitFailureThreshold,
+		"circuit_open_duration", cfg.RajaOngkirHosted.RateCircuitOpenDuration,
 	)
 	rateService := rates.NewService(rateRepository, operationTimeout, rateOptions...)
 	adminRepository := admin.NewPostgresRepository(pool)
@@ -305,6 +320,7 @@ func run(logger *slog.Logger) error {
 		logger,
 		cfg.AppEnv,
 		httpapi.WithFulfillmentService(fulfillmentService),
+		httpapi.WithAppCredentialConnection(externalGate, enginegrant.PostgresBindings{Pool: pool}),
 		httpapi.WithManagedPartnerConnector(partnerexplorer.ManagedConnector{
 			ProviderCode:   "rajaongkir",
 			PublicBaseURL:  cfg.RajaOngkirHosted.PublicBaseURL,

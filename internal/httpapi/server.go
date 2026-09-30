@@ -41,6 +41,7 @@ type Server struct {
 }
 
 type serverConfig struct {
+	appCredentialConnector   appCredentialConnector
 	fulfillmentService       *fulfillment.Service
 	managedPartnerConnectors []partnerexplorer.ManagedConnector
 }
@@ -86,6 +87,7 @@ func New(
 		}
 	}
 	fulfillmentService := config.fulfillmentService
+	// Mounted after the server is initialized below.
 	e := echo.New()
 	e.Use(middleware.Recover())
 	e.Use(securityHeadersMiddleware(appEnv))
@@ -294,6 +296,10 @@ func New(
 		adminTrackingWebhookTestHandler(webhookSettingsService),
 	)
 
+	if config.appCredentialConnector != nil {
+		g := e.Group("/api/v1/app-integrations", serviceAPIKeyMiddleware(apiKeys, customerAPIKeyService), merchantContextMiddleware(true))
+		g.POST("/credential-binding", appCredentialConnectionHandler(config.appCredentialConnector))
+	}
 	return &Server{Echo: e}
 }
 

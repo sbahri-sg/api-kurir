@@ -1,0 +1,6 @@
+# For a host-run API only. Do not use this override in production.
+# docker compose -f docker-compose.yml -f deployments/compose/connector.local.yaml up -d --no-deps rajaongkir-hosted
+services:
+  rajaongkir-hosted:
+    ports:
+      - "127.0.0.1:18081:8080"

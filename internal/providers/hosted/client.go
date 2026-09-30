@@ -38,7 +38,7 @@ func NewClient(baseURL string, timeout time.Duration) (*Client, error) {
 		return nil, errors.New("hosted connector base URL is invalid")
 	}
 	if timeout <= 0 {
-		timeout = 8 * time.Second
+		timeout = 15 * time.Second
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/"
 	parsed.RawQuery = ""

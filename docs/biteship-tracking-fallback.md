@@ -27,6 +27,41 @@ Fallback dilakukan berurutan, bukan paralel. Untuk cek ongkir multi-kurir,
 Biteship hanya menerima kode kurir yang belum mempunyai hasil dari RajaOngkir.
 Ini mencegah dua hit untuk kurir yang sudah berhasil dijawab provider utama.
 
+Untuk mencegah antrean panjang saat RajaOngkir mengalami gangguan platform,
+API Kurir membuka circuit setelah tiga kegagalan beruntun dan mengarahkan
+request Emisell Kurir berikutnya langsung ke Biteship selama 30 detik. Setelah
+itu hanya satu request yang menjadi recovery probe; request paralel lain tetap
+memakai fallback. Circuit hanya berlaku untuk credential platform Emisell,
+tidak pernah untuk credential BYOK merchant. Circuit juga tidak dibuka bila
+Biteship belum siap atau tidak menghasilkan quote, sehingga RajaOngkir tetap
+dapat dicoba dan tidak tercipta total outage akibat backup yang bermasalah.
+
+Saat Redis belum diaktifkan, deduplikasi request provider memakai lock lokal
+proses dan tidak menahan koneksi PostgreSQL selama network call. Ini menjaga
+pool database tetap tersedia untuk autentikasi merchant, pemilihan credential,
+lokasi, dan kuota ketika banyak customer checkout bersamaan. Deployment dengan
+lebih dari satu instance API wajib mengaktifkan Redis agar lock berlaku lintas
+instance.
+
+Quote RajaOngkir dari credential platform disimpan sebagai snapshot bersama
+antar merchant Emisell Kurir. Data mentah yang dibagikan hanya ditentukan oleh
+rute, berat, dimensi, kurir, dan opsi harga; otorisasi serta filter layanan
+seller tetap dijalankan terpisah pada setiap checkout. Snapshot yang sering
+diakses disimpan lima menit di Redis agar checkout cache-hit tidak selalu
+membaca PostgreSQL.
+
+Katalog kurir, nama layanan, policy berat, dan rate card lokal juga dicache
+lima menit. Pada cache miss, request identik dalam satu instance digabung
+menjadi satu pembacaan database. Dengan demikian lonjakan checkout tidak
+mengubah seribu customer menjadi seribu query referensi yang sama.
+
+Kurir yang diketahui lambat atau tidak tersedia pada endpoint tarif
+RajaOngkir dapat dilewati melalui `RAJAONGKIR_RATE_BYPASS_COURIERS`. Nilai
+default saat ini `tiki`, berdasarkan pengujian produksi: empat kurir lain
+selesai sekitar 0,34 detik sedangkan TIKI menunggu sekitar 10 detik lalu
+ditolak upstream. Bypass hanya berlaku pada Emisell Kurir dan kekurangannya
+diisi Biteship; RajaOngkir BYOK tidak diubah.
+
 ## Fallback cek ongkir
 
 API Kurir memakai endpoint Biteship `POST /v1/rates/couriers`. Lokasi lokal
@@ -83,6 +118,13 @@ BITESHIP_TIMEOUT=5s
 BITESHIP_RATE_FALLBACK_ENABLED=true
 BITESHIP_RATE_SNAPSHOT_TTL=336h
 BITESHIP_TRACKING_COURIERS=ide,rpx,sentral,sicepat
+RAJAONGKIR_HOSTED_TIMEOUT=15s
+RAJAONGKIR_HOSTED_TIMEOUT_MS=15000
+RAJAONGKIR_RATE_CIRCUIT_FAILURE_THRESHOLD=3
+RAJAONGKIR_RATE_CIRCUIT_OPEN_DURATION=30s
+RAJAONGKIR_RATE_BYPASS_COURIERS=tiki
+REDIS_ENABLED=true
+RATE_SNAPSHOT_CACHE_TTL=5m
 ```
 
 Menonaktifkan `BITESHIP_RATE_FALLBACK_ENABLED` hanya mematikan fallback tarif;

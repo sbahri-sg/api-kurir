@@ -27,6 +27,8 @@ type Service struct {
 	policyTTL            time.Duration
 	queryTimeout         time.Duration
 	group                singleflight.Group
+	providerGroup        singleflight.Group
+	referenceGroup       singleflight.Group
 	provider             QuoteProvider
 	fallbacks            []QuoteProvider
 	snapshots            SnapshotRepository
@@ -36,6 +38,7 @@ type Service struct {
 	credentials          CredentialSelector
 	providerGate         ShippingProviderGate
 	fallbackGate         ProviderFallbackPolicy
+	primaryCircuit       *primaryCircuitBreaker
 }
 
 type ShippingProviderGate interface {
@@ -115,6 +118,15 @@ func WithProviderFallbackChain(
 		if lockTTL > 0 {
 			service.lockTTL = lockTTL
 		}
+	}
+}
+
+// WithPrimaryCircuitBreaker keeps the primary provider first during normal
+// operation, but temporarily routes requests to the fallback chain after
+// repeated infrastructure, quota, rate-limit, or authentication failures.
+func WithPrimaryCircuitBreaker(failureThreshold int, openDuration time.Duration) Option {
+	return func(service *Service) {
+		service.primaryCircuit = newPrimaryCircuitBreaker(failureThreshold, openDuration)
 	}
 }
 
@@ -236,7 +248,7 @@ func (s *Service) calculate(ctx context.Context, request Request, key string) ([
 		return nil, err
 	}
 
-	cards, err := s.repository.FindActiveRateCards(ctx, request)
+	cards, err := s.loadRateCards(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -313,6 +325,48 @@ func (s *Service) loadCourierPresentations(
 	ctx context.Context,
 	courierCodes []string,
 ) (map[string]CourierPresentation, error) {
+	cacheKey := referenceCacheKey("courier-presentations", sortedValues(courierCodes)...)
+	resultCh := s.referenceGroup.DoChan(cacheKey, func() (any, error) {
+		if s.policyCache != nil {
+			payload, found, cacheErr := s.policyCache.Get(ctx, cacheKey)
+			if cacheErr == nil && found {
+				presentations := make(map[string]CourierPresentation)
+				if json.Unmarshal(payload, &presentations) == nil {
+					return presentations, nil
+				}
+			}
+		}
+
+		presentations, err := s.findCourierPresentations(ctx, courierCodes)
+		if err != nil {
+			return nil, err
+		}
+		if presentations == nil {
+			presentations = make(map[string]CourierPresentation)
+		}
+		if s.policyCache != nil {
+			if payload, marshalErr := json.Marshal(presentations); marshalErr == nil {
+				_ = s.policyCache.Set(ctx, cacheKey, payload, s.policyTTL)
+			}
+		}
+		return presentations, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return result.Val.(map[string]CourierPresentation), nil
+	}
+}
+
+func (s *Service) findCourierPresentations(
+	ctx context.Context,
+	courierCodes []string,
+) (map[string]CourierPresentation, error) {
 	if repository, ok := s.repository.(CourierPresentationRepository); ok {
 		return repository.FindActiveCourierPresentations(ctx, courierCodes)
 	}
@@ -329,6 +383,51 @@ func (s *Service) loadCourierPresentations(
 		presentations[courierCode] = CourierPresentation{Logo: logo}
 	}
 	return presentations, nil
+}
+
+func (s *Service) loadRateCards(ctx context.Context, request Request) ([]RateCard, error) {
+	cacheKey := referenceCacheKey(
+		"active-rate-cards",
+		request.Origin,
+		request.Destination,
+		fmt.Sprintf("unverified=%t", request.IncludeUnverified),
+		strings.Join(sortedValues(request.Couriers), ":"),
+	)
+	resultCh := s.referenceGroup.DoChan(cacheKey, func() (any, error) {
+		if s.policyCache != nil {
+			payload, found, cacheErr := s.policyCache.Get(ctx, cacheKey)
+			if cacheErr == nil && found {
+				var cards []RateCard
+				if json.Unmarshal(payload, &cards) == nil {
+					return cards, nil
+				}
+			}
+		}
+
+		cards, err := s.repository.FindActiveRateCards(ctx, request)
+		if err != nil {
+			return nil, err
+		}
+		if cards == nil {
+			cards = make([]RateCard, 0)
+		}
+		if s.policyCache != nil {
+			if payload, marshalErr := json.Marshal(cards); marshalErr == nil {
+				_ = s.policyCache.Set(ctx, cacheKey, payload, s.policyTTL)
+			}
+		}
+		return cards, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return result.Val.([]RateCard), nil
+	}
 }
 
 func applyCourierPresentation(
@@ -442,27 +541,52 @@ func (s *Service) loadServicePolicies(
 	if s.policies == nil {
 		return newPolicySet(nil), nil
 	}
-	cacheKey := "service-weight-policies:" + strings.Join(courierCodes, ":")
-	if s.policyCache != nil {
-		payload, found, err := s.policyCache.Get(ctx, cacheKey)
-		if err == nil && found {
-			var items []ServicePolicy
-			if json.Unmarshal(payload, &items) == nil {
-				return newPolicySet(items), nil
+	cacheKey := referenceCacheKey("service-weight-policies", sortedValues(courierCodes)...)
+	resultCh := s.referenceGroup.DoChan(cacheKey, func() (any, error) {
+		if s.policyCache != nil {
+			payload, found, err := s.policyCache.Get(ctx, cacheKey)
+			if err == nil && found {
+				var items []ServicePolicy
+				if json.Unmarshal(payload, &items) == nil {
+					return items, nil
+				}
 			}
 		}
-	}
 
-	items, err := s.policies.FindActiveServicePolicies(ctx, courierCodes)
-	if err != nil {
-		return policySet{}, err
-	}
-	if s.policyCache != nil {
-		if payload, marshalErr := json.Marshal(items); marshalErr == nil {
-			_ = s.policyCache.Set(ctx, cacheKey, payload, s.policyTTL)
+		items, err := s.policies.FindActiveServicePolicies(ctx, courierCodes)
+		if err != nil {
+			return nil, err
 		}
+		if items == nil {
+			items = make([]ServicePolicy, 0)
+		}
+		if s.policyCache != nil {
+			if payload, marshalErr := json.Marshal(items); marshalErr == nil {
+				_ = s.policyCache.Set(ctx, cacheKey, payload, s.policyTTL)
+			}
+		}
+		return items, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return policySet{}, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			return policySet{}, result.Err
+		}
+		return newPolicySet(result.Val.([]ServicePolicy)), nil
 	}
-	return newPolicySet(items), nil
+}
+
+func referenceCacheKey(namespace string, values ...string) string {
+	return namespace + ":" + strings.Join(values, ":")
+}
+
+func sortedValues(values []string) []string {
+	result := append([]string(nil), values...)
+	sort.Strings(result)
+	return result
 }
 
 func (s *Service) calculateProviderFallback(
@@ -490,7 +614,32 @@ func (s *Service) calculateProviderFallback(
 		}
 	}
 
-	primaryQuotes, primaryErr := s.fetchProviderQuotes(ctx, request, s.provider)
+	// The circuit breaker protects only the shared Emisell credential pool.
+	// A tenant-owned (BYOK) credential must always be evaluated independently;
+	// one merchant's provider failure must never affect another merchant.
+	circuitEligible := s.primaryCircuit != nil && request.ProviderCredentialID == ""
+	primaryRequest := request
+	if request.ProviderCredentialID == "" {
+		// Emisell Kurir uses the same platform credential and upstream price for
+		// every merchant. Share only the raw provider snapshot; authorization,
+		// selected services, and result filtering remain tenant-scoped.
+		primaryRequest.TenantID = ""
+	}
+	var primaryQuotes []ProviderQuote
+	var primaryErr error
+	primarySkipped := false
+	if circuitEligible && !s.primaryCircuit.allow() {
+		primaryErr = ErrProviderCircuitOpen
+		primarySkipped = true
+	} else {
+		primaryQuotes, primaryErr = s.fetchProviderQuotes(ctx, primaryRequest, s.provider)
+		// Circuit-worthy failures are committed only after a fallback has
+		// actually produced usable quotes. This prevents an unavailable backup
+		// from turning a primary-provider incident into a total outage.
+		if circuitEligible && !isPrimaryCircuitFailure(primaryErr) {
+			s.primaryCircuit.record(primaryErr)
+		}
+	}
 	if primaryErr != nil && !allowsRateProviderFallback(primaryErr) {
 		return nil, primaryErr
 	}
@@ -505,6 +654,9 @@ func (s *Service) calculateProviderFallback(
 		return nil, err
 	}
 	if !allowed || len(s.fallbacks) == 0 {
+		if circuitEligible && isPrimaryCircuitFailure(primaryErr) {
+			s.primaryCircuit.record(nil)
+		}
 		if primaryErr != nil {
 			return nil, primaryErr
 		}
@@ -518,6 +670,7 @@ func (s *Service) calculateProviderFallback(
 		missingCouriers = append([]string(nil), request.Couriers...)
 	}
 	var fallbackErr error
+	fallbackUsable := false
 	for _, fallback := range s.fallbacks {
 		if fallback == nil || len(missingCouriers) == 0 {
 			continue
@@ -534,11 +687,31 @@ func (s *Service) calculateProviderFallback(
 			fallbackErr = quoteErr
 			continue
 		}
+		if len(quotes) > 0 {
+			fallbackUsable = true
+		}
 		allQuotes = append(allQuotes, quotes...)
 		missingCouriers = missingProviderQuoteCouriers(
 			missingCouriers,
 			quotes,
 		)
+	}
+	if circuitEligible && isPrimaryCircuitFailure(primaryErr) {
+		if fallbackUsable {
+			s.primaryCircuit.record(primaryErr)
+		} else {
+			// Keep RajaOngkir reachable when Biteship cannot take traffic. If the
+			// primary was skipped by an open circuit, retry it once after closing
+			// the circuit so the request still has a chance to succeed.
+			s.primaryCircuit.record(nil)
+			if primarySkipped {
+				primaryQuotes, primaryErr = s.fetchProviderQuotes(ctx, primaryRequest, s.provider)
+				if primaryErr != nil && !allowsRateProviderFallback(primaryErr) {
+					return nil, primaryErr
+				}
+				allQuotes = append([]ProviderQuote(nil), primaryQuotes...)
+			}
+		}
 	}
 	if len(allQuotes) > 0 {
 		return providerQuoteResults(request, allQuotes), nil
@@ -561,57 +734,71 @@ func (s *Service) fetchProviderQuotes(
 		return nil, ErrRateNotAvailable
 	}
 	providerCode := provider.Code()
-	quotes, err := s.snapshots.FindFreshProviderQuotes(ctx, request, providerCode)
-	if err != nil {
-		return nil, err
-	}
-	if len(quotes) > 0 {
-		return quotes, nil
-	}
-
-	fetch := func(lockCtx context.Context) error {
-		fresh, err := s.snapshots.FindFreshProviderQuotes(lockCtx, request, providerCode)
-		if err != nil {
-			return err
+	lockKey := "provider-rate:" + providerCode + ":" + requestKey(request)
+	resultCh := s.providerGroup.DoChan(lockKey, func() (any, error) {
+		quotes, findErr := s.snapshots.FindFreshProviderQuotes(ctx, request, providerCode)
+		if findErr != nil {
+			return nil, findErr
 		}
-		if len(fresh) > 0 {
-			quotes = fresh
+		if len(quotes) > 0 {
+			return quotes, nil
+		}
+
+		var refreshed []ProviderQuote
+		fetch := func(lockCtx context.Context) error {
+			fresh, fetchErr := s.snapshots.FindFreshProviderQuotes(lockCtx, request, providerCode)
+			if fetchErr != nil {
+				return fetchErr
+			}
+			if len(fresh) > 0 {
+				refreshed = fresh
+				return nil
+			}
+			providerRequest := request
+			providerRequest.ActualWeightGrams = max(
+				providerRequest.ActualWeightGrams,
+				MinimumProviderBillableWeightGrams,
+			)
+			fresh, fetchErr = provider.Quote(lockCtx, providerRequest)
+			if fetchErr != nil {
+				return fetchErr
+			}
+			if len(fresh) == 0 {
+				return ErrRateNotAvailable
+			}
+			for index := range fresh {
+				if fresh[index].ProviderCode == "" {
+					fresh[index].ProviderCode = providerCode
+				}
+			}
+			if fetchErr := s.snapshots.SaveProviderQuotes(lockCtx, request, fresh); fetchErr != nil {
+				return fetchErr
+			}
+			refreshed = fresh
 			return nil
 		}
-		providerRequest := request
-		providerRequest.ActualWeightGrams = max(
-			providerRequest.ActualWeightGrams,
-			MinimumProviderBillableWeightGrams,
-		)
-		fresh, err = provider.Quote(lockCtx, providerRequest)
-		if err != nil {
-			return err
-		}
-		if len(fresh) == 0 {
-			return ErrRateNotAvailable
-		}
-		for index := range fresh {
-			if fresh[index].ProviderCode == "" {
-				fresh[index].ProviderCode = providerCode
-			}
-		}
-		if err := s.snapshots.SaveProviderQuotes(lockCtx, request, fresh); err != nil {
-			return err
-		}
-		quotes = fresh
-		return nil
-	}
 
-	lockKey := "provider-rate:" + providerCode + ":" + requestKey(request)
-	if s.locker == nil {
-		err = fetch(ctx)
-	} else {
-		err = s.locker.WithLock(ctx, lockKey, s.lockTTL, fetch)
+		var fetchErr error
+		if s.locker == nil {
+			fetchErr = fetch(ctx)
+		} else {
+			fetchErr = s.locker.WithLock(ctx, lockKey, s.lockTTL, fetch)
+		}
+		if errors.Is(fetchErr, cache.ErrLockNotAcquired) {
+			refreshed, fetchErr = s.waitForProviderSnapshot(ctx, request, providerCode)
+		}
+		return refreshed, fetchErr
+	})
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return append([]ProviderQuote(nil), result.Val.([]ProviderQuote)...), nil
 	}
-	if errors.Is(err, cache.ErrLockNotAcquired) {
-		quotes, err = s.waitForProviderSnapshot(ctx, request, providerCode)
-	}
-	return quotes, err
 }
 
 func (s *Service) fallbackAllowed(ctx context.Context) (bool, error) {

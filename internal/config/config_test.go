@@ -58,6 +58,57 @@ func TestLoadConfiguresHostedConnectorPublicURL(t *testing.T) {
 	}
 }
 
+func TestLoadConfiguresRajaOngkirRateCircuitBreaker(t *testing.T) {
+	t.Setenv("RAJAONGKIR_RATE_CIRCUIT_FAILURE_THRESHOLD", "5")
+	t.Setenv("RAJAONGKIR_RATE_CIRCUIT_OPEN_DURATION", "45s")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RajaOngkirHosted.RateCircuitFailureThreshold != 5 ||
+		cfg.RajaOngkirHosted.RateCircuitOpenDuration != 45*time.Second {
+		t.Fatalf("unexpected circuit breaker config: %#v", cfg.RajaOngkirHosted)
+	}
+}
+
+func TestLoadConfiguresRateSnapshotCacheTTL(t *testing.T) {
+	t.Setenv("RATE_SNAPSHOT_CACHE_TTL", "7m")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RateSnapshotCacheTTL != 7*time.Minute {
+		t.Fatalf("rate snapshot cache TTL=%s want 7m", cfg.RateSnapshotCacheTTL)
+	}
+}
+
+func TestLoadConfiguresRajaOngkirRateBypassCouriers(t *testing.T) {
+	t.Setenv("RAJAONGKIR_RATE_BYPASS_COURIERS", "tiki,lion")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.RajaOngkirHosted.RateBypassCouriers) != 2 ||
+		cfg.RajaOngkirHosted.RateBypassCouriers[0] != "tiki" ||
+		cfg.RajaOngkirHosted.RateBypassCouriers[1] != "lion" {
+		t.Fatalf("rate bypass couriers=%#v", cfg.RajaOngkirHosted.RateBypassCouriers)
+	}
+}
+
+func TestLoadRejectsInvalidRateSnapshotCacheTTL(t *testing.T) {
+	t.Setenv("RATE_SNAPSHOT_CACHE_TTL", "0s")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid rate snapshot cache TTL")
+	}
+}
+
+func TestLoadRejectsInvalidRajaOngkirRateCircuitBreaker(t *testing.T) {
+	t.Setenv("RAJAONGKIR_RATE_CIRCUIT_FAILURE_THRESHOLD", "0")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid circuit breaker threshold")
+	}
+}
+
 func TestLoadRequiresHTTPSHostedPublicURLInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("API_KEYS", "public")

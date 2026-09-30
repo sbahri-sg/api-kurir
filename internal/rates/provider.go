@@ -3,6 +3,7 @@ package rates
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ var (
 	ErrProviderQuotaExhausted  = errors.New("provider quota exhausted")
 	ErrProviderRateLimited     = errors.New("provider rate limited")
 	ErrProviderUnavailable     = errors.New("provider unavailable")
+	ErrProviderCircuitOpen     = fmt.Errorf("provider circuit open: %w", ErrProviderUnavailable)
 	ErrProviderLocationMapping = errors.New("provider location mapping not found")
 )
 

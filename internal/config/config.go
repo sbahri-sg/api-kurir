@@ -13,21 +13,22 @@ import (
 const defaultDatabaseURL = "postgres://api_kurir:api_kurir@localhost:55432/api_kurir?sslmode=disable"
 
 type Config struct {
-	AppEnv              string
-	HTTPAddr            string
-	DatabaseURL         string
-	DatabaseMaxConn     int32
-	DatabaseMinConn     int32
-	APIKeys             []string
-	AdminAPIKeys        []string
-	ShutdownTimeout     time.Duration
-	Redis               RedisConfig
-	RajaOngkir          RajaOngkirConfig
-	RajaOngkirHosted    HostedConnectorConfig
-	Biteship            BiteshipConfig
-	ProviderCredentials ProviderCredentialConfig
-	MerchantShipping    MerchantShippingConfig
-	Tracking            TrackingConfig
+	AppEnv               string
+	HTTPAddr             string
+	DatabaseURL          string
+	DatabaseMaxConn      int32
+	DatabaseMinConn      int32
+	RateSnapshotCacheTTL time.Duration
+	APIKeys              []string
+	AdminAPIKeys         []string
+	ShutdownTimeout      time.Duration
+	Redis                RedisConfig
+	RajaOngkir           RajaOngkirConfig
+	RajaOngkirHosted     HostedConnectorConfig
+	Biteship             BiteshipConfig
+	ProviderCredentials  ProviderCredentialConfig
+	MerchantShipping     MerchantShippingConfig
+	Tracking             TrackingConfig
 }
 
 type RedisConfig struct {
@@ -54,9 +55,12 @@ type RajaOngkirConfig struct {
 }
 
 type HostedConnectorConfig struct {
-	BaseURL       string
-	PublicBaseURL string
-	Timeout       time.Duration
+	BaseURL                     string
+	PublicBaseURL               string
+	Timeout                     time.Duration
+	RateBypassCouriers          []string
+	RateCircuitFailureThreshold int
+	RateCircuitOpenDuration     time.Duration
 }
 
 type BiteshipConfig struct {
@@ -115,6 +119,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	rateSnapshotCacheTTL, err := durationEnv("RATE_SNAPSHOT_CACHE_TTL", 5*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
 	rajaOngkirTimeout, err := durationEnv("RAJAONGKIR_TIMEOUT", 4*time.Second)
 	if err != nil {
 		return Config{}, err
@@ -123,7 +131,21 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	rajaOngkirHostedTimeout, err := durationEnv("RAJAONGKIR_HOSTED_TIMEOUT", 8*time.Second)
+	rajaOngkirHostedTimeout, err := durationEnv("RAJAONGKIR_HOSTED_TIMEOUT", 15*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	rajaOngkirCircuitFailureThreshold, err := intEnv(
+		"RAJAONGKIR_RATE_CIRCUIT_FAILURE_THRESHOLD",
+		3,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	rajaOngkirCircuitOpenDuration, err := durationEnv(
+		"RAJAONGKIR_RATE_CIRCUIT_OPEN_DURATION",
+		30*time.Second,
+	)
 	if err != nil {
 		return Config{}, err
 	}
@@ -198,14 +220,15 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		AppEnv:          envOr("APP_ENV", "development"),
-		HTTPAddr:        envOr("HTTP_ADDR", ":8080"),
-		DatabaseURL:     envOr("DATABASE_URL", defaultDatabaseURL),
-		DatabaseMaxConn: maxConns,
-		DatabaseMinConn: minConns,
-		APIKeys:         splitCSV(os.Getenv("API_KEYS")),
-		AdminAPIKeys:    splitCSV(os.Getenv("ADMIN_API_KEYS")),
-		ShutdownTimeout: shutdownTimeout,
+		AppEnv:               envOr("APP_ENV", "development"),
+		HTTPAddr:             envOr("HTTP_ADDR", ":8080"),
+		DatabaseURL:          envOr("DATABASE_URL", defaultDatabaseURL),
+		DatabaseMaxConn:      maxConns,
+		DatabaseMinConn:      minConns,
+		RateSnapshotCacheTTL: rateSnapshotCacheTTL,
+		APIKeys:              splitCSV(os.Getenv("API_KEYS")),
+		AdminAPIKeys:         splitCSV(os.Getenv("ADMIN_API_KEYS")),
+		ShutdownTimeout:      shutdownTimeout,
 		Redis: RedisConfig{
 			Enabled:  redisEnabled,
 			Addr:     envOr("REDIS_ADDR", "localhost:6379"),
@@ -242,7 +265,10 @@ func Load() (Config, error) {
 				"RAJAONGKIR_HOSTED_PUBLIC_BASE_URL",
 				"https://api-kurir.emisell.com/connectors/rajaongkir/v1",
 			),
-			Timeout: rajaOngkirHostedTimeout,
+			Timeout:                     rajaOngkirHostedTimeout,
+			RateBypassCouriers:          splitCSV(envOr("RAJAONGKIR_RATE_BYPASS_COURIERS", "tiki")),
+			RateCircuitFailureThreshold: rajaOngkirCircuitFailureThreshold,
+			RateCircuitOpenDuration:     rajaOngkirCircuitOpenDuration,
 		},
 		Biteship: BiteshipConfig{
 			BaseURL:             envOr("BITESHIP_BASE_URL", "https://api.biteship.com/"),
@@ -312,6 +338,20 @@ func Load() (Config, error) {
 	}
 	if cfg.RajaOngkirHosted.Timeout <= 0 {
 		return Config{}, errors.New("RAJAONGKIR_HOSTED_TIMEOUT must be positive")
+	}
+	if cfg.RateSnapshotCacheTTL <= 0 {
+		return Config{}, errors.New("RATE_SNAPSHOT_CACHE_TTL must be positive")
+	}
+	if cfg.RajaOngkirHosted.RateCircuitFailureThreshold < 1 ||
+		cfg.RajaOngkirHosted.RateCircuitFailureThreshold > 100 {
+		return Config{}, errors.New(
+			"RAJAONGKIR_RATE_CIRCUIT_FAILURE_THRESHOLD must be between 1 and 100",
+		)
+	}
+	if cfg.RajaOngkirHosted.RateCircuitOpenDuration <= 0 {
+		return Config{}, errors.New(
+			"RAJAONGKIR_RATE_CIRCUIT_OPEN_DURATION must be positive",
+		)
 	}
 	hostedPublicURL, parseErr := url.ParseRequestURI(cfg.RajaOngkirHosted.PublicBaseURL)
 	if parseErr != nil || hostedPublicURL.Host == "" ||
